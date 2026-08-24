@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gemma Wiki — composer concepts</title>
+<style>
+  body { font-family: -apple-system, "SF Pro", Inter, sans-serif; background:#f4f4f5; margin:0; padding:40px; color:#18181b; }
+  h1 { font-size:20px; letter-spacing:-0.02em; }
+  p.sub { color:#71717a; font-size:13px; margin-top:-8px; max-width:640px; line-height:1.5; }
+  .concept { margin:36px 0; }
+  .concept h2 { font-size:15px; margin:0 0 4px; }
+  .concept p { font-size:12.5px; color:#71717a; margin:0 0 14px; max-width:640px; line-height:1.5; }
+  .pair { display:flex; gap:20px; flex-wrap:wrap; }
+  .mock { width:340px; border-radius:14px; padding:16px 14px; border:1px solid #e4e4e7; }
+  .mock.light { background:#fff; --bg:#fff; --bg2:#f4f4f5; --fg:#0a0a0a; --muted:#71717a; --faint:#a1a1aa; --line:#e4e4e7; }
+  .mock.dark  { background:#0a0a0a; border-color:#27272a; --bg:#0a0a0a; --bg2:#18181b; --fg:#fafafa; --muted:#a1a1aa; --faint:#52525b; --line:#27272a; }
+
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .chip { font-size:11.5px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:4px 11px; background:transparent; }
+  .chip.write { border-style:dashed; color:var(--fg); }
+  .chip.quiet { border:none; padding:4px 6px; text-decoration:none; }
+  .chip.quiet:before { content:"· "; color:var(--faint); }
+
+  .composer { border:1px solid var(--line); border-radius:10px; background:var(--bg); display:flex; flex-direction:column; }
+  .composer .pills { display:flex; gap:6px; padding:10px 10px 0; }
+  .composer .pill { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--fg); background:var(--bg2); border:1px solid var(--line); border-radius:999px; padding:2px 8px; }
+  .composer .pill span.x { color:var(--faint); }
+  .composer .ta { padding:10px 12px; color:var(--faint); font-size:13px; min-height:52px; }
+  .composer.tall .ta { min-height:84px; }
+  .composer .bar { display:flex; align-items:center; gap:4px; padding:6px 8px 8px; }
+  .composer .bar.hairline { border-top:1px solid var(--line); }
+  .tool { width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; color:var(--muted); }
+  .tool svg { width:14px; height:14px; }
+  .spacer { flex:1; }
+  .send { width:28px; height:28px; border-radius:8px; background:var(--fg); color:var(--bg); display:flex; align-items:center; justify-content:center; }
+  .send.round { border-radius:50%; }
+  .send svg { width:15px; height:15px; }
+  .modelchip { font-size:10.5px; color:var(--faint); border:1px solid var(--line); border-radius:6px; padding:2px 7px; margin-right:2px; }
+
+  /* current baseline pieces */
+  .base-input { border:1px solid var(--line); border-radius:8px; padding:9px 11px; color:var(--faint); font-size:13px; margin-bottom:8px; }
+  .base-row { display:flex; gap:8px; align-items:center; }
+  .outline { border:1px solid var(--line); background:transparent; color:var(--fg); }
+</style>
+<svg width="0" height="0"><defs>
+<g id="i-plus"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></g>
+<g id="i-zap"><path d="M13 2 3 14h7l-1 8 11-13h-8l1-7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></g>
+<g id="i-max"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></g>
+<g id="i-up"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>
+<g id="i-file"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="1.8" fill="none"/></g>
+</defs></svg>
+</head>
+<body>
+<h1>Composer concepts — Claudian-inspired</h1>
+<p class="sub">Claudian's signature: one bordered composer card containing everything — context pills, a borderless textarea, and a toolbar inside the same box (tools left, send right). Three ways to apply that to Gemma Wiki. Suggestion chips are text-only in all three.</p>
+
+<!-- A -->
+<div class="concept">
+  <h2>A · Unified composer (full Claudian)</h2>
+  <p>One card: pills → tall borderless textarea → hairline-separated toolbar with [+] [⚡] [⤢] left and send right. Chips stay above as outlined pills. Most similar to Claudian/Claude.ai; tallest.</p>
+  <div class="pair">
+    <div class="mock light">
+      <div class="chips"><span class="chip">Summarize this note</span><span class="chip">Key points</span><span class="chip write">Improve formatting</span></div>
+      <div class="composer tall">
+        <div class="pills"><span class="pill"><svg><use href="#i-file"/></svg>compound-interest <span class="x">×</span></span></div>
+        <div class="ta">Ask about this note…</div>
+        <div class="bar hairline">
+          <div class="tool"><svg><use href="#i-plus"/></svg></div>
+          <div class="tool"><svg><use href="#i-zap"/></svg></div>
+          <div class="tool"><svg><use href="#i-max"/></svg></div>
+          <div class="spacer"></div>
+          <div class="send"><svg><use href="#i-up"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="mock dark">
+      <div class="chips"><span class="chip">Summarize this note</span><span class="chip">Key points</span><span class="chip write">Improve formatting</span></div>
+      <div class="composer tall">
+        <div class="pills"><span class="pill"><svg><use href="#i-file"/></svg>compound-interest <span class="x">×</span></span></div>
+        <div class="ta">Ask about this note…</div>
+        <div class="bar hairline">
+          <div class="tool"><svg><use href="#i-plus"/></svg></div>
+          <div class="tool"><svg><use href="#i-zap"/></svg></div>
+          <div class="tool"><svg><use href="#i-max"/></svg></div>
+          <div class="spacer"></div>
+          <div class="send"><svg><use href="#i-up"/></svg></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- B -->
+<div class="concept">
+  <h2>B · Compact composer + quiet chips</h2>
+  <p>Same single card but slim (no hairline, short textarea), and suggestions become quiet text links with a leading dot — no borders at all. Most minimal; chips read as hints, not buttons.</p>
+  <div class="pair">
+    <div class="mock light">
+      <div class="chips"><span class="chip quiet">Summarize</span><span class="chip quiet">Key points</span><span class="chip quiet">Improve formatting</span></div>
+      <div class="composer">
+        <div class="ta">Ask about this note…</div>
+        <div class="bar">
+          <div class="tool"><svg><use href="#i-plus"/></svg></div>
+          <div class="tool"><svg><use href="#i-zap"/></svg></div>
+          <div class="spacer"></div>
+          <div class="send round"><svg><use href="#i-up"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="mock dark">
+      <div class="chips"><span class="chip quiet">Summarize</span><span class="chip quiet">Key points</span><span class="chip quiet">Improve formatting</span></div>
+      <div class="composer">
+        <div class="ta">Ask about this note…</div>
+        <div class="bar">
+          <div class="tool"><svg><use href="#i-plus"/></svg></div>
+          <div class="tool"><svg><use href="#i-zap"/></svg></div>
+          <div class="spacer"></div>
+          <div class="send round"><svg><use href="#i-up"/></svg></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- C -->
+<div class="concept">
+  <h2>C · Composer with mode inside</h2>
+  <p>Unified card, and the This note / Wiki mode pills move INTO the toolbar (left), replacing the header row entirely — one fewer UI band overall. Send stays right; [+]/[⚡] sit next to the mode. Densest information layout.</p>
+  <div class="pair">
+    <div class="mock light">
+      <div class="chips"><span class="chip">Summarize this note</span><span class="chip">Key points</span><span class="chip write">Improve formatting</span></div>
+      <div class="composer">
+        <div class="ta">Ask about this note…</div>
+        <div class="bar hairline">
+          <span class="modelchip">This note</span>
+          <span class="modelchip" style="opacity:.55">Wiki</span>
+          <div class="tool"><svg><use href="#i-plus"/></svg></div>
+          <div class="tool"><svg><use href="#i-zap"/></svg></div>
+          <div class="spacer"></div>
+          <div class="send"><svg><use href="#i-up"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="mock dark">
+      <div class="chips"><span class="chip">Summarize this note</span><span class="chip">Key points</span><span class="chip write">Improve formatting</span></div>
+      <div class="composer">
+        <div class="ta">Ask about this note…</div>
+        <div class="bar hairline">
+          <span class="modelchip">This note</span>
+          <span class="modelchip" style="opacity:.55">Wiki</span>
+          <div class="tool"><svg><use href="#i-plus"/></svg></div>
+          <div class="tool"><svg><use href="#i-zap"/></svg></div>
+          <div class="spacer"></div>
+          <div class="send"><svg><use href="#i-up"/></svg></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
