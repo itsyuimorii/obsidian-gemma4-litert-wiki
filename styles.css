@@ -631,3 +631,15 @@
   font-size: var(--font-ui-smaller);
   font-family: var(--font-monospace);
 }
+
+.gemma4-relink-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: var(--font-ui-smaller);
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.gemma4-relink-page {
+  font-weight: 600;
+}

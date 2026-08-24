@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { IngestPreviewModal } from './ingest-modal';
+import { IngestPreviewModal, RelinkPreviewModal, type RelinkProposal } from './ingest-modal';
 import {
   appendLog,
   buildWikiPage,
@@ -19,6 +19,7 @@ import {
   type NoteExtraction,
 } from './wiki-store';
 import { LintReportModal, runLint } from './lint';
+import { TFile } from 'obsidian';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
 // runtime can load inside Obsidian's Electron renderer with zero external
@@ -211,6 +212,57 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.status(`Ingest FAILED — ${err instanceof Error ? err.message : String(err)}`);
           this.statusEnd(undefined, 8000);
         }
+      },
+    });
+
+    this.addCommand({
+      id: 'litert-relink-wiki',
+      name: 'Relink wiki pages (fill missing Related sections)',
+      callback: async () => {
+        // Backfill for pages ingested before the related-links feature
+        // existed — they have no cross-links and show up as orphans in
+        // lint and as disconnected dots in the graph view.
+        const entries = await readIndexEntries(this.app.vault);
+        if (entries.length < 2) {
+          new Notice('Need at least two indexed pages to relink.');
+          return;
+        }
+        const proposals: RelinkProposal[] = [];
+        let i = 0;
+        for (const entry of entries) {
+          i++;
+          const file = this.app.vault.getAbstractFileByPath(`${entry.linkPath}.md`);
+          if (!(file instanceof TFile)) continue;
+          const content = await this.app.vault.read(file);
+          if (!content.trim() || content.includes('\n## Related')) continue;
+          this.status(`Relinking ${i}/${entries.length} — ${entry.title}…`);
+          const candidates = entries.filter((e) => e.linkPath !== entry.linkPath);
+          const related = await this.pickRelatedPages(entry.summary, candidates);
+          if (related.length) {
+            proposals.push({ pagePath: `${entry.linkPath}.md`, title: entry.title, related });
+          }
+        }
+        this.statusEnd();
+        if (!proposals.length) {
+          new Notice('Nothing to relink — every page already has a Related section or no matches were found.');
+          return;
+        }
+        new RelinkPreviewModal(this.app, proposals, () => {
+          void (async () => {
+            for (const prop of proposals) {
+              const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
+              if (!(file instanceof TFile)) continue;
+              const content = await this.app.vault.read(file);
+              const section =
+                `\n## Related\n\n` +
+                prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
+                `\n`;
+              await this.app.vault.modify(file, content.trimEnd() + '\n' + section);
+              await appendLog(this.app.vault, 'relink', prop.title);
+            }
+            new Notice(`Related sections added to ${proposals.length} pages.`, 4000);
+          })();
+        }).open();
       },
     });
 
