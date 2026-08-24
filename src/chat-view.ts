@@ -260,11 +260,29 @@ export class ChatView extends ItemView {
     setTooltip(clearBtn, 'Clear chat');
     clearBtn.addEventListener('click', () => this.clearChat());
 
-    // Mode toggle: "Note" chats about the open note; "Wiki" retrieves
-    // from index.md + ingested pages (the real Karpathy Query path).
-    // Rendered as shadcn-style pills on one aligned row with the context chip.
-    const controls = header.createDiv({ cls: 'gemma4-chat-header-controls' });
-    const modeRow = controls.createDiv({ cls: 'gemma4-chat-mode-row' });
+    // Mode pills live in the composer toolbar (concept D); the header
+    // keeps only the context chip.
+    this.noteChipEl = header.createDiv({ cls: 'gemma4-chat-note-chip' });
+
+    // Message list with an empty-state hint shown until the first send.
+    this.messagesEl = container.createDiv({ cls: 'gemma4-chat-messages' });
+    this.buildEmptyState();
+
+    // Input area, concept D: suggestion chips above one unified composer
+    // card (Claudian-style) holding context pills, a borderless textarea,
+    // and a hairline toolbar — mode pills left, tools middle, send right.
+    const inputWrap = container.createDiv({ cls: 'gemma4-chat-input-wrap' });
+    this.suggestionRow = inputWrap.createDiv({ cls: 'gemma4-chat-suggestion-row' });
+    const composer = inputWrap.createDiv({ cls: 'gemma4-composer' });
+    this.contextRow = composer.createDiv({ cls: 'gemma4-chat-context-row' });
+    this.contextRow.hide();
+    this.inputEl = composer.createEl('textarea', {
+      cls: 'gemma4-chat-input',
+      attr: { placeholder: 'Ask about this note… (Enter to send)', rows: '3' },
+    });
+    const buttonRow = composer.createDiv({ cls: 'gemma4-composer-bar' });
+
+    const modeRow = buttonRow.createDiv({ cls: 'gemma4-chat-mode-row' });
     // "This note", not "Note": users repeatedly read "Note" as "search my
     // notes" and were confused when it only saw the open file.
     const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'This note' });
@@ -272,25 +290,6 @@ export class ChatView extends ItemView {
     this.modeButtons = { note: noteBtn, wiki: wikiBtn };
     noteBtn.addEventListener('click', () => this.setMode('note'));
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
-
-    this.noteChipEl = controls.createDiv({ cls: 'gemma4-chat-note-chip' });
-    this.setMode('note');
-
-    // Message list with an empty-state hint shown until the first send.
-    this.messagesEl = container.createDiv({ cls: 'gemma4-chat-messages' });
-    this.buildEmptyState();
-
-    // Input area: persistent suggestion chips + textarea + send/stop buttons.
-    const inputWrap = container.createDiv({ cls: 'gemma4-chat-input-wrap' });
-    this.contextRow = inputWrap.createDiv({ cls: 'gemma4-chat-context-row' });
-    this.contextRow.hide();
-    this.suggestionRow = inputWrap.createDiv({ cls: 'gemma4-chat-suggestion-row' });
-    this.renderSuggestions();
-    this.inputEl = inputWrap.createEl('textarea', {
-      cls: 'gemma4-chat-input',
-      attr: { placeholder: 'Ask about this note… (Enter to send)', rows: '2' },
-    });
-    const buttonRow = inputWrap.createDiv({ cls: 'gemma4-chat-button-row' });
 
     const attachBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
@@ -389,6 +388,8 @@ export class ChatView extends ItemView {
     this.sendButton = buttonRow.createEl('button', { cls: 'gemma4-chat-send' });
     setIcon(this.sendButton, 'arrow-up');
     setTooltip(this.sendButton, 'Send (Enter)');
+
+    this.setMode('note');
 
     this.sendButton.addEventListener('click', () => void this.handleSend());
     this.stopButton.addEventListener('click', () => this.activeConversation?.cancel());
