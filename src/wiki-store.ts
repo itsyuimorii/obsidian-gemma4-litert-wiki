@@ -129,11 +129,25 @@ export async function readIndexEntries(vault: Vault): Promise<IndexEntry[]> {
 
 // Lexical retrieval over the index, per the "read the index, then read the
 // pages it points to" plan — deliberately no embeddings, no graph algorithm.
+// Function words match every summary and drown out the real signal —
+// "what's the common mistake between X and Y" was retrieving pages that
+// merely contained "common" and "between".
+const STOPWORDS = new Set([
+  'the', 'and', 'for', 'are', 'but', 'not', 'you', 'your', 'with', 'can',
+  'what', 'which', 'when', 'where', 'why', 'how', 'does', 'did', 'from',
+  'have', 'has', 'had', 'this', 'that', 'these', 'those', 'will', 'would',
+  'should', 'could', 'about', 'into', 'over', 'than', 'then', 'them',
+  'they', 'there', 'their', 'make', 'made', 'between', 'common', 'more',
+  'most', 'some', 'such', 'only', 'also', 'very', 'just', 'been', 'was',
+  'were', 'its', 'out', 'use', 'using', 'used', 'note', 'notes', 'talk',
+  'talking', 'say', 'says', 'tell', 'show',
+]);
+
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
   const terms = question
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 2);
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
   if (!terms.length) return [];
   const scored = entries
     .map((e) => {

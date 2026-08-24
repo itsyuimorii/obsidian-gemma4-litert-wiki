@@ -383,6 +383,42 @@
   gap: 8px;
 }
 
+/* Input growth: auto-grows with content up to 35% of panel height, then
+   scrolls internally; the expand toggle pins it tall instead. */
+.gemma4-chat-input {
+  overflow-y: auto;
+}
+
+.gemma4-chat .gemma4-chat-input-tall {
+  height: 220px;
+}
+
+/* Square outline expand toggle, shadcn secondary-style, pushed left. */
+.gemma4-chat .gemma4-chat-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin-right: auto;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-chat-expand:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-chat .gemma4-chat-expand svg {
+  width: 13px;
+  height: 13px;
+}
+
 /* Inverted-foreground send button, monochrome like the user bubble. */
 .gemma4-chat .gemma4-chat-send {
   display: flex;

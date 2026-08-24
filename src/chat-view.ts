@@ -37,6 +37,28 @@ export class ChatView extends ItemView {
   private activeConversation: Conversation | null = null;
   private mode: 'note' | 'wiki' = 'note';
   private modeButtons: { note: HTMLElement; wiki: HTMLElement } | null = null;
+  private expandButton!: HTMLButtonElement;
+  private inputExpanded = false;
+
+  private autoGrowInput() {
+    if (this.inputExpanded) return;
+    const el = this.inputEl;
+    el.style.height = 'auto';
+    const max = Math.floor(this.containerEl.clientHeight * 0.35);
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+  }
+
+  private toggleInputExpand() {
+    this.inputExpanded = !this.inputExpanded;
+    this.inputEl.toggleClass('gemma4-chat-input-tall', this.inputExpanded);
+    setIcon(this.expandButton, this.inputExpanded ? 'minimize-2' : 'maximize-2');
+    if (this.inputExpanded) {
+      this.inputEl.style.height = '';
+    } else {
+      this.autoGrowInput();
+    }
+    this.inputEl.focus();
+  }
 
   constructor(leaf: WorkspaceLeaf, plugin: LiteRtSpikePlugin) {
     super(leaf);
@@ -73,7 +95,9 @@ export class ChatView extends ItemView {
     // Rendered as shadcn-style pills on one aligned row with the context chip.
     const controls = header.createDiv({ cls: 'gemma4-chat-header-controls' });
     const modeRow = controls.createDiv({ cls: 'gemma4-chat-mode-row' });
-    const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Note' });
+    // "This note", not "Note": users repeatedly read "Note" as "search my
+    // notes" and were confused when it only saw the open file.
+    const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'This note' });
     const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
     this.modeButtons = { note: noteBtn, wiki: wikiBtn };
     noteBtn.addEventListener('click', () => this.setMode('note'));
@@ -103,6 +127,18 @@ export class ChatView extends ItemView {
       attr: { placeholder: 'Ask about this note… (Enter to send)', rows: '2' },
     });
     const buttonRow = inputWrap.createDiv({ cls: 'gemma4-chat-button-row' });
+
+    // Expand toggle: square outline button that switches the input between
+    // auto-grow and a fixed tall editor with its own scrollbar.
+    this.expandButton = buttonRow.createEl('button', {
+      cls: 'gemma4-chat-expand',
+      attr: { 'aria-label': 'Expand input' },
+    });
+    setIcon(this.expandButton, 'maximize-2');
+    this.expandButton.addEventListener('click', () => this.toggleInputExpand());
+
+    this.inputEl.addEventListener('input', () => this.autoGrowInput());
+
     this.stopButton = buttonRow.createEl('button', { cls: 'gemma4-chat-stop' });
     setIcon(this.stopButton, 'square');
     this.stopButton.createSpan({ text: 'Stop' });
@@ -216,6 +252,7 @@ export class ChatView extends ItemView {
     const question = this.inputEl.value.trim();
     if (!question) return;
     this.inputEl.value = '';
+    this.autoGrowInput();
     this.lastQuestion = question;
     this.appendUserMessage(question);
     await this.runGeneration(question);
