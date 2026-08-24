@@ -114,6 +114,27 @@ export default class LiteRtSpikePlugin extends Plugin {
   private serverBaseUrl: string | null = null;
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
+  private statusNotice: Notice | null = null;
+
+  // One shared status Notice for the whole plugin: later messages update
+  // the same toast instead of stacking a new one per operation — repeated
+  // ingests were piling up popups.
+  private status(text: string) {
+    if (this.statusNotice) {
+      this.statusNotice.setMessage(text);
+    } else {
+      this.statusNotice = new Notice(text, 0);
+    }
+  }
+
+  private statusEnd(text?: string, timeoutMs = 0) {
+    const n = this.statusNotice;
+    this.statusNotice = null;
+    if (!n) return;
+    if (text) n.setMessage(text);
+    if (timeoutMs > 0) setTimeout(() => n.hide(), timeoutMs);
+    else n.hide();
+  }
 
   async onload() {
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
@@ -149,10 +170,12 @@ export default class LiteRtSpikePlugin extends Plugin {
           return;
         }
 
-        const notice = new Notice('Ingesting: loading model…', 0);
+        this.status(`Ingesting "${file.basename}"…`);
         try {
-          const extraction = await this.extractNoteMetadata(content, (t) => notice.setMessage(t));
-          notice.hide();
+          const extraction = await this.extractNoteMetadata(content, (t) =>
+            this.status(`Ingesting "${file.basename}" — ${t}`)
+          );
+          this.statusEnd();
 
           const pagePath = wikiPagePath(file.basename);
           const pageContent = buildWikiPage(file.basename, file.path, extraction);
@@ -164,13 +187,14 @@ export default class LiteRtSpikePlugin extends Plugin {
               await writeWikiPage(this.app.vault, pagePath, pageContent);
               await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
               await appendLog(this.app.vault, 'ingest', file.basename);
-              new Notice(`Wiki page written: ${pagePath}`);
+              this.status(`Wiki page written: ${pagePath}`);
+              this.statusEnd(undefined, 2500);
             })();
           }).open();
         } catch (err) {
           console.error('[gemma4-litert-wiki] ingest failed', err);
-          notice.setMessage(`Ingest FAILED — ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 10000);
+          this.status(`Ingest FAILED — ${err instanceof Error ? err.message : String(err)}`);
+          this.statusEnd(undefined, 8000);
         }
       },
     });
