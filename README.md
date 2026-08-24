@@ -1,8 +1,43 @@
-# 🧠 Gemma 4 LiteRT Wiki for Obsidian
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" alt="Gemma Wiki logo" width="96" height="96">
+  </picture>
+</p>
+
+<h1 align="center">Gemma Wiki</h1>
+
+<p align="center"><em>A Karpathy-pattern LLM wiki for Obsidian, powered by Gemma 4 running entirely inside Obsidian via LiteRT-LM + WebGPU.</em></p>
 
 A local-first Obsidian plugin built around a single idea: **run the LLM entirely inside Obsidian itself** — no Ollama, no LM Studio, no API key, no background server, no network access after the one-time model download. The model runs in Obsidian's own Electron renderer via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU.
 
 > **Status: working MVP.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `wiki/` layer with cross-links, an `index.md` catalog and append-only `log.md`, index-first grounded chat with deterministic source attribution, save-answer-back-to-wiki, a model-free lint report, and canned single-task skills. Not yet in the community plugin store; benchmarks below are from real use.
+
+## ✨ Features at a glance
+
+**The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `wiki/` layer:
+
+- **Ingest** — one strict JSON extraction per note (summary, 3 tags, 3-5 key points, a self-rated confidence written to frontmatter), plus a validated multiple-choice pick of up to 3 related pages from the index catalog. Everything previews in a review modal; nothing is written without approval. Ingested notes get a small badge in the file explorer — pure UI decoration, the note file is untouched.
+- **index.md / log.md** — a one-line-per-page catalog the query path reads first, and an append-only, grep-friendly activity log.
+- **Query (Wiki mode)** — index-first retrieval with stopword filtering; the catalog and recent log always ride along, so meta-questions ("what did I add today?") work; answers are grounded only in retrieved material with honest refusals otherwise.
+- **Save answers back** — every reply has a save-to-wiki action (same review gate), so explorations compound instead of vanishing with the chat.
+- **Relink** — backfills Related cross-links on older pages through one aggregated review modal.
+- **Lint v1** — model-free report of orphan pages, dead index entries, and unindexed pages.
+
+**Chat panel** — shadcn-inspired monochrome, theme-variable driven:
+
+- **Two grounding modes**: *This note* (the open file) and *Wiki* (your ingested pages).
+- **Deterministic Sources row** on every answer — the plugin lists exactly what was used, clickable; citation is never left to the model.
+- **`+` attachments** — fuzzy-pick any notes as removable context pills, in either mode.
+- **⚡ Skills** — canned single-task prompts: quiz, flashcards, gap-finding, recent-activity digest (auto-switches to Wiki mode).
+- **✨ Improve formatting** — the one write action on raw notes, and the most constrained call in the plugin: structure/formatting/typos only, wording and voice preserved, full-result preview before anything is written; works on a selection for long notes.
+- Streaming replies with a typing spinner, stop button, copy/regenerate actions, persistent starter chips, auto-growing + expandable input, clear-chat, hover tooltips everywhere.
+
+**Engineering rules the whole plugin follows**:
+
+- Every model operation is **one structured ask** — no tool loops, no multi-step planning; small local models are unreliable at chaining and reliable at filling one schema.
+- Every write goes through a **preview-approve gate**. Raw notes are modified by exactly one feature (Improve), always previewed.
+- Grounded-or-refuse: the model answers from provided material or says it can't — in both modes.
 
 ## 💬 Chat with your notes — entirely offline
 
