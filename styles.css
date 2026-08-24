@@ -643,3 +643,86 @@
 .gemma4-relink-page {
   font-weight: 600;
 }
+
+/* ---------- Attached-context pills ---------- */
+
+.gemma4-chat-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gemma4-chat-context-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 0 4px 0 9px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  background: var(--background-secondary);
+}
+
+.gemma4-chat-context-pill-icon {
+  display: flex;
+  color: var(--text-muted);
+}
+
+.gemma4-chat-context-pill-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
+.gemma4-chat .gemma4-chat-context-pill-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-chat-context-pill-x:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-chat .gemma4-chat-context-pill-x svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* "+" attach button, same square-outline family as expand. */
+.gemma4-chat .gemma4-chat-attach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-chat-attach:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-chat .gemma4-chat-attach svg {
+  width: 14px;
+  height: 14px;
+}

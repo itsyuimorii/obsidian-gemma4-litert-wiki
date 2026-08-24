@@ -1,4 +1,14 @@
-import { ItemView, MarkdownRenderer, Notice, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
+import {
+  App,
+  FuzzySuggestModal,
+  ItemView,
+  MarkdownRenderer,
+  Notice,
+  setIcon,
+  setTooltip,
+  TFile,
+  WorkspaceLeaf,
+} from 'obsidian';
 import type { Conversation } from '@litert-lm/core';
 import type LiteRtSpikePlugin from './main';
 import {
@@ -30,6 +40,33 @@ import { IngestPreviewModal } from './ingest-modal';
 // buttons, a typing indicator while waiting for the first token, and a
 // stop button during generation.
 
+// Copilot-style "+" context picker: fuzzy-search any markdown note and
+// attach it as grounding for the next question. Selections render as
+// removable pills above the input.
+class NotePickerModal extends FuzzySuggestModal<TFile> {
+  private exclude: Set<string>;
+  private onPick: (f: TFile) => void;
+
+  constructor(app: App, exclude: Set<string>, onPick: (f: TFile) => void) {
+    super(app);
+    this.exclude = exclude;
+    this.onPick = onPick;
+    this.setPlaceholder('Attach a note as context…');
+  }
+
+  getItems(): TFile[] {
+    return this.app.vault.getMarkdownFiles().filter((f) => !this.exclude.has(f.path));
+  }
+
+  getItemText(f: TFile): string {
+    return f.path;
+  }
+
+  onChooseItem(f: TFile): void {
+    this.onPick(f);
+  }
+}
+
 export const VIEW_TYPE_CHAT = 'gemma4-litert-wiki-chat-view';
 
 // Only the read-and-answer-about-one-note path has been benchmarked
@@ -53,6 +90,46 @@ export class ChatView extends ItemView {
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
   private suggestionRow!: HTMLElement;
+  private contextRow!: HTMLElement;
+  private attachedFiles: TFile[] = [];
+
+  private renderContextPills() {
+    this.contextRow.empty();
+    if (!this.attachedFiles.length) {
+      this.contextRow.hide();
+      return;
+    }
+    this.contextRow.show();
+    for (const f of this.attachedFiles) {
+      const pill = this.contextRow.createDiv({ cls: 'gemma4-chat-context-pill' });
+      const ic = pill.createSpan({ cls: 'gemma4-chat-context-pill-icon' });
+      setIcon(ic, 'file-text');
+      pill.createSpan({ text: f.basename });
+      const x = pill.createEl('button', {
+        cls: 'gemma4-chat-context-pill-x',
+        attr: { 'aria-label': 'Remove' },
+      });
+      setIcon(x, 'x');
+      x.addEventListener('click', () => {
+        this.attachedFiles = this.attachedFiles.filter((a) => a !== f);
+        this.renderContextPills();
+      });
+    }
+  }
+
+  private async readAttachments(): Promise<{
+    blocks: string;
+    sources: { title: string; linkPath: string }[];
+  }> {
+    let blocks = '';
+    const sources: { title: string; linkPath: string }[] = [];
+    for (const f of this.attachedFiles) {
+      const content = await this.app.vault.read(f);
+      blocks += `## Attached note: ${f.basename}\n${content.slice(0, 8000)}\n\n`;
+      sources.push({ title: f.basename, linkPath: f.path.replace(/\.md$/, '') });
+    }
+    return { blocks, sources };
+  }
 
   private buildEmptyState() {
     this.emptyStateEl = this.messagesEl.createDiv({ cls: 'gemma4-chat-empty' });
@@ -175,6 +252,8 @@ export class ChatView extends ItemView {
 
     // Input area: persistent suggestion chips + textarea + send/stop buttons.
     const inputWrap = container.createDiv({ cls: 'gemma4-chat-input-wrap' });
+    this.contextRow = inputWrap.createDiv({ cls: 'gemma4-chat-context-row' });
+    this.contextRow.hide();
     this.suggestionRow = inputWrap.createDiv({ cls: 'gemma4-chat-suggestion-row' });
     this.renderSuggestions();
     this.inputEl = inputWrap.createEl('textarea', {
@@ -182,6 +261,22 @@ export class ChatView extends ItemView {
       attr: { placeholder: 'Ask about this note… (Enter to send)', rows: '2' },
     });
     const buttonRow = inputWrap.createDiv({ cls: 'gemma4-chat-button-row' });
+
+    const attachBtn = buttonRow.createEl('button', {
+      cls: 'gemma4-chat-attach',
+      attr: { 'aria-label': 'Add note as context' },
+    });
+    setIcon(attachBtn, 'plus');
+    setTooltip(attachBtn, 'Add note as context');
+    attachBtn.addEventListener('click', () => {
+      const exclude = new Set(this.attachedFiles.map((f) => f.path));
+      const active = this.app.workspace.getActiveFile();
+      if (active) exclude.add(active.path);
+      new NotePickerModal(this.app, exclude, (f) => {
+        this.attachedFiles.push(f);
+        this.renderContextPills();
+      }).open();
+    });
 
     // Expand toggle: square outline button that switches the input between
     // auto-grow and a fixed tall editor with its own scrollbar.
@@ -378,6 +473,7 @@ export class ChatView extends ItemView {
       // I add today?") — pure page retrieval left those as dead ends.
       const catalog = entries.map((e) => `- ${e.title} — ${e.summary}`).join('\n');
       const logTail = await readLogTail(this.app.vault, 12);
+      const attachments = await this.readAttachments();
       return {
         systemPrompt:
           "You answer questions about the user's personal wiki. Use ONLY the material below: " +
@@ -387,34 +483,49 @@ export class ChatView extends ItemView {
           'may use markdown formatting.\n\n' +
           `## Catalog\n${catalog}\n\n` +
           (logTail ? `## Recent activity log\n${logTail}\n\n` : '') +
-          (pages ? `## Relevant pages\n${pages}` : ''),
+          (pages ? `## Relevant pages\n${pages}\n\n` : '') +
+          attachments.blocks,
         sourcePath: 'wiki/index.md',
-        sources: selected.length
-          ? selected.map((e) => ({ title: e.title, linkPath: e.linkPath }))
-          : [{ title: 'Wiki index', linkPath: 'wiki/index' }],
+        sources: [
+          ...attachments.sources,
+          ...(selected.length
+            ? selected.map((e) => ({ title: e.title, linkPath: e.linkPath }))
+            : [{ title: 'Wiki index', linkPath: 'wiki/index' }]),
+        ],
       };
     }
 
     const file = this.app.workspace.getActiveFile();
-    if (!file) {
-      this.appendInfoMessage('Open a note first — Note mode chats about the currently active note.');
-      return null;
-    }
-    const noteContent = await this.app.vault.read(file);
-    if (noteContent.length > MAX_NOTE_CHARS) {
+    const attachments = await this.readAttachments();
+    if (!file && !attachments.blocks) {
       this.appendInfoMessage(
-        `"${file.basename}" is ${noteContent.length} chars, over the ${MAX_NOTE_CHARS} limit for this feature right now. Try a shorter note.`
+        'Open a note first, or attach one with the + button — This-note mode needs something to ground in.'
       );
       return null;
     }
+    let noteBlock = '';
+    const sources: { title: string; linkPath: string }[] = [];
+    if (file) {
+      const noteContent = await this.app.vault.read(file);
+      if (noteContent.length > MAX_NOTE_CHARS) {
+        this.appendInfoMessage(
+          `"${file.basename}" is ${noteContent.length} chars, over the ${MAX_NOTE_CHARS} limit for this feature right now. Try a shorter note.`
+        );
+        return null;
+      }
+      noteBlock = `## Open note: ${file.basename}\n${noteContent}\n\n`;
+      sources.push({ title: file.basename, linkPath: file.path.replace(/\.md$/, '') });
+    }
+    sources.push(...attachments.sources);
     return {
       systemPrompt:
-        `Answer the user's question using ONLY the note content below, titled "${file.basename}". ` +
-        'If the answer is not in the note, say so plainly instead of guessing or using outside ' +
-        'knowledge. Be concise. You may use markdown formatting.\n\n---\n' +
-        noteContent,
-      sourcePath: file.path,
-      sources: [{ title: file.basename, linkPath: file.path.replace(/\.md$/, '') }],
+        "Answer the user's question using ONLY the notes below. If the answer is not in them, " +
+        'say so plainly instead of guessing or using outside knowledge. Be concise. You may use ' +
+        'markdown formatting.\n\n' +
+        noteBlock +
+        attachments.blocks,
+      sourcePath: file?.path ?? 'wiki/index.md',
+      sources,
     };
   }
 
