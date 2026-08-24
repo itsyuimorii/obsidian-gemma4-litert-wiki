@@ -748,3 +748,10 @@
   width: 14px;
   height: 14px;
 }
+
+/* Write-op chip: same pill, hairline emphasis so "this edits your note"
+   reads differently from ask-only chips. */
+.gemma4-chat .gemma4-chat-suggestion-write {
+  border-style: dashed;
+  color: var(--text-normal);
+}
