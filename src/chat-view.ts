@@ -152,25 +152,37 @@ export class ChatView extends ItemView {
   private renderSuggestions() {
     if (!this.suggestionRow) return;
     this.suggestionRow.empty();
-    if (this.mode !== 'note') {
-      this.suggestionRow.hide();
-      return;
-    }
     this.suggestionRow.show();
-    // Read ops answer in the thread; the Improve write op routes straight
-    // to the plugin's preview-gated editor — it never enters retrieval,
-    // which is what mis-routed action-style inputs before.
+    // Short labels; the full question lives in the prompt. Chips swap per
+    // mode instead of hiding — wiki mode gets prompts that are reliable
+    // against catalog+log grounding. The Improve write op routes straight
+    // to the preview-gated editor and never enters retrieval.
     const ask = (q: string) => {
       this.inputEl.value = q;
       void this.handleSend();
     };
-    const items: { label: string; run: () => void; write?: boolean }[] = [
-      { label: 'Summarize this note', run: () => ask('Summarize this note') },
-      { label: 'What are the key points?', run: () => ask('What are the key points?') },
-      // Text-only like the read chips: the dashed border and tooltip
-      // already mark it as a write action; mixed emoji read as clutter.
-      { label: 'Improve formatting', write: true, run: () => void this.plugin.improveActiveNote() },
-    ];
+    const items: { label: string; run: () => void; write?: boolean }[] =
+      this.mode === 'note'
+        ? [
+            { label: 'Summarize', run: () => ask('Summarize this note') },
+            { label: 'Key points', run: () => ask('What are the key points?') },
+            { label: 'Formatting', write: true, run: () => void this.plugin.improveActiveNote() },
+          ]
+        : [
+            {
+              label: "What's in my wiki?",
+              run: () => ask('What is in my wiki? Give a short overview grouped by topic.'),
+            },
+            {
+              label: 'Added recently',
+              run: () => ask('What did I add to the wiki recently, based on the activity log?'),
+            },
+            {
+              label: 'Quiz me',
+              run: () =>
+                ask('Create 5 practice questions from my wiki material. Put the answer in bold below each question.'),
+            },
+          ];
     for (const item of items) {
       const chip = this.suggestionRow.createEl('button', {
         cls: item.write ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
