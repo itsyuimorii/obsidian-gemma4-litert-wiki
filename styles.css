@@ -193,6 +193,28 @@
   margin-top: 0;
 }
 
+/* Keep rendered markdown monochrome: community themes color strong/em/
+   inline code with their accent, which clashes with the panel design. */
+.gemma4-chat-markdown strong,
+.gemma4-chat-markdown b,
+.gemma4-chat-markdown em {
+  color: var(--text-normal);
+}
+
+.gemma4-chat-markdown code {
+  color: var(--text-normal);
+  background: var(--background-secondary);
+  font-size: 0.85em;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.gemma4-chat-markdown ol,
+.gemma4-chat-markdown ul {
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+
 .gemma4-chat-markdown p:last-child {
   margin-bottom: 0;
 }

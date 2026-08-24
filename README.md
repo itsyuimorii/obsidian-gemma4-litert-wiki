@@ -2,13 +2,16 @@
 
 A local-first Obsidian plugin built around a single idea: **run the LLM entirely inside Obsidian itself** — no Ollama, no LM Studio, no API key, no background server, no network access after the one-time model download. The model runs in Obsidian's own Electron renderer via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU.
 
-> ⚠️ **Status: early-stage technical validation, not a finished plugin.** The local-inference engine (model loading, generation, streaming, benchmarking) is built and validated with real numbers below, along with a first real feature — chat with the currently open note. The full wiki workflow — ingest / query-across-your-vault / lint, in the spirit of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — is designed but not yet implemented. See [Roadmap](#-roadmap).
+> **Status: working MVP.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `wiki/` layer with cross-links, an `index.md` catalog and append-only `log.md`, index-first grounded chat with deterministic source attribution, save-answer-back-to-wiki, a model-free lint report, and canned single-task skills. Not yet in the community plugin store; benchmarks below are from real use.
 
 ## 💬 Chat with your notes — entirely offline
 
-Open any note, click the message-circle icon in the ribbon (or run **"Chat with active note (local Gemma)"**), and ask questions about it. The answer streams in from a model running inside Obsidian's own process — no cloud call, no background app, and it works the moment you open the plugin, not after you've built up a wiki. The answer is grounded strictly in that note's content; if the answer isn't in the note, the model is instructed to say so rather than guess.
+Click the message-circle ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
 
-This is a narrower stand-in for the eventual **Query** feature described in the [Roadmap](#-roadmap): today it reads the one note you have open, rather than selecting from an ingested `index.md`. The UI shell doesn't change when that lands — only where the context comes from.
+- **This note** — answers strictly from the currently open note.
+- **Wiki** — the Karpathy Query path: reads the `index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
+
+Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), honest refusals when the material doesn't contain the answer, and per-message **copy / regenerate / save-to-wiki** actions. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (quiz, flashcards, gap-finding, recent-activity digest) against the current grounding.
 
 ## 📑 Contents
 
@@ -51,12 +54,13 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 
 ## ⌨️ Current commands
 
-These are developer/validation commands, not polished end-user features yet:
-
 | Command | What it does |
 |---|---|
-| **Chat with active note (local Gemma)** | The one polished-ish feature so far — opens a side panel and answers questions grounded in the currently open note. See [above](#-chat-with-your-notes--entirely-offline). |
-| **LiteRT spike: check WebGPU** | Confirms a usable WebGPU adapter is available. |
+| **Chat with active note (local Gemma)** | Opens the chat panel — This-note / Wiki modes, attachments, skills, save-to-wiki. See [above](#-chat-with-your-notes--entirely-offline). |
+| **Ingest active note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3-5 key points, confidence) plus a related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a small badge in the file explorer. |
+| **Relink wiki pages (fill missing Related sections)** | Backfills cross-links on pages ingested before related-links existed, through one aggregated review modal. |
+| **Lint wiki (orphans and index health)** | Model-free report: orphan pages, index entries pointing at missing files, pages missing from the index. |
+| **LiteRT spike: check WebGPU** | Debug: confirms a usable WebGPU adapter is available. |
 | **LiteRT spike: load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without downloading the model — isolates runtime issues from model issues. |
 | **LiteRT spike: download Gemma 4 E4B model (one-time, ~3GB)** | Downloads and caches the model; shows live progress. |
 | **LiteRT spike: fix grammar of selection** | Runs a real generation on the selected text and replaces it with a grammar-corrected version, logging prefill/decode speed and time-to-first-token to the console. |
@@ -91,13 +95,15 @@ All numbers are from `Conversation.getBenchmarkInfo()` — real LiteRT-LM instru
 
 ## 🗺️ Roadmap
 
-The destination is a Karpathy-pattern LLM wiki — raw notes stay read-only, the plugin maintains a separate `wiki/` layer with cross-linked entity/concept pages, an `index.md` catalog, and an append-only `log.md` — scoped deliberately to what a small on-device model can carry reliably:
+Implemented — the Karpathy core loop, scoped deliberately to what a small on-device model has been validated to carry:
 
-- **Ingest**: single-note-at-a-time entity/tag/link suggestions, shown as a diff for approval before anything is written — never auto-applied.
-- **Query**: reads `index.md` to select a handful of relevant pages, not the whole vault, and answers grounded only in what's been ingested — with cited `[[wiki-links]]`, not open-ended chat.
-- **Lint**: reports orphan pages and contradictions; does **not** attempt automated multi-step fixes — that class of task hasn't been validated for a model this size and isn't planned until it is.
+- **Ingest** with a review gate (nothing written without approval), single-schema extraction, related-page cross-links picked from the index catalog, and a confidence rating in page frontmatter.
+- **Query** via index-first retrieval with stopword filtering, catalog + activity log always in context, deterministic source attribution, and save-answer-back-to-wiki so explorations compound.
+- **Lint v1**, model-free: orphans and index health.
 
-Deliberately out of scope for now: a multi-provider abstraction layer, PDF/image OCR, and any retrieval scheme more complex than "read the index, then read the pages it points to."
+Next: user-defined skills (custom prompt templates), model-assisted contradiction candidates in lint (flag pairs for human judgment, never auto-fix), an ingest pre-filter gate (content-hash dedup), and a low-confidence/stale review board.
+
+Deliberately out of scope: a multi-provider abstraction layer, image input (the LiteRT-LM web runtime does not support it yet), PDF OCR, and any retrieval scheme more complex than "read the index, then read the pages it points to" — field reports put the flat-index breaking point around ~77 pages, far above this wiki's current size; that decision gets revisited there, not before.
 
 ## 🔒 Privacy
 

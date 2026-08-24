@@ -288,7 +288,7 @@ export class ChatView extends ItemView {
     });
     setIcon(skillsBtn, 'zap');
     setTooltip(skillsBtn, 'Run a skill');
-    const SKILLS: { label: string; icon: string; prompt: string }[] = [
+    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki' }[] = [
       {
         label: 'Quiz me',
         icon: 'graduation-cap',
@@ -313,6 +313,10 @@ export class ChatView extends ItemView {
       {
         label: 'Digest recent wiki activity',
         icon: 'history',
+        // Needs the catalog + log, which only Wiki mode carries — running
+        // it in This-note mode produced "I do not have access to an
+        // activity log". The skill switches mode itself.
+        mode: 'wiki',
         prompt:
           'Based on the activity log and catalog, summarize what was added to the wiki recently, ' +
           'grouped by topic.',
@@ -326,6 +330,7 @@ export class ChatView extends ItemView {
             .setTitle(skill.label)
             .setIcon(skill.icon)
             .onClick(() => {
+              if (skill.mode && skill.mode !== this.mode) this.setMode(skill.mode);
               this.inputEl.value = skill.prompt;
               void this.handleSend();
             })
