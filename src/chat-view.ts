@@ -70,14 +70,16 @@ export class ChatView extends ItemView {
 
     // Mode toggle: "Note" chats about the open note; "Wiki" retrieves
     // from index.md + ingested pages (the real Karpathy Query path).
-    const modeRow = header.createDiv({ cls: 'gemma4-chat-mode-row' });
+    // Rendered as shadcn-style pills on one aligned row with the context chip.
+    const controls = header.createDiv({ cls: 'gemma4-chat-header-controls' });
+    const modeRow = controls.createDiv({ cls: 'gemma4-chat-mode-row' });
     const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Note' });
     const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
     this.modeButtons = { note: noteBtn, wiki: wikiBtn };
     noteBtn.addEventListener('click', () => this.setMode('note'));
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
 
-    this.noteChipEl = header.createDiv({ cls: 'gemma4-chat-note-chip' });
+    this.noteChipEl = controls.createDiv({ cls: 'gemma4-chat-note-chip' });
     this.setMode('note');
 
     // Message list with an empty-state hint shown until the first send.
@@ -165,6 +167,16 @@ export class ChatView extends ItemView {
     return { body, row };
   }
 
+  // Failures render inside the thread rather than as a floating Notice —
+  // otherwise the user's question bubble is left dangling with no visible
+  // response, which read as "the model can't answer".
+  private appendInfoMessage(text: string) {
+    this.emptyStateEl.hide();
+    const row = this.messagesEl.createDiv({ cls: 'gemma4-chat-row gemma4-chat-row-assistant' });
+    row.createDiv({ cls: 'gemma4-chat-info', text });
+    this.scrollToBottom();
+  }
+
   private showTypingIndicator(parent: HTMLElement): HTMLElement {
     // A single thin spinner ring, shadcn-style — quieter than bouncing dots.
     return parent.createDiv({ cls: 'gemma4-chat-spinner' });
@@ -215,39 +227,43 @@ export class ChatView extends ItemView {
   // guess from the model's own knowledge.
   private async buildContext(
     question: string
-  ): Promise<{ systemPrompt: string; sourcePath: string } | null> {
+  ): Promise<{ systemPrompt: string; sourcePath: string; sources: { title: string; linkPath: string }[] } | null> {
     if (this.mode === 'wiki') {
       const entries = await readIndexEntries(this.app.vault);
       if (!entries.length) {
-        new Notice('Your wiki is empty — run "Ingest active note into wiki" on a few notes first.', 8000);
+        this.appendInfoMessage(
+          'Your wiki is empty — run "Ingest active note into wiki" on a few notes first, then ask again.'
+        );
         return null;
       }
       const selected = scoreEntries(question, entries);
       if (!selected.length) {
-        new Notice('No wiki page matches that question. Try different wording, or ingest more notes.', 8000);
+        this.appendInfoMessage(
+          'No ingested wiki page matches that question. Try different wording, or ingest the relevant note first.'
+        );
         return null;
       }
       const pages = await loadPages(this.app.vault, selected, MAX_NOTE_CHARS);
       return {
         systemPrompt:
-          "Answer the user's question using ONLY the wiki pages below. Cite the pages you used " +
-          'with [[wikilinks]] using their exact titles. If the answer is not in these pages, say so ' +
-          'plainly instead of guessing. Be concise. You may use markdown formatting.\n\n---\n' +
+          "Answer the user's question using ONLY the wiki pages below. If the answer is not in " +
+          'these pages, say so plainly instead of guessing. Be concise. You may use markdown ' +
+          'formatting.\n\n---\n' +
           pages,
         sourcePath: 'wiki/index.md',
+        sources: selected.map((e) => ({ title: e.title, linkPath: e.linkPath })),
       };
     }
 
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new Notice('Open a note first — Note mode chats about the currently active note.');
+      this.appendInfoMessage('Open a note first — Note mode chats about the currently active note.');
       return null;
     }
     const noteContent = await this.app.vault.read(file);
     if (noteContent.length > MAX_NOTE_CHARS) {
-      new Notice(
-        `"${file.basename}" is ${noteContent.length} chars, over the ${MAX_NOTE_CHARS} limit for this feature right now. Try a shorter note.`,
-        8000
+      this.appendInfoMessage(
+        `"${file.basename}" is ${noteContent.length} chars, over the ${MAX_NOTE_CHARS} limit for this feature right now. Try a shorter note.`
       );
       return null;
     }
@@ -258,6 +274,7 @@ export class ChatView extends ItemView {
         'knowledge. Be concise. You may use markdown formatting.\n\n---\n' +
         noteContent,
       sourcePath: file.path,
+      sources: [{ title: file.basename, linkPath: file.path.replace(/\.md$/, '') }],
     };
   }
 
@@ -324,6 +341,19 @@ export class ChatView extends ItemView {
       streamTextEl.remove();
       const rendered = body.createDiv({ cls: 'gemma4-chat-markdown' });
       await MarkdownRenderer.render(this.app, answer, rendered, context.sourcePath, this);
+
+      // Deterministic source attribution: list exactly the notes/pages the
+      // answer was grounded in, as clickable links — not left to the model.
+      const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
+      sourcesRow.createSpan({ cls: 'gemma4-chat-sources-label', text: 'Sources' });
+      for (const src of context.sources) {
+        const link = sourcesRow.createEl('a', { cls: 'gemma4-chat-source-link', text: src.title });
+        link.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          void this.app.workspace.openLinkText(src.linkPath, '', false);
+        });
+      }
+
       this.addAssistantActions(row, () => answer);
       this.scrollToBottom();
     } catch (err) {

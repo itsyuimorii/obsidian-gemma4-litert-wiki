@@ -54,25 +54,35 @@
   line-height: 1.4;
 }
 
-/* Segmented tabs, shadcn Tabs-style: muted track, active segment lifted
-   onto the primary background with a hairline border. */
+/* Single aligned row: mode pills + context chip share one baseline. */
+.gemma4-chat-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* shadcn pill buttons: rounded-full, active = inverted foreground fill,
+   inactive = hairline outline. Fixed equal height so nothing misaligns. */
 .gemma4-chat-mode-row {
   display: inline-flex;
-  gap: 2px;
-  margin-bottom: 8px;
-  background: var(--background-secondary);
-  border-radius: 7px;
-  padding: 2px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .gemma4-chat .gemma4-chat-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
   background: transparent;
-  border: none;
+  border: 1px solid var(--background-modifier-border);
   box-shadow: none;
-  border-radius: 5px;
-  padding: 3px 14px;
+  border-radius: 999px;
+  padding: 0 14px;
   font-size: var(--font-ui-smaller);
   font-weight: 500;
+  line-height: 1;
   color: var(--text-muted);
   cursor: pointer;
   transition: none;
@@ -80,23 +90,26 @@
 
 .gemma4-chat .gemma4-chat-mode-btn:hover {
   color: var(--text-normal);
+  background: var(--background-modifier-hover);
 }
 
 .gemma4-chat .gemma4-chat-mode-btn.gemma4-chat-mode-active {
-  background: var(--background-primary);
-  color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border);
+  background: var(--text-normal);
+  color: var(--background-primary);
+  border-color: var(--text-normal);
 }
 
 .gemma4-chat .gemma4-chat-mode-btn.gemma4-chat-mode-active:hover {
-  background: var(--background-primary);
+  background: var(--text-normal);
+  color: var(--background-primary);
 }
 
 .gemma4-chat-note-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   overflow: hidden;
@@ -186,6 +199,51 @@
 .gemma4-chat-error {
   color: var(--text-error);
   font-size: var(--font-ui-small);
+}
+
+/* In-thread info message (empty wiki, no match, etc.) */
+.gemma4-chat-info {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--background-modifier-border);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Deterministic source links under each answer */
+.gemma4-chat-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.gemma4-chat-sources-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.gemma4-chat-source-link {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 1px 9px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.gemma4-chat-source-link:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  text-decoration: none;
 }
 
 /* ---------- Spinner (replaces bouncing dots) ---------- */
