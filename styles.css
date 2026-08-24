@@ -393,16 +393,76 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px 14px 14px;
+}
+
+/* Concept D: one bordered composer card holds pills, textarea, toolbar. */
+.gemma4-composer {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-primary);
+}
+
+.gemma4-composer .gemma4-chat-context-row {
+  padding: 10px 10px 0;
+}
+
+.gemma4-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 8px;
   border-top: 1px solid var(--background-modifier-border);
+}
+
+.gemma4-composer-bar .gemma4-chat-mode-row {
+  margin-right: 6px;
+}
+
+.gemma4-composer-bar .gemma4-chat-mode-btn {
+  height: 22px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* Tools inside the bar go quiet: no outline, hover background only. */
+.gemma4-composer-bar .gemma4-chat-attach,
+.gemma4-composer-bar .gemma4-chat-expand {
+  width: 26px;
+  height: 26px;
+  border: none;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.gemma4-composer-bar .gemma4-chat-attach:hover,
+.gemma4-composer-bar .gemma4-chat-expand:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+/* Send hugs the right edge; stop sits just left of it. */
+.gemma4-composer-bar .gemma4-chat-send {
+  margin-left: auto;
+}
+
+.gemma4-composer-bar .gemma4-chat-stop {
+  margin-left: auto;
+}
+
+.gemma4-composer-bar .gemma4-chat-stop + .gemma4-chat-send {
+  margin-left: 0;
 }
 
 .gemma4-chat-input {
   width: 100%;
   resize: none;
-  border-radius: 8px;
+  border-radius: 10px 10px 0 0;
   background: transparent;
-  border: 1px solid var(--background-modifier-border);
-  padding: 8px 11px;
+  border: none;
+  box-shadow: none;
+  padding: 10px 12px;
   font-size: var(--font-ui-small);
   line-height: 1.45;
   color: var(--text-normal);
@@ -412,10 +472,16 @@
   color: var(--text-faint);
 }
 
-.gemma4-chat-input:focus {
-  border-color: var(--text-muted);
+.gemma4-chat-input:focus,
+.gemma4-chat-input:hover {
+  border: none;
   box-shadow: none;
   outline: none;
+  background: transparent;
+}
+
+.gemma4-composer:focus-within {
+  border-color: var(--text-muted);
 }
 
 .gemma4-chat-button-row {
