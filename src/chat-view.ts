@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, Notice, setIcon, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, Notice, setIcon, setTooltip, WorkspaceLeaf } from 'obsidian';
 import type { Conversation } from '@litert-lm/core';
 import type LiteRtSpikePlugin from './main';
 import {
@@ -106,6 +106,7 @@ export class ChatView extends ItemView {
     this.inputExpanded = !this.inputExpanded;
     this.inputEl.toggleClass('gemma4-chat-input-tall', this.inputExpanded);
     setIcon(this.expandButton, this.inputExpanded ? 'minimize-2' : 'maximize-2');
+    setTooltip(this.expandButton, this.inputExpanded ? 'Shrink input' : 'Expand input');
     if (this.inputExpanded) {
       this.inputEl.style.height = '';
     } else {
@@ -148,6 +149,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Clear chat' },
     });
     setIcon(clearBtn, 'rotate-ccw');
+    setTooltip(clearBtn, 'Clear chat');
     clearBtn.addEventListener('click', () => this.clearChat());
 
     // Mode toggle: "Note" chats about the open note; "Wiki" retrieves
@@ -187,6 +189,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Expand input' },
     });
     setIcon(this.expandButton, 'maximize-2');
+    setTooltip(this.expandButton, 'Expand input');
     this.expandButton.addEventListener('click', () => this.toggleInputExpand());
 
     this.inputEl.addEventListener('input', () => this.autoGrowInput());
@@ -199,6 +202,7 @@ export class ChatView extends ItemView {
     // monochrome design (a pink theme accent turned the button pink).
     this.sendButton = buttonRow.createEl('button', { cls: 'gemma4-chat-send' });
     setIcon(this.sendButton, 'arrow-up');
+    setTooltip(this.sendButton, 'Send (Enter)');
 
     this.sendButton.addEventListener('click', () => void this.handleSend());
     this.stopButton.addEventListener('click', () => this.activeConversation?.cancel());
@@ -289,6 +293,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Copy answer' },
     });
     setIcon(copyBtn, 'copy');
+    setTooltip(copyBtn, 'Copy answer');
     copyBtn.addEventListener('click', () => {
       void navigator.clipboard.writeText(getAnswer());
       new Notice('Copied.');
@@ -299,6 +304,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Regenerate' },
     });
     setIcon(regenBtn, 'refresh-cw');
+    setTooltip(regenBtn, 'Regenerate answer');
     regenBtn.addEventListener('click', () => {
       if (this.busy || !this.lastQuestion) return;
       row.remove();
@@ -313,6 +319,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Save answer to wiki' },
     });
     setIcon(saveBtn, 'file-plus-2');
+    setTooltip(saveBtn, 'Save answer to wiki');
     saveBtn.addEventListener('click', () => {
       const answer = getAnswer();
       const pagePath = answerPagePath(question);
