@@ -1,9 +1,10 @@
 {
-  "id": "litert-spike",
-  "name": "LiteRT WebGPU Spike",
+  "id": "gemma4-litert-wiki",
+  "name": "Gemma 4 LiteRT Wiki",
   "version": "0.0.1",
   "minAppVersion": "1.11.4",
-  "description": "Throwaway spike: verify LiteRT-LM WASM/WebGPU works inside Obsidian's Electron renderer, before wiring it into a real plugin.",
-  "author": "spike",
+  "description": "Local-first LLM wiki plugin. Runs Gemma 4 E4B entirely inside Obsidian via LiteRT-LM and WebGPU — no Ollama, no API key, no server. Currently a validated technical proof-of-concept; wiki features (ingest/query/lint) are on the roadmap.",
+  "author": "itsyuimorii",
+  "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
 }
