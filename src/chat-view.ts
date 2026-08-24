@@ -1,6 +1,7 @@
 import { ItemView, MarkdownRenderer, Notice, setIcon, WorkspaceLeaf } from 'obsidian';
 import type { Conversation } from '@litert-lm/core';
 import type LiteRtSpikePlugin from './main';
+import { loadPages, readIndexEntries, scoreEntries } from './wiki-store';
 
 // Chat with the currently active note, entirely local. This is the
 // "narrow" version of Query from the wiki roadmap — grounded in one open
@@ -34,6 +35,8 @@ export class ChatView extends ItemView {
   private busy = false;
   private lastQuestion: string | null = null;
   private activeConversation: Conversation | null = null;
+  private mode: 'note' | 'wiki' = 'note';
+  private modeButtons: { note: HTMLElement; wiki: HTMLElement } | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: LiteRtSpikePlugin) {
     super(leaf);
@@ -63,8 +66,18 @@ export class ChatView extends ItemView {
     const titleIcon = titleRow.createSpan({ cls: 'gemma4-chat-title-icon' });
     setIcon(titleIcon, 'sparkles');
     titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma · local' });
+
+    // Mode toggle: "Note" chats about the open note; "Wiki" retrieves
+    // from index.md + ingested pages (the real Karpathy Query path).
+    const modeRow = header.createDiv({ cls: 'gemma4-chat-mode-row' });
+    const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Note' });
+    const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
+    this.modeButtons = { note: noteBtn, wiki: wikiBtn };
+    noteBtn.addEventListener('click', () => this.setMode('note'));
+    wikiBtn.addEventListener('click', () => this.setMode('wiki'));
+
     this.noteChipEl = header.createDiv({ cls: 'gemma4-chat-note-chip' });
-    this.updateNoteChip();
+    this.setMode('note');
 
     // Message list with an empty-state hint shown until the first send.
     this.messagesEl = container.createDiv({ cls: 'gemma4-chat-messages' });
@@ -106,10 +119,27 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateNoteChip()));
   }
 
+  private setMode(mode: 'note' | 'wiki') {
+    this.mode = mode;
+    this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
+    this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
+    this.inputEl?.setAttribute(
+      'placeholder',
+      mode === 'note' ? 'Ask about this note… (Enter to send)' : 'Ask your wiki… (Enter to send)'
+    );
+    this.updateNoteChip();
+  }
+
   private updateNoteChip() {
-    const file = this.app.workspace.getActiveFile();
     this.noteChipEl.empty();
     const icon = this.noteChipEl.createSpan({ cls: 'gemma4-chat-note-chip-icon' });
+    if (this.mode === 'wiki') {
+      setIcon(icon, 'library');
+      this.noteChipEl.createSpan({ text: 'Wiki (ingested pages)' });
+      this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
+      return;
+    }
+    const file = this.app.workspace.getActiveFile();
     setIcon(icon, 'file-text');
     this.noteChipEl.createSpan({
       text: file ? file.basename : 'No note open',
@@ -177,21 +207,61 @@ export class ChatView extends ItemView {
     await this.runGeneration(question);
   }
 
-  private async runGeneration(question: string) {
-    const file = this.app.workspace.getActiveFile();
-    if (!file) {
-      new Notice('Open a note first — this chats about the currently active note.');
-      return;
+  // Builds the grounding context for one question, or returns null with a
+  // user-facing Notice when there is nothing to ground in. Wiki mode is
+  // honest by design: no matching pages means "not in your wiki", not a
+  // guess from the model's own knowledge.
+  private async buildContext(
+    question: string
+  ): Promise<{ systemPrompt: string; sourcePath: string } | null> {
+    if (this.mode === 'wiki') {
+      const entries = await readIndexEntries(this.app.vault);
+      if (!entries.length) {
+        new Notice('Your wiki is empty — run "Ingest active note into wiki" on a few notes first.', 8000);
+        return null;
+      }
+      const selected = scoreEntries(question, entries);
+      if (!selected.length) {
+        new Notice('No wiki page matches that question. Try different wording, or ingest more notes.', 8000);
+        return null;
+      }
+      const pages = await loadPages(this.app.vault, selected, MAX_NOTE_CHARS);
+      return {
+        systemPrompt:
+          "Answer the user's question using ONLY the wiki pages below. Cite the pages you used " +
+          'with [[wikilinks]] using their exact titles. If the answer is not in these pages, say so ' +
+          'plainly instead of guessing. Be concise. You may use markdown formatting.\n\n---\n' +
+          pages,
+        sourcePath: 'wiki/index.md',
+      };
     }
 
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new Notice('Open a note first — Note mode chats about the currently active note.');
+      return null;
+    }
     const noteContent = await this.app.vault.read(file);
     if (noteContent.length > MAX_NOTE_CHARS) {
       new Notice(
         `"${file.basename}" is ${noteContent.length} chars, over the ${MAX_NOTE_CHARS} limit for this feature right now. Try a shorter note.`,
         8000
       );
-      return;
+      return null;
     }
+    return {
+      systemPrompt:
+        `Answer the user's question using ONLY the note content below, titled "${file.basename}". ` +
+        'If the answer is not in the note, say so plainly instead of guessing or using outside ' +
+        'knowledge. Be concise. You may use markdown formatting.\n\n---\n' +
+        noteContent,
+      sourcePath: file.path,
+    };
+  }
+
+  private async runGeneration(question: string) {
+    const context = await this.buildContext(question);
+    if (!context) return;
 
     this.busy = true;
     this.sendButton.disabled = true;
@@ -210,16 +280,7 @@ export class ChatView extends ItemView {
       const { SamplerType } = await import('@litert-lm/core');
       conversation = await engine.createConversation({
         preface: {
-          messages: [
-            {
-              role: 'system',
-              content:
-                `Answer the user's question using ONLY the note content below, titled "${file.basename}". ` +
-                'If the answer is not in the note, say so plainly instead of guessing or using outside ' +
-                'knowledge. Be concise. You may use markdown formatting.\n\n---\n' +
-                noteContent,
-            },
-          ],
+          messages: [{ role: 'system', content: context.systemPrompt }],
         },
         sessionConfig: {
           samplerParams: { type: SamplerType.GREEDY },
@@ -260,7 +321,7 @@ export class ChatView extends ItemView {
       typing.remove();
       streamTextEl.remove();
       const rendered = body.createDiv({ cls: 'gemma4-chat-markdown' });
-      await MarkdownRenderer.render(this.app, answer, rendered, file.path, this);
+      await MarkdownRenderer.render(this.app, answer, rendered, context.sourcePath, this);
       this.addAssistantActions(row, () => answer);
       this.scrollToBottom();
     } catch (err) {

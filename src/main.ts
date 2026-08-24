@@ -5,6 +5,16 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
+import { IngestPreviewModal } from './ingest-modal';
+import {
+  appendLog,
+  buildWikiPage,
+  ensureWikiScaffold,
+  upsertIndexEntry,
+  wikiPagePath,
+  writeWikiPage,
+  type NoteExtraction,
+} from './wiki-store';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
 // runtime can load inside Obsidian's Electron renderer with zero external
@@ -117,6 +127,51 @@ export default class LiteRtSpikePlugin extends Plugin {
       name: 'Chat with active note (local Gemma)',
       callback: () => {
         void this.activateChatView();
+      },
+    });
+
+    this.addCommand({
+      id: 'litert-ingest-note',
+      name: 'Ingest active note into wiki (local Gemma)',
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice('Open a note first.');
+          return;
+        }
+        const content = await this.app.vault.read(file);
+        if (!content.trim()) {
+          new Notice('Note is empty — nothing to ingest.');
+          return;
+        }
+        if (content.length > 20000) {
+          new Notice(`Note is ${content.length} chars — over the 20000 limit for ingest right now.`, 8000);
+          return;
+        }
+
+        const notice = new Notice('Ingesting: loading model…', 0);
+        try {
+          const extraction = await this.extractNoteMetadata(content, (t) => notice.setMessage(t));
+          notice.hide();
+
+          const pagePath = wikiPagePath(file.basename);
+          const pageContent = buildWikiPage(file.basename, file.path, extraction);
+          const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
+
+          new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
+            void (async () => {
+              await ensureWikiScaffold(this.app.vault);
+              await writeWikiPage(this.app.vault, pagePath, pageContent);
+              await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
+              await appendLog(this.app.vault, 'ingest', file.basename);
+              new Notice(`Wiki page written: ${pagePath}`);
+            })();
+          }).open();
+        } catch (err) {
+          console.error('[gemma4-litert-wiki] ingest failed', err);
+          notice.setMessage(`Ingest FAILED — ${err instanceof Error ? err.message : String(err)}`);
+          setTimeout(() => notice.hide(), 10000);
+        }
       },
     });
 
@@ -432,6 +487,75 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
     }
     return this.wasmLoadPromise;
+  }
+
+  // One strict JSON fill-in per operation — no tool loops, no multi-step
+  // planning. Validated shape, one retry on parse failure. This is the
+  // engineering rule the whole MVP is built on: small local models are
+  // unreliable at chaining steps and reliable at filling one schema.
+  async extractNoteMetadata(
+    noteContent: string,
+    onProgress: (text: string) => void
+  ): Promise<NoteExtraction> {
+    const engine = await this.ensureEngine(onProgress);
+    const { SamplerType } = await import('@litert-lm/core');
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      onProgress(attempt === 1 ? 'Extracting…' : 'Extracting (retry)…');
+      let conversation: import('@litert-lm/core').Conversation | undefined;
+      try {
+        conversation = await engine.createConversation({
+          preface: {
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You extract structured metadata from a note. Respond with ONLY a single JSON object, ' +
+                  'no markdown fences, no explanation: ' +
+                  '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."]}. ' +
+                  'Exactly 3 tags (short lowercase noun phrases). 3 to 5 key_points, each ONE short ' +
+                  'self-contained sentence stating concrete content from the note.',
+              },
+            ],
+          },
+          sessionConfig: {
+            samplerParams: { type: SamplerType.GREEDY },
+            maxOutputTokens: 768,
+          },
+        });
+
+        const message = await conversation.sendMessage(noteContent);
+        let raw = '';
+        const content = message.content;
+        if (typeof content === 'string') raw = content;
+        else if (Array.isArray(content)) {
+          for (const part of content) {
+            if (part.type === 'text' && part.text) raw += part.text;
+          }
+        }
+        const cleaned = raw
+          .trim()
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/```\s*$/i, '')
+          .trim();
+        const parsed = JSON.parse(cleaned) as NoteExtraction;
+        const valid =
+          typeof parsed?.summary === 'string' &&
+          Array.isArray(parsed.tags) &&
+          parsed.tags.length >= 1 &&
+          parsed.tags.every((t) => typeof t === 'string') &&
+          Array.isArray(parsed.key_points) &&
+          parsed.key_points.length >= 1 &&
+          parsed.key_points.every((p) => typeof p === 'string');
+        if (valid) return parsed;
+        throw new Error('Model returned JSON with the wrong shape.');
+      } catch (err) {
+        if (attempt === 2) throw err;
+      } finally {
+        await conversation?.delete().catch(() => {});
+      }
+    }
+    throw new Error('unreachable');
   }
 
   // Not private: ChatView (a separate class, same session) reuses the
