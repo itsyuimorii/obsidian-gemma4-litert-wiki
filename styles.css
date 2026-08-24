@@ -65,7 +65,7 @@
   padding: 2px;
 }
 
-.gemma4-chat-mode-btn {
+.gemma4-chat .gemma4-chat-mode-btn {
   background: transparent;
   border: none;
   box-shadow: none;
@@ -78,17 +78,17 @@
   transition: none;
 }
 
-.gemma4-chat-mode-btn:hover {
+.gemma4-chat .gemma4-chat-mode-btn:hover {
   color: var(--text-normal);
 }
 
-.gemma4-chat-mode-active {
+.gemma4-chat .gemma4-chat-mode-btn.gemma4-chat-mode-active {
   background: var(--background-primary);
   color: var(--text-normal);
   border: 1px solid var(--background-modifier-border);
 }
 
-.gemma4-chat-mode-active:hover {
+.gemma4-chat .gemma4-chat-mode-btn.gemma4-chat-mode-active:hover {
   background: var(--background-primary);
 }
 
@@ -320,7 +320,7 @@
 }
 
 /* Inverted-foreground send button, monochrome like the user bubble. */
-.gemma4-chat-send {
+.gemma4-chat .gemma4-chat-send {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -335,22 +335,22 @@
   cursor: pointer;
 }
 
-.gemma4-chat-send:hover {
+.gemma4-chat .gemma4-chat-send:hover {
   background: var(--text-normal);
   opacity: 0.85;
 }
 
-.gemma4-chat-send:disabled {
+.gemma4-chat .gemma4-chat-send:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-.gemma4-chat-send svg {
+.gemma4-chat .gemma4-chat-send svg {
   width: 15px;
   height: 15px;
 }
 
-.gemma4-chat-stop {
+.gemma4-chat .gemma4-chat-stop {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -365,11 +365,11 @@
   box-shadow: none;
 }
 
-.gemma4-chat-stop:hover {
+.gemma4-chat .gemma4-chat-stop:hover {
   background: var(--background-modifier-hover);
 }
 
-.gemma4-chat-stop svg {
+.gemma4-chat .gemma4-chat-stop svg {
   width: 9px;
   height: 9px;
 }

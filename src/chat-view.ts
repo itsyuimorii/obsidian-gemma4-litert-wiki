@@ -105,7 +105,9 @@ export class ChatView extends ItemView {
     setIcon(this.stopButton, 'square');
     this.stopButton.createSpan({ text: 'Stop' });
     this.stopButton.hide();
-    this.sendButton = buttonRow.createEl('button', { cls: 'gemma4-chat-send mod-cta' });
+    // No mod-cta: it applies the theme's accent color, which defeats the
+    // monochrome design (a pink theme accent turned the button pink).
+    this.sendButton = buttonRow.createEl('button', { cls: 'gemma4-chat-send' });
     setIcon(this.sendButton, 'arrow-up');
 
     this.sendButton.addEventListener('click', () => void this.handleSend());
