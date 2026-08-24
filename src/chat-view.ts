@@ -9,6 +9,7 @@ import {
   getIngestedSourcePaths,
   loadPages,
   readIndexEntries,
+  readLogTail,
   scoreEntries,
   upsertIndexEntry,
   writeWikiPage,
@@ -369,21 +370,28 @@ export class ChatView extends ItemView {
         return null;
       }
       const selected = scoreEntries(question, entries);
-      if (!selected.length) {
-        this.appendInfoMessage(
-          'No ingested wiki page matches that question. Try different wording, or ingest the relevant note first.'
-        );
-        return null;
-      }
-      const pages = await loadPages(this.app.vault, selected, MAX_NOTE_CHARS);
+      const pages = selected.length
+        ? await loadPages(this.app.vault, selected, MAX_NOTE_CHARS)
+        : '';
+      // Catalog + recent log always ride along: they are small, and they
+      // make meta-questions answerable ("what is in my wiki?", "what did
+      // I add today?") — pure page retrieval left those as dead ends.
+      const catalog = entries.map((e) => `- ${e.title} — ${e.summary}`).join('\n');
+      const logTail = await readLogTail(this.app.vault, 12);
       return {
         systemPrompt:
-          "Answer the user's question using ONLY the wiki pages below. If the answer is not in " +
-          'these pages, say so plainly instead of guessing. Be concise. You may use markdown ' +
-          'formatting.\n\n---\n' +
-          pages,
+          "You answer questions about the user's personal wiki. Use ONLY the material below: " +
+          'the catalog (every wiki page with a one-line summary), the recent activity log ' +
+          '(dated ingest/answer entries), and the full text of the most relevant pages. If the ' +
+          'answer is not in this material, say so plainly instead of guessing. Be concise. You ' +
+          'may use markdown formatting.\n\n' +
+          `## Catalog\n${catalog}\n\n` +
+          (logTail ? `## Recent activity log\n${logTail}\n\n` : '') +
+          (pages ? `## Relevant pages\n${pages}` : ''),
         sourcePath: 'wiki/index.md',
-        sources: selected.map((e) => ({ title: e.title, linkPath: e.linkPath })),
+        sources: selected.length
+          ? selected.map((e) => ({ title: e.title, linkPath: e.linkPath }))
+          : [{ title: 'Wiki index', linkPath: 'wiki/index' }],
       };
     }
 

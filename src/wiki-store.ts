@@ -217,3 +217,14 @@ export function getIngestedSourcePaths(app: App): Set<string> {
   }
   return ingested;
 }
+
+// Last N log entries — lets Wiki chat answer meta-questions like "what
+// did I add today?" from the append-only log instead of failing lexical
+// retrieval against page content.
+export async function readLogTail(vault: Vault, count: number): Promise<string> {
+  const file = vault.getAbstractFileByPath(LOG_PATH);
+  if (!(file instanceof TFile)) return '';
+  const content = await vault.read(file);
+  const entries = content.split('\n').filter((l) => l.startsWith('## ['));
+  return entries.slice(-count).join('\n');
+}
