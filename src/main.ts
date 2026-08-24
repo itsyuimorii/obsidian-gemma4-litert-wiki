@@ -216,6 +216,12 @@ export default class LiteRtSpikePlugin extends Plugin {
     });
 
     this.addCommand({
+      id: 'litert-improve-note',
+      name: 'Improve formatting of active note (local Gemma)',
+      callback: () => void this.improveActiveNote(),
+    });
+
+    this.addCommand({
       id: 'litert-relink-wiki',
       name: 'Relink wiki pages (fill missing Related sections)',
       callback: async () => {
@@ -617,6 +623,89 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
     }
     return this.wasmLoadPromise;
+  }
+
+  // The one write operation that touches a raw note — and therefore the
+  // most tightly constrained call in the plugin: structure, formatting,
+  // and typos only, wording and voice preserved, full result shown in the
+  // preview gate before a single byte is written. Input is capped well
+  // under the engine's 4096-token context since input and output are the
+  // same order of size for a rewrite.
+  async improveActiveNote() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new Notice('Open a note first.');
+      return;
+    }
+    const content = await this.app.vault.read(file);
+    if (!content.trim()) {
+      new Notice('Note is empty — nothing to improve.');
+      return;
+    }
+    if (content.length > 5000) {
+      new Notice(
+        `"${file.basename}" is ${content.length} chars — over the 5000 limit for Improve right now ` +
+          '(the rewrite needs room for both input and output in the model context).',
+        8000
+      );
+      return;
+    }
+
+    this.status(`Improving "${file.basename}"…`);
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      const engine = await this.ensureEngine((t) => this.status(`Improving "${file.basename}" — ${t}`));
+      const { SamplerType } = await import('@litert-lm/core');
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a careful copy editor. Improve ONLY the structure and formatting of the ' +
+                "note the user gives you: headings, list formatting, spacing, and obvious typos. " +
+                "PRESERVE the author's wording, voice, language, and every idea — do not add, " +
+                'remove, summarize, or rephrase content. Keep any YAML frontmatter exactly as-is. ' +
+                'Return ONLY the full improved note in markdown, no explanation.',
+            },
+          ],
+        },
+        sessionConfig: {
+          samplerParams: { type: SamplerType.GREEDY },
+          maxOutputTokens: 2048,
+        },
+      });
+      const message = await conversation.sendMessage(content);
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) {
+        for (const part of c) {
+          if (part.type === 'text' && part.text) raw += part.text;
+        }
+      }
+      this.statusEnd();
+      const improved = raw
+        .trim()
+        .replace(/^```(?:markdown|md)?\s*/i, '')
+        .replace(/```\s*$/i, '')
+        .trim();
+      if (!improved) throw new Error('Model returned an empty result.');
+
+      new IngestPreviewModal(this.app, file.path, improved, true, () => {
+        void (async () => {
+          await this.app.vault.modify(file, improved);
+          await appendLog(this.app.vault, 'improve', file.basename);
+          new Notice(`Note updated: ${file.basename}`, 3000);
+        })();
+      }).open();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] improve failed', err);
+      this.status(`Improve FAILED — ${err instanceof Error ? err.message : String(err)}`);
+      this.statusEnd(undefined, 8000);
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
   }
 
   // Second single-schema call in the ingest flow: given the new page's

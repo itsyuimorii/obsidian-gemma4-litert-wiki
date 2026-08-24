@@ -157,12 +157,25 @@ export class ChatView extends ItemView {
       return;
     }
     this.suggestionRow.show();
-    for (const q of ['Summarize this note', 'What are the key points?', 'What questions does this note leave open?']) {
-      const chip = this.suggestionRow.createEl('button', { cls: 'gemma4-chat-suggestion', text: q });
-      chip.addEventListener('click', () => {
-        this.inputEl.value = q;
-        void this.handleSend();
+    // Read ops answer in the thread; the Improve write op routes straight
+    // to the plugin's preview-gated editor — it never enters retrieval,
+    // which is what mis-routed action-style inputs before.
+    const ask = (q: string) => {
+      this.inputEl.value = q;
+      void this.handleSend();
+    };
+    const items: { label: string; run: () => void; write?: boolean }[] = [
+      { label: 'Summarize this note', run: () => ask('Summarize this note') },
+      { label: 'What are the key points?', run: () => ask('What are the key points?') },
+      { label: '\u2728 Improve formatting', write: true, run: () => void this.plugin.improveActiveNote() },
+    ];
+    for (const item of items) {
+      const chip = this.suggestionRow.createEl('button', {
+        cls: item.write ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
+        text: item.label,
       });
+      if (item.write) setTooltip(chip, 'Edits this note — you review before anything is written');
+      chip.addEventListener('click', item.run);
     }
   }
 
