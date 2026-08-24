@@ -15,6 +15,9 @@ export interface NoteExtraction {
   summary: string;
   tags: string[];
   key_points: string[];
+  // Model's own confidence that the extraction faithfully represents the
+  // note — surfaces low-trust pages for review (Dataview-queryable).
+  confidence: 'high' | 'med' | 'low';
 }
 
 export interface IndexEntry {
@@ -53,6 +56,7 @@ export function buildWikiPage(
     `tags:\n${tagsYaml}\n` +
     `source: "${sourcePath}"\n` +
     `created: ${date}\n` +
+    `confidence: ${extraction.confidence}\n` +
     `---\n\n` +
     `# ${sourceBasename}\n\n` +
     `**Summary**: ${extraction.summary}\n\n` +

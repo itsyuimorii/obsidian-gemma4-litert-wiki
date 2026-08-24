@@ -13,6 +13,7 @@ This is a narrower stand-in for the eventual **Query** feature described in the 
 ## 📑 Contents
 
 - [🧠 Gemma 4 LiteRT Wiki for Obsidian](#-gemma-4-litert-wiki-for-obsidian)
+  - [� Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
   - [📑 Contents](#-contents)
   - [🤔 Why this exists](#-why-this-exists)
   - [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
@@ -105,5 +106,4 @@ No backend, no telemetry, no analytics. The only network request this plugin eve
 ## 💖 Credits
 
 - [Andrej Karpathy — LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) for the three-layer (raw / wiki / schema) pattern this project is working toward.
-- [itsyuimorii/skim-recap-chrome-extension](https://github.com/itsyuimorii/skim-recap-chrome-extension) for the original LiteRT-LM + WebGPU + Gemma integration pattern this project ports from a Chrome extension's offscreen document into an Obsidian plugin's own renderer.
 - [litert-community](https://huggingface.co/litert-community) for the web-packaged Gemma 4 E4B checkpoint this plugin loads.

@@ -2,6 +2,7 @@ import {
   App,
   FuzzySuggestModal,
   ItemView,
+  Menu,
   MarkdownRenderer,
   Notice,
   setIcon,
@@ -276,6 +277,61 @@ export class ChatView extends ItemView {
         this.attachedFiles.push(f);
         this.renderContextPills();
       }).open();
+    });
+
+    // Skills: canned single-task prompts run against the current grounding
+    // (mode + attachments). Each is one structured ask, not a tool loop —
+    // the "wiki as input for repeat work" pattern from the field research.
+    const skillsBtn = buttonRow.createEl('button', {
+      cls: 'gemma4-chat-attach',
+      attr: { 'aria-label': 'Run a skill' },
+    });
+    setIcon(skillsBtn, 'zap');
+    setTooltip(skillsBtn, 'Run a skill');
+    const SKILLS: { label: string; icon: string; prompt: string }[] = [
+      {
+        label: 'Quiz me',
+        icon: 'graduation-cap',
+        prompt:
+          'Create 5 practice questions that test understanding of this material. Number each ' +
+          'question and put its answer in bold directly below it.',
+      },
+      {
+        label: 'Make flashcards',
+        icon: 'layers',
+        prompt:
+          'Create 8 flashcards from this material. Format each as **Q:** question then **A:** ' +
+          'answer on the next line, with a blank line between cards.',
+      },
+      {
+        label: 'Find gaps',
+        icon: 'search',
+        prompt:
+          'What important questions does this material raise but not answer? List the gaps and ' +
+          'why each matters.',
+      },
+      {
+        label: 'Digest recent wiki activity',
+        icon: 'history',
+        prompt:
+          'Based on the activity log and catalog, summarize what was added to the wiki recently, ' +
+          'grouped by topic.',
+      },
+    ];
+    skillsBtn.addEventListener('click', (evt) => {
+      const menu = new Menu();
+      for (const skill of SKILLS) {
+        menu.addItem((item) =>
+          item
+            .setTitle(skill.label)
+            .setIcon(skill.icon)
+            .onClick(() => {
+              this.inputEl.value = skill.prompt;
+              void this.handleSend();
+            })
+        );
+      }
+      menu.showAtMouseEvent(evt);
     });
 
     // Expand toggle: square outline button that switches the input between

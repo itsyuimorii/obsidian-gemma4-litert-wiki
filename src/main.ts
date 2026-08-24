@@ -714,9 +714,13 @@ export default class LiteRtSpikePlugin extends Plugin {
                 content:
                   'You extract structured metadata from a note. Respond with ONLY a single JSON object, ' +
                   'no markdown fences, no explanation: ' +
-                  '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."]}. ' +
+                  '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."], ' +
+                  '"confidence": "high"}. ' +
                   'Exactly 3 tags (short lowercase noun phrases). 3 to 5 key_points, each ONE short ' +
-                  'self-contained sentence stating concrete content from the note.',
+                  'self-contained sentence stating concrete content from the note. confidence is ' +
+                  '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
+                  'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
+                  'misread).',
               },
             ],
           },
@@ -749,7 +753,12 @@ export default class LiteRtSpikePlugin extends Plugin {
           Array.isArray(parsed.key_points) &&
           parsed.key_points.length >= 1 &&
           parsed.key_points.every((p) => typeof p === 'string');
-        if (valid) return parsed;
+        if (valid) {
+          // Tolerate a missing/invalid confidence rather than failing the
+          // whole extraction — default to 'med'.
+          if (!['high', 'med', 'low'].includes(parsed.confidence)) parsed.confidence = 'med';
+          return parsed;
+        }
         throw new Error('Model returned JSON with the wrong shape.');
       } catch (err) {
         if (attempt === 2) throw err;
