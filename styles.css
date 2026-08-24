@@ -75,6 +75,10 @@
   align-items: center;
   justify-content: center;
   height: 26px;
+  box-sizing: border-box;
+  margin: 0;
+  line-height: 1;
+  vertical-align: middle;
   background: transparent;
   border: 1px solid var(--background-modifier-border);
   box-shadow: none;
@@ -110,6 +114,8 @@
   gap: 5px;
   min-width: 0;
   overflow: hidden;
+  height: 26px;
+  line-height: 1;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   overflow: hidden;
