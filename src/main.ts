@@ -637,16 +637,25 @@ export default class LiteRtSpikePlugin extends Plugin {
       new Notice('Open a note first.');
       return;
     }
-    const content = await this.app.vault.read(file);
+    // With a selection active, improve just the selection — the escape
+    // hatch for notes over the whole-note cap: work through them piece by
+    // piece.
+    const editor = this.app.workspace.activeEditor?.editor;
+    const selection = editor?.getSelection() ?? '';
+    const usingSelection = !!selection.trim();
+    const content = usingSelection ? selection : await this.app.vault.read(file);
     if (!content.trim()) {
       new Notice('Note is empty — nothing to improve.');
       return;
     }
     if (content.length > 5000) {
       new Notice(
-        `"${file.basename}" is ${content.length} chars — over the 5000 limit for Improve right now ` +
-          '(the rewrite needs room for both input and output in the model context).',
-        8000
+        `${usingSelection ? 'Selection' : `"${file.basename}"`} is ${content.length} chars — over the ` +
+          "5000 limit (input plus a same-sized rewrite must fit the model's 4096-token context). " +
+          (usingSelection
+            ? 'Select a smaller passage.'
+            : 'Select a section and run Improve again to work through long notes piece by piece.'),
+        10000
       );
       return;
     }
@@ -692,13 +701,23 @@ export default class LiteRtSpikePlugin extends Plugin {
         .trim();
       if (!improved) throw new Error('Model returned an empty result.');
 
-      new IngestPreviewModal(this.app, file.path, improved, true, () => {
-        void (async () => {
-          await this.app.vault.modify(file, improved);
-          await appendLog(this.app.vault, 'improve', file.basename);
-          new Notice(`Note updated: ${file.basename}`, 3000);
-        })();
-      }).open();
+      new IngestPreviewModal(
+        this.app,
+        usingSelection ? `${file.path} (selected text only)` : file.path,
+        improved,
+        true,
+        () => {
+          void (async () => {
+            if (usingSelection && editor) {
+              editor.replaceSelection(improved);
+            } else {
+              await this.app.vault.modify(file, improved);
+            }
+            await appendLog(this.app.vault, 'improve', file.basename);
+            new Notice(`Note updated: ${file.basename}`, 3000);
+          })();
+        }
+      ).open();
     } catch (err) {
       console.error('[gemma4-litert-wiki] improve failed', err);
       this.status(`Improve FAILED — ${err instanceof Error ? err.message : String(err)}`);
