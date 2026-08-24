@@ -1,0 +1,9 @@
+{
+  "id": "litert-spike",
+  "name": "LiteRT WebGPU Spike",
+  "version": "0.0.1",
+  "minAppVersion": "1.11.4",
+  "description": "Throwaway spike: verify LiteRT-LM WASM/WebGPU works inside Obsidian's Electron renderer, before wiring it into a real plugin.",
+  "author": "spike",
+  "isDesktopOnly": true
+}
