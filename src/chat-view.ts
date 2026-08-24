@@ -64,8 +64,9 @@ export class ChatView extends ItemView {
     const header = container.createDiv({ cls: 'gemma4-chat-header' });
     const titleRow = header.createDiv({ cls: 'gemma4-chat-title-row' });
     const titleIcon = titleRow.createSpan({ cls: 'gemma4-chat-title-icon' });
-    setIcon(titleIcon, 'sparkles');
-    titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma · local' });
+    setIcon(titleIcon, 'bot');
+    titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma' });
+    titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: 'local' });
 
     // Mode toggle: "Note" chats about the open note; "Wiki" retrieves
     // from index.md + ingested pages (the real Karpathy Query path).
@@ -163,9 +164,8 @@ export class ChatView extends ItemView {
   }
 
   private showTypingIndicator(parent: HTMLElement): HTMLElement {
-    const dots = parent.createDiv({ cls: 'gemma4-chat-typing' });
-    for (let i = 0; i < 3; i++) dots.createSpan({ cls: 'gemma4-chat-typing-dot' });
-    return dots;
+    // A single thin spinner ring, shadcn-style — quieter than bouncing dots.
+    return parent.createDiv({ cls: 'gemma4-chat-spinner' });
   }
 
   private addAssistantActions(row: HTMLElement, getAnswer: () => string) {
