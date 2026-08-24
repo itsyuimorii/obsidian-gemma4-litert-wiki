@@ -167,7 +167,9 @@ export class ChatView extends ItemView {
     const items: { label: string; run: () => void; write?: boolean }[] = [
       { label: 'Summarize this note', run: () => ask('Summarize this note') },
       { label: 'What are the key points?', run: () => ask('What are the key points?') },
-      { label: '\u2728 Improve formatting', write: true, run: () => void this.plugin.improveActiveNote() },
+      // Text-only like the read chips: the dashed border and tooltip
+      // already mark it as a write action; mixed emoji read as clutter.
+      { label: 'Improve formatting', write: true, run: () => void this.plugin.improveActiveNote() },
     ];
     for (const item of items) {
       const chip = this.suggestionRow.createEl('button', {

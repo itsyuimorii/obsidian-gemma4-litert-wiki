@@ -640,9 +640,13 @@ export default class LiteRtSpikePlugin extends Plugin {
   // The one write operation that touches a raw note — and therefore the
   // most tightly constrained call in the plugin: structure, formatting,
   // and typos only, wording and voice preserved, full result shown in the
-  // preview gate before a single byte is written. Input is capped well
-  // under the engine's 4096-token context since input and output are the
-  // same order of size for a rewrite.
+  // preview gate before a single byte is written. The input cap is
+  // token-estimated per script, not a flat char count: English runs
+  // ~4 chars/token but CJK runs ~1-1.5 tokens/char, so the old flat
+  // 5000-char cap (calibrated on English ≈ 1250 tokens) overflowed the
+  // 4096-token context on Chinese notes and guaranteed a 2048-token
+  // output truncation — the same failure mode that bit the V1 grammar
+  // tests twice.
   async improveActiveNote() {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
@@ -664,10 +668,20 @@ export default class LiteRtSpikePlugin extends Plugin {
       new Notice('Note is empty — nothing to improve.');
       return;
     }
-    if (content.length > 5000) {
+    // Estimate tokens per script: CJK (Han/kana/Hangul/fullwidth) ≈ 1.5
+    // tokens per char, everything else ≈ 4 chars per token. Budget:
+    // input (≤1750) + same-sized rewrite (≤2048) + system prompt (~150)
+    // stays under the 4096-token context.
+    const cjkChars = (content.match(
+      /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g
+    ) ?? []).length;
+    const estTokens = Math.ceil(cjkChars * 1.5 + (content.length - cjkChars) / 4);
+    const MAX_INPUT_TOKENS = 1750;
+    if (estTokens > MAX_INPUT_TOKENS) {
       new Notice(
-        `${usingSelection ? 'Selection' : `"${file.basename}"`} is ${content.length} chars — over the ` +
-          "5000 limit (input plus a same-sized rewrite must fit the model's 4096-token context). " +
+        `${usingSelection ? 'Selection' : `"${file.basename}"`} is ~${estTokens} tokens — over the ` +
+          `${MAX_INPUT_TOKENS} limit (input plus a same-sized rewrite must fit the model's 4096-token context; ` +
+          'CJK text costs ~1.5 tokens per character, so the char budget is smaller for Chinese/Japanese notes). ' +
           (usingSelection
             ? 'Select a smaller passage.'
             : 'Select a section and run Improve again to work through long notes piece by piece.'),
@@ -687,17 +701,27 @@ export default class LiteRtSpikePlugin extends Plugin {
             {
               role: 'system',
               content:
-                'You are a careful copy editor. Improve ONLY the structure and formatting of the ' +
-                "note the user gives you: headings, list formatting, spacing, and obvious typos. " +
-                "PRESERVE the author's wording, voice, language, and every idea — do not add, " +
-                'remove, summarize, or rephrase content. Keep any YAML frontmatter exactly as-is. ' +
-                'Return ONLY the full improved note in markdown, no explanation.',
+                'You are a careful copy editor for Obsidian markdown notes. Improve ONLY ' +
+                'structure and formatting: headings, list markers, blank-line spacing, and ' +
+                'obvious spelling mistakes.\n\n' +
+                'PRESERVE exactly, character for character:\n' +
+                "- The author's wording, voice, ideas, and language (never translate)\n" +
+                '- YAML frontmatter\n' +
+                '- [[wikilinks]], ![[embeds]], #tags, > [!callouts]\n' +
+                '- Code blocks, tables, and any ASCII/box-drawing diagrams\n\n' +
+                'Never add, remove, summarize, or rephrase content. When unsure whether ' +
+                'something is a typo, leave it as written. If the note is already well ' +
+                'formatted, return it unchanged.\n\n' +
+                'Return ONLY the full note in markdown, no explanation.',
             },
           ],
         },
         sessionConfig: {
           samplerParams: { type: SamplerType.GREEDY },
-          maxOutputTokens: 2048,
+          // Output is a same-sized rewrite of the input; cap it just above
+          // the input estimate instead of a flat 2048 so short notes can't
+          // run away and long CJK notes aren't silently truncated.
+          maxOutputTokens: Math.min(2048, estTokens + 300),
         },
       });
       const message = await conversation.sendMessage(content);
