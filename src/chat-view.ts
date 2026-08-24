@@ -135,7 +135,7 @@ export class ChatView extends ItemView {
   private buildEmptyState() {
     this.emptyStateEl = this.messagesEl.createDiv({ cls: 'gemma4-chat-empty' });
     const emptyIcon = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-icon' });
-    setIcon(emptyIcon, 'message-circle');
+    setIcon(emptyIcon, 'gemma-wiki-logo');
     this.emptyStateEl.createDiv({
       cls: 'gemma4-chat-empty-title',
       text: 'Ask about the open note',
@@ -221,7 +221,7 @@ export class ChatView extends ItemView {
   }
 
   getIcon(): string {
-    return 'message-circle';
+    return 'gemma-wiki-logo';
   }
 
   async onOpen() {
@@ -233,8 +233,10 @@ export class ChatView extends ItemView {
     const header = container.createDiv({ cls: 'gemma4-chat-header' });
     const titleRow = header.createDiv({ cls: 'gemma4-chat-title-row' });
     const titleIcon = titleRow.createSpan({ cls: 'gemma4-chat-title-icon' });
-    setIcon(titleIcon, 'bot');
-    titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma' });
+    // Brand mark, registered in main.ts: a note card with a folded corner
+    // and a spark.
+    setIcon(titleIcon, 'gemma-wiki-logo');
+    titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma Wiki' });
     titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: 'local' });
     const clearBtn = titleRow.createEl('button', {
       cls: 'gemma4-chat-clear',

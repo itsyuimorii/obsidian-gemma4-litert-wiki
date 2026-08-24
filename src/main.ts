@@ -1,4 +1,4 @@
-import { FileSystemAdapter, Notice, Plugin, setIcon, WorkspaceLeaf } from 'obsidian';
+import { addIcon, FileSystemAdapter, MarkdownView, Notice, Plugin, setIcon, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
@@ -142,9 +142,21 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   async onload() {
+    // Brand mark (concept: a note card with a folded corner and a spark —
+    // "a note, with local AI inside"), registered as a reusable icon.
+    // addIcon expects inner SVG content sized for a 0 0 100 100 viewBox.
+    addIcon(
+      'gemma-wiki-logo',
+      '<path d="M58.3 12.5 H27.1 a10.4 10.4 0 0 0 -10.4 10.4 v54.2 a10.4 10.4 0 0 0 10.4 10.4 h45.8 ' +
+        'a10.4 10.4 0 0 0 10.4 -10.4 V37.5 Z" stroke="currentColor" stroke-width="8.3" ' +
+        'stroke-linejoin="round" fill="none"/>' +
+        '<path d="M58.3 12.5 v25 h25" stroke="currentColor" stroke-width="8.3" stroke-linejoin="round" fill="none"/>' +
+        '<path d="M41.7 45.8 l4.8 10.8 10.8 4.8 -10.8 4.8 -4.8 10.8 -4.8 -10.8 -10.8 -4.8 10.8 -4.8 Z" fill="currentColor"/>'
+    );
+
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
 
-    this.addRibbonIcon('message-circle', 'Chat with note (Gemma, local)', () => {
+    this.addRibbonIcon('gemma-wiki-logo', 'Chat with note (Gemma, local)', () => {
       void this.activateChatView();
     });
 
@@ -640,7 +652,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     // With a selection active, improve just the selection — the escape
     // hatch for notes over the whole-note cap: work through them piece by
     // piece.
-    const editor = this.app.workspace.activeEditor?.editor;
+    const mdView = this.app.workspace
+      .getLeavesOfType('markdown')
+      .map((l) => l.view)
+      .find((v): v is MarkdownView => v instanceof MarkdownView && v.file?.path === file.path);
+    const editor = mdView?.editor;
     const selection = editor?.getSelection() ?? '';
     const usingSelection = !!selection.trim();
     const content = usingSelection ? selection : await this.app.vault.read(file);
