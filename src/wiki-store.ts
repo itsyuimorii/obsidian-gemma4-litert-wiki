@@ -1,4 +1,4 @@
-import { normalizePath, TFile, Vault } from 'obsidian';
+import { normalizePath, TFile, Vault, type App } from 'obsidian';
 
 // The wiki layer, per Karpathy's pattern: raw notes are never touched;
 // the plugin owns a separate wiki/ folder holding generated pages, a
@@ -7,6 +7,7 @@ import { normalizePath, TFile, Vault } from 'obsidian';
 
 export const WIKI_DIR = 'wiki';
 export const WIKI_SOURCES_DIR = `${WIKI_DIR}/sources`;
+export const WIKI_ANSWERS_DIR = `${WIKI_DIR}/answers`;
 export const INDEX_PATH = `${WIKI_DIR}/index.md`;
 export const LOG_PATH = `${WIKI_DIR}/log.md`;
 
@@ -69,7 +70,7 @@ async function writeFile(vault: Vault, path: string, content: string): Promise<v
 }
 
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [WIKI_DIR, WIKI_SOURCES_DIR]) {
+  for (const dir of [WIKI_DIR, WIKI_SOURCES_DIR, WIKI_ANSWERS_DIR]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
@@ -170,4 +171,40 @@ export async function loadPages(vault: Vault, entries: IndexEntry[], maxTotalCha
     out += block;
   }
   return out;
+}
+
+export function answerPagePath(question: string): string {
+  return normalizePath(`${WIKI_ANSWERS_DIR}/${slugify(question).slice(0, 60)}.md`);
+}
+
+export function buildAnswerPage(
+  question: string,
+  answer: string,
+  sources: { title: string; linkPath: string }[]
+): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const sourceLines = sources.map((s) => `- [[${s.linkPath}|${s.title}]]`).join('\n');
+  return (
+    `---\n` +
+    `tags:\n  - answer\n` +
+    `created: ${date}\n` +
+    `---\n\n` +
+    `# ${question}\n\n` +
+    `${answer.trim()}\n\n` +
+    `## Sources\n\n` +
+    `${sourceLines}\n`
+  );
+}
+
+// Which raw notes already have a wiki page: read the source frontmatter of
+// every page under wiki/. Used for the file-explorer badge and the chat
+// chip checkmark — the raw note itself is never marked or modified.
+export function getIngestedSourcePaths(app: App): Set<string> {
+  const ingested = new Set<string>();
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(`${WIKI_DIR}/`)) continue;
+    const src = app.metadataCache.getFileCache(f)?.frontmatter?.source;
+    if (typeof src === 'string' && src.length) ingested.add(src);
+  }
+  return ingested;
 }

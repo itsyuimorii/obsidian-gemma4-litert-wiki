@@ -1,4 +1,4 @@
-import { FileSystemAdapter, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
+import { FileSystemAdapter, Notice, Plugin, setIcon, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
@@ -11,6 +11,7 @@ import {
   buildWikiPage,
   ensureWikiScaffold,
   upsertIndexEntry,
+  getIngestedSourcePaths,
   wikiPagePath,
   writeWikiPage,
   type NoteExtraction,
@@ -189,6 +190,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               await appendLog(this.app.vault, 'ingest', file.basename);
               this.status(`Wiki page written: ${pagePath}`);
               this.statusEnd(undefined, 2500);
+              this.refreshIngestBadges();
             })();
           }).open();
         } catch (err) {
@@ -460,6 +462,37 @@ export default class LiteRtSpikePlugin extends Plugin {
         }
       },
     });
+
+    // Badge refresh: once the layout is ready, then whenever metadata
+    // resolves (covers wiki page creation, deletion, and vault sync).
+    this.app.workspace.onLayoutReady(() => this.refreshIngestBadges());
+    this.registerEvent(this.app.metadataCache.on('resolved', () => this.refreshIngestBadges()));
+  }
+
+  // Small file-explorer badge on raw notes that already have a wiki page.
+  // Purely decorative DOM on the explorer item — the note file itself is
+  // never modified, per the raw-sources-are-read-only rule.
+  refreshIngestBadges() {
+    const ingested = getIngestedSourcePaths(this.app);
+    for (const leaf of this.app.workspace.getLeavesOfType('file-explorer')) {
+      const fileItems = (leaf.view as unknown as { fileItems?: Record<string, { selfEl?: HTMLElement }> })
+        .fileItems;
+      if (!fileItems) continue;
+      for (const [path, item] of Object.entries(fileItems)) {
+        const el = item?.selfEl;
+        if (!el) continue;
+        const existing = el.querySelector(':scope > .gemma4-ingested-badge');
+        if (ingested.has(path)) {
+          if (!existing) {
+            const badge = el.createSpan({ cls: 'gemma4-ingested-badge' });
+            setIcon(badge, 'book-check');
+            badge.setAttribute('aria-label', 'In wiki');
+          }
+        } else {
+          existing?.remove();
+        }
+      }
+    }
   }
 
   onunload() {

@@ -1,7 +1,19 @@
 import { ItemView, MarkdownRenderer, Notice, setIcon, WorkspaceLeaf } from 'obsidian';
 import type { Conversation } from '@litert-lm/core';
 import type LiteRtSpikePlugin from './main';
-import { loadPages, readIndexEntries, scoreEntries } from './wiki-store';
+import {
+  answerPagePath,
+  appendLog,
+  buildAnswerPage,
+  ensureWikiScaffold,
+  getIngestedSourcePaths,
+  loadPages,
+  readIndexEntries,
+  scoreEntries,
+  upsertIndexEntry,
+  writeWikiPage,
+} from './wiki-store';
+import { IngestPreviewModal } from './ingest-modal';
 
 // Chat with the currently active note, entirely local. This is the
 // "narrow" version of Query from the wiki roadmap — grounded in one open
@@ -117,8 +129,16 @@ export class ChatView extends ItemView {
     });
     this.emptyStateEl.createDiv({
       cls: 'gemma4-chat-empty-hint',
-      text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine. Try "summarize this note" or "what are the key points?"',
+      text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine.',
     });
+    const suggestions = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-suggestions' });
+    for (const q of ['Summarize this note', 'What are the key points?', 'What questions does this note leave open?']) {
+      const chip = suggestions.createEl('button', { cls: 'gemma4-chat-suggestion', text: q });
+      chip.addEventListener('click', () => {
+        this.inputEl.value = q;
+        void this.handleSend();
+      });
+    }
 
     // Input area: textarea + send/stop buttons.
     const inputWrap = container.createDiv({ cls: 'gemma4-chat-input-wrap' });
@@ -186,6 +206,11 @@ export class ChatView extends ItemView {
       text: file ? file.basename : 'No note open',
     });
     this.noteChipEl.toggleClass('gemma4-chat-note-chip-none', !file);
+    if (file && getIngestedSourcePaths(this.app).has(file.path)) {
+      const check = this.noteChipEl.createSpan({ cls: 'gemma4-chat-chip-check' });
+      setIcon(check, 'check');
+      check.setAttribute('aria-label', 'Already in wiki');
+    }
   }
 
   private appendUserMessage(text: string) {
@@ -218,7 +243,12 @@ export class ChatView extends ItemView {
     return parent.createDiv({ cls: 'gemma4-chat-spinner' });
   }
 
-  private addAssistantActions(row: HTMLElement, getAnswer: () => string) {
+  private addAssistantActions(
+    row: HTMLElement,
+    getAnswer: () => string,
+    question: string,
+    sources: { title: string; linkPath: string }[]
+  ) {
     const actions = row.createDiv({ cls: 'gemma4-chat-actions' });
 
     const copyBtn = actions.createEl('button', {
@@ -240,6 +270,31 @@ export class ChatView extends ItemView {
       if (this.busy || !this.lastQuestion) return;
       row.remove();
       void this.runGeneration(this.lastQuestion);
+    });
+
+    // Karpathy's compounding rule: good answers get filed back into the
+    // wiki instead of vanishing into chat history. Same review gate as
+    // ingest — preview first, nothing written without approval.
+    const saveBtn = actions.createEl('button', {
+      cls: 'gemma4-chat-action clickable-icon',
+      attr: { 'aria-label': 'Save answer to wiki' },
+    });
+    setIcon(saveBtn, 'file-plus-2');
+    saveBtn.addEventListener('click', () => {
+      const answer = getAnswer();
+      const pagePath = answerPagePath(question);
+      const pageContent = buildAnswerPage(question, answer, sources);
+      const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
+      new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
+        void (async () => {
+          await ensureWikiScaffold(this.app.vault);
+          await writeWikiPage(this.app.vault, pagePath, pageContent);
+          const summary = answer.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 140) ?? question;
+          await upsertIndexEntry(this.app.vault, pagePath, question, summary);
+          await appendLog(this.app.vault, 'answer', question);
+          new Notice(`Saved to wiki: ${pagePath}`, 3000);
+        })();
+      }).open();
     });
   }
 
@@ -391,7 +446,7 @@ export class ChatView extends ItemView {
         });
       }
 
-      this.addAssistantActions(row, () => answer);
+      this.addAssistantActions(row, () => answer, question, context.sources);
       this.scrollToBottom();
     } catch (err) {
       console.error('[gemma4-litert-wiki] chat failed', err);
