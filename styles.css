@@ -1,63 +1,316 @@
-.gemma4-chat-container {
+/* Chat panel — theme-variable-only styling so any community theme and
+   dark mode work without plugin-specific overrides. */
+
+.gemma4-chat {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 8px;
+  padding: 0;
 }
 
-.gemma4-chat-note-label {
+/* ---------- Header ---------- */
+
+.gemma4-chat-header {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.gemma4-chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.gemma4-chat-title-icon {
+  display: flex;
+  color: var(--interactive-accent);
+}
+
+.gemma4-chat-title-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gemma4-chat-title {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.gemma4-chat-note-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--radius-l);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
-  margin-bottom: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
+
+.gemma4-chat-note-chip-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.gemma4-chat-note-chip-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.gemma4-chat-note-chip-none {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ---------- Messages ---------- */
 
 .gemma4-chat-messages {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  padding: 14px 12px;
 }
 
-.gemma4-chat-msg-role {
-  font-size: var(--font-ui-smaller);
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 2px;
+.gemma4-chat-row {
+  display: flex;
+  flex-direction: column;
 }
 
-.gemma4-chat-msg-body {
+.gemma4-chat-row-user {
+  align-items: flex-end;
+}
+
+.gemma4-chat-row-assistant {
+  align-items: stretch;
+}
+
+.gemma4-chat-bubble-user {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--radius-m) var(--radius-m) var(--radius-s) var(--radius-m);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
   white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.gemma4-chat-bubble-assistant {
+  padding: 10px 12px;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+
+.gemma4-chat-stream-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.gemma4-chat-markdown p:first-child {
+  margin-top: 0;
+}
+
+.gemma4-chat-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.gemma4-chat-status {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.gemma4-chat-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+/* ---------- Typing indicator ---------- */
+
+.gemma4-chat-typing {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.gemma4-chat-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: gemma4-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.gemma4-chat-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.gemma4-chat-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes gemma4-typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* ---------- Hover actions ---------- */
+
+.gemma4-chat-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease-in-out;
+}
+
+.gemma4-chat-row-assistant:hover .gemma4-chat-actions {
+  opacity: 1;
+}
+
+.gemma4-chat-action {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.gemma4-chat-action:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  border-radius: var(--radius-s);
+}
+
+.gemma4-chat-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- Empty state ---------- */
+
+.gemma4-chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+}
+
+.gemma4-chat-empty-icon {
+  color: var(--text-faint);
+}
+
+.gemma4-chat-empty-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.gemma4-chat-empty-title {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.gemma4-chat-empty-hint {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  max-width: 260px;
+  line-height: 1.5;
+}
+
+/* ---------- Input area ---------- */
+
+.gemma4-chat-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.gemma4-chat-input {
+  width: 100%;
+  resize: none;
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  padding: 8px 10px;
   font-size: var(--font-ui-small);
   line-height: 1.4;
 }
 
-.gemma4-chat-msg-user .gemma4-chat-msg-body {
-  color: var(--text-normal);
+.gemma4-chat-input:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
 }
 
-.gemma4-chat-msg-assistant .gemma4-chat-msg-body {
-  background: var(--background-secondary);
-  border-radius: 6px;
-  padding: 8px;
-}
-
-.gemma4-chat-input-row {
+.gemma4-chat-button-row {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--background-modifier-border);
-  margin-top: 8px;
-}
-
-.gemma4-chat-input {
-  resize: vertical;
-  width: 100%;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
 }
 
 .gemma4-chat-send {
-  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.gemma4-chat-send svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gemma4-chat-stop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.gemma4-chat-stop:hover {
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
+.gemma4-chat-stop svg {
+  width: 10px;
+  height: 10px;
 }
