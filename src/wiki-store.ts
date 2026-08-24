@@ -36,10 +36,18 @@ export function wikiPagePath(sourceBasename: string): string {
   return normalizePath(`${WIKI_SOURCES_DIR}/${slugify(sourceBasename)}.md`);
 }
 
-export function buildWikiPage(sourceBasename: string, sourcePath: string, extraction: NoteExtraction): string {
+export function buildWikiPage(
+  sourceBasename: string,
+  sourcePath: string,
+  extraction: NoteExtraction,
+  related: { title: string; linkPath: string }[] = []
+): string {
   const date = new Date().toISOString().slice(0, 10);
   const tagsYaml = extraction.tags.map((t) => `  - ${slugify(t)}`).join('\n');
   const points = extraction.key_points.map((p) => `- ${p}`).join('\n');
+  const relatedSection = related.length
+    ? `\n## Related\n\n${related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n')}\n`
+    : '';
   return (
     `---\n` +
     `tags:\n${tagsYaml}\n` +
@@ -50,7 +58,8 @@ export function buildWikiPage(sourceBasename: string, sourcePath: string, extrac
     `**Summary**: ${extraction.summary}\n\n` +
     `**Source**: [[${sourceBasename}]]\n\n` +
     `## Key points\n\n` +
-    `${points}\n`
+    `${points}\n` +
+    relatedSection
   );
 }
 

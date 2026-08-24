@@ -566,3 +566,43 @@
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
+
+/* ---------- Lint report modal ---------- */
+
+.gemma4-lint-modal {
+  max-width: 520px;
+}
+
+.gemma4-lint-summary {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.gemma4-lint-section {
+  margin-bottom: 14px;
+}
+
+.gemma4-lint-section-title {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.gemma4-lint-hint {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.gemma4-lint-ok {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.gemma4-lint-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--font-ui-smaller);
+  font-family: var(--font-monospace);
+}

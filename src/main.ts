@@ -12,10 +12,13 @@ import {
   ensureWikiScaffold,
   upsertIndexEntry,
   getIngestedSourcePaths,
+  readIndexEntries,
   wikiPagePath,
   writeWikiPage,
+  type IndexEntry,
   type NoteExtraction,
 } from './wiki-store';
+import { LintReportModal, runLint } from './lint';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
 // runtime can load inside Obsidian's Electron renderer with zero external
@@ -179,7 +182,17 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.statusEnd();
 
           const pagePath = wikiPagePath(file.basename);
-          const pageContent = buildWikiPage(file.basename, file.path, extraction);
+          const selfLink = pagePath.replace(/\.md$/, '');
+          const candidates = (await readIndexEntries(this.app.vault)).filter(
+            (e) => e.linkPath !== selfLink
+          );
+          let related: { title: string; linkPath: string }[] = [];
+          if (candidates.length) {
+            this.status(`Ingesting "${file.basename}" — finding related pages…`);
+            related = await this.pickRelatedPages(extraction.summary, candidates);
+            this.statusEnd();
+          }
+          const pageContent = buildWikiPage(file.basename, file.path, extraction, related);
           const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
 
           new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
@@ -198,6 +211,14 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.status(`Ingest FAILED — ${err instanceof Error ? err.message : String(err)}`);
           this.statusEnd(undefined, 8000);
         }
+      },
+    });
+
+    this.addCommand({
+      id: 'litert-lint-wiki',
+      name: 'Lint wiki (orphans and index health)',
+      callback: async () => {
+        new LintReportModal(this.app, await runLint(this.app)).open();
       },
     });
 
@@ -544,6 +565,78 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
     }
     return this.wasmLoadPromise;
+  }
+
+  // Second single-schema call in the ingest flow: given the new page's
+  // summary and the index catalog, pick up to 3 genuinely related existing
+  // pages. A convergent multiple-choice task, not open generation — the
+  // model can only answer with titles from the provided list, and anything
+  // else is dropped in validation. Failure returns [] and never blocks
+  // ingest; related links are an enhancement, not a requirement.
+  async pickRelatedPages(
+    summary: string,
+    candidates: IndexEntry[]
+  ): Promise<{ title: string; linkPath: string }[]> {
+    try {
+      const engine = await this.ensureEngine(() => {});
+      const { SamplerType } = await import('@litert-lm/core');
+      const catalog = candidates
+        .slice(0, 30)
+        .map((e) => `- ${e.title}: ${e.summary}`)
+        .join('\n');
+      let conversation: import('@litert-lm/core').Conversation | undefined;
+      try {
+        conversation = await engine.createConversation({
+          preface: {
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You link wiki pages. The user gives you a new page summary and a catalog of ' +
+                  'existing pages. Respond with ONLY a JSON object, no fences, no explanation: ' +
+                  '{"related": ["Exact Title", ...]}. Pick 0 to 3 titles from the catalog that are ' +
+                  'genuinely related to the new page. Titles must match the catalog EXACTLY. ' +
+                  'If nothing is related, return {"related": []}.',
+              },
+            ],
+          },
+          sessionConfig: {
+            samplerParams: { type: SamplerType.GREEDY },
+            maxOutputTokens: 256,
+          },
+        });
+        const message = await conversation.sendMessage(
+          `New page summary: ${summary}\n\nCatalog:\n${catalog}`
+        );
+        let raw = '';
+        const content = message.content;
+        if (typeof content === 'string') raw = content;
+        else if (Array.isArray(content)) {
+          for (const part of content) {
+            if (part.type === 'text' && part.text) raw += part.text;
+          }
+        }
+        const cleaned = raw
+          .trim()
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/```\s*$/i, '')
+          .trim();
+        const parsed = JSON.parse(cleaned) as { related?: unknown };
+        if (!Array.isArray(parsed.related)) return [];
+        const byTitle = new Map(candidates.map((e) => [e.title, e]));
+        return parsed.related
+          .filter((t): t is string => typeof t === 'string')
+          .map((t) => byTitle.get(t))
+          .filter((e): e is IndexEntry => !!e)
+          .slice(0, 3)
+          .map((e) => ({ title: e.title, linkPath: e.linkPath }));
+      } finally {
+        await conversation?.delete().catch(() => {});
+      }
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] related-pages pick failed (non-blocking)', err);
+      return [];
+    }
   }
 
   // One strict JSON fill-in per operation — no tool loops, no multi-step
