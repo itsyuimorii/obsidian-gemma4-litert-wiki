@@ -51,6 +51,48 @@ export class ChatView extends ItemView {
   private modeButtons: { note: HTMLElement; wiki: HTMLElement } | null = null;
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
+  private suggestionRow!: HTMLElement;
+
+  private buildEmptyState() {
+    this.emptyStateEl = this.messagesEl.createDiv({ cls: 'gemma4-chat-empty' });
+    const emptyIcon = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-icon' });
+    setIcon(emptyIcon, 'message-circle');
+    this.emptyStateEl.createDiv({
+      cls: 'gemma4-chat-empty-title',
+      text: 'Ask about the open note',
+    });
+    this.emptyStateEl.createDiv({
+      cls: 'gemma4-chat-empty-hint',
+      text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine.',
+    });
+  }
+
+  // Suggestion chips live above the input, permanently — they used to sit
+  // in the empty state and vanished after the first question. Note-mode
+  // only: canned wiki-mode questions would fight the lexical retrieval.
+  private renderSuggestions() {
+    if (!this.suggestionRow) return;
+    this.suggestionRow.empty();
+    if (this.mode !== 'note') {
+      this.suggestionRow.hide();
+      return;
+    }
+    this.suggestionRow.show();
+    for (const q of ['Summarize this note', 'What are the key points?', 'What questions does this note leave open?']) {
+      const chip = this.suggestionRow.createEl('button', { cls: 'gemma4-chat-suggestion', text: q });
+      chip.addEventListener('click', () => {
+        this.inputEl.value = q;
+        void this.handleSend();
+      });
+    }
+  }
+
+  private clearChat() {
+    if (this.busy) this.activeConversation?.cancel();
+    this.lastQuestion = null;
+    this.messagesEl.empty();
+    this.buildEmptyState();
+  }
 
   private autoGrowInput() {
     if (this.inputExpanded) return;
@@ -101,6 +143,12 @@ export class ChatView extends ItemView {
     setIcon(titleIcon, 'bot');
     titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma' });
     titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: 'local' });
+    const clearBtn = titleRow.createEl('button', {
+      cls: 'gemma4-chat-clear',
+      attr: { 'aria-label': 'Clear chat' },
+    });
+    setIcon(clearBtn, 'rotate-ccw');
+    clearBtn.addEventListener('click', () => this.clearChat());
 
     // Mode toggle: "Note" chats about the open note; "Wiki" retrieves
     // from index.md + ingested pages (the real Karpathy Query path).
@@ -120,28 +168,12 @@ export class ChatView extends ItemView {
 
     // Message list with an empty-state hint shown until the first send.
     this.messagesEl = container.createDiv({ cls: 'gemma4-chat-messages' });
-    this.emptyStateEl = this.messagesEl.createDiv({ cls: 'gemma4-chat-empty' });
-    const emptyIcon = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-icon' });
-    setIcon(emptyIcon, 'message-circle');
-    this.emptyStateEl.createDiv({
-      cls: 'gemma4-chat-empty-title',
-      text: 'Ask about the open note',
-    });
-    this.emptyStateEl.createDiv({
-      cls: 'gemma4-chat-empty-hint',
-      text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine.',
-    });
-    const suggestions = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-suggestions' });
-    for (const q of ['Summarize this note', 'What are the key points?', 'What questions does this note leave open?']) {
-      const chip = suggestions.createEl('button', { cls: 'gemma4-chat-suggestion', text: q });
-      chip.addEventListener('click', () => {
-        this.inputEl.value = q;
-        void this.handleSend();
-      });
-    }
+    this.buildEmptyState();
 
-    // Input area: textarea + send/stop buttons.
+    // Input area: persistent suggestion chips + textarea + send/stop buttons.
     const inputWrap = container.createDiv({ cls: 'gemma4-chat-input-wrap' });
+    this.suggestionRow = inputWrap.createDiv({ cls: 'gemma4-chat-suggestion-row' });
+    this.renderSuggestions();
     this.inputEl = inputWrap.createEl('textarea', {
       cls: 'gemma4-chat-input',
       attr: { placeholder: 'Ask about this note… (Enter to send)', rows: '2' },
@@ -188,6 +220,7 @@ export class ChatView extends ItemView {
       'placeholder',
       mode === 'note' ? 'Ask about this note… (Enter to send)' : 'Ask your wiki… (Enter to send)'
     );
+    this.renderSuggestions();
     this.updateNoteChip();
   }
 

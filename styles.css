@@ -538,12 +538,37 @@
 
 /* ---------- Empty-state suggestion chips ---------- */
 
-.gemma4-chat-suggestions {
+.gemma4-chat-suggestion-row {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+}
+
+/* Clear-chat button, right-aligned in the title row. */
+.gemma4-chat .gemma4-chat-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin: 0 0 0 auto;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-chat-clear:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-chat .gemma4-chat-clear svg {
+  width: 12px;
+  height: 12px;
 }
 
 .gemma4-chat .gemma4-chat-suggestion {
