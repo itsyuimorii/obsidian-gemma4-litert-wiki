@@ -1,0 +1,63 @@
+.gemma4-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 8px;
+}
+
+.gemma4-chat-note-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 8px;
+}
+
+.gemma4-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gemma4-chat-msg-role {
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.gemma4-chat-msg-body {
+  white-space: pre-wrap;
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+}
+
+.gemma4-chat-msg-user .gemma4-chat-msg-body {
+  color: var(--text-normal);
+}
+
+.gemma4-chat-msg-assistant .gemma4-chat-msg-body {
+  background: var(--background-secondary);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.gemma4-chat-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 8px;
+}
+
+.gemma4-chat-input {
+  resize: vertical;
+  width: 100%;
+}
+
+.gemma4-chat-send {
+  align-self: flex-end;
+}

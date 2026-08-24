@@ -2,7 +2,13 @@
 
 A local-first Obsidian plugin built around a single idea: **run the LLM entirely inside Obsidian itself** — no Ollama, no LM Studio, no API key, no background server, no network access after the one-time model download. The model runs in Obsidian's own Electron renderer via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU.
 
-> ⚠️ **Status: early-stage technical validation, not a finished plugin.** The local-inference engine (model loading, generation, streaming, benchmarking) is built and validated with real numbers below. The actual wiki workflow — ingest / query / lint, in the spirit of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — is designed but not yet implemented. See [Roadmap](#-roadmap).
+> ⚠️ **Status: early-stage technical validation, not a finished plugin.** The local-inference engine (model loading, generation, streaming, benchmarking) is built and validated with real numbers below, along with a first real feature — chat with the currently open note. The full wiki workflow — ingest / query-across-your-vault / lint, in the spirit of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — is designed but not yet implemented. See [Roadmap](#-roadmap).
+
+## 💬 Chat with your notes — entirely offline
+
+Open any note, click the message-circle icon in the ribbon (or run **"Chat with active note (local Gemma)"**), and ask questions about it. The answer streams in from a model running inside Obsidian's own process — no cloud call, no background app, and it works the moment you open the plugin, not after you've built up a wiki. The answer is grounded strictly in that note's content; if the answer isn't in the note, the model is instructed to say so rather than guess.
+
+This is a narrower stand-in for the eventual **Query** feature described in the [Roadmap](#-roadmap): today it reads the one note you have open, rather than selecting from an ingested `index.md`. The UI shell doesn't change when that lands — only where the context comes from.
 
 ## 📑 Contents
 
@@ -48,6 +54,7 @@ These are developer/validation commands, not polished end-user features yet:
 
 | Command | What it does |
 |---|---|
+| **Chat with active note (local Gemma)** | The one polished-ish feature so far — opens a side panel and answers questions grounded in the currently open note. See [above](#-chat-with-your-notes--entirely-offline). |
 | **LiteRT spike: check WebGPU** | Confirms a usable WebGPU adapter is available. |
 | **LiteRT spike: load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without downloading the model — isolates runtime issues from model issues. |
 | **LiteRT spike: download Gemma 4 E4B model (one-time, ~3GB)** | Downloads and caches the model; shows live progress. |

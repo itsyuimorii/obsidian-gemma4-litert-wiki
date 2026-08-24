@@ -1,9 +1,10 @@
-import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
+import { FileSystemAdapter, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
+import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
 // runtime can load inside Obsidian's Electron renderer with zero external
@@ -105,6 +106,20 @@ export default class LiteRtSpikePlugin extends Plugin {
   private enginePromise: Promise<Engine> | null = null;
 
   async onload() {
+    this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
+
+    this.addRibbonIcon('message-circle', 'Chat with note (Gemma, local)', () => {
+      void this.activateChatView();
+    });
+
+    this.addCommand({
+      id: 'litert-open-chat',
+      name: 'Chat with active note (local Gemma)',
+      callback: () => {
+        void this.activateChatView();
+      },
+    });
+
     this.addCommand({
       id: 'litert-check-webgpu',
       name: 'LiteRT spike: check WebGPU',
@@ -369,9 +384,23 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   onunload() {
+    this.app.workspace.detachLeavesOfType(VIEW_TYPE_CHAT);
     this.server?.close();
     this.server = null;
     this.serverBaseUrl = null;
+  }
+
+  private async activateChatView() {
+    const { workspace } = this.app;
+    const existing = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+    if (existing) {
+      workspace.revealLeaf(existing);
+      return;
+    }
+    const leaf: WorkspaceLeaf | null = workspace.getRightLeaf(false);
+    if (!leaf) return;
+    await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
+    workspace.revealLeaf(leaf);
   }
 
   private ensureWasmLoaded(): Promise<void> {
@@ -405,7 +434,9 @@ export default class LiteRtSpikePlugin extends Plugin {
     return this.wasmLoadPromise;
   }
 
-  private ensureEngine(onProgress: (text: string) => void): Promise<Engine> {
+  // Not private: ChatView (a separate class, same session) reuses the
+  // single warm Engine instance rather than loading its own.
+  ensureEngine(onProgress: (text: string) => void): Promise<Engine> {
     if (!this.enginePromise) {
       this.enginePromise = (async () => {
         await this.ensureWasmLoaded();
