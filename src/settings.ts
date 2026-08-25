@@ -101,6 +101,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Tag vocabulary')
+      .setClass('gemma4-textarea-setting')
       .setDesc(
         'Optional controlled list of tags (comma or newline separated). When set, ingest reuses ' +
           'these exact tags instead of inventing synonyms ("llm-eval" vs "llm-evaluation"). Leave blank to let the model tag freely.'
@@ -113,7 +114,6 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
         ta.inputEl.rows = 4;
-        ta.inputEl.style.width = '100%';
       });
 
     // ---------- Skills ----------
@@ -121,6 +121,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Custom skills')
+      .setClass('gemma4-textarea-setting')
       .setDesc(
         'Your own one-shot prompts, added to the ⚡ skills menu. One per line, "Label :: prompt". ' +
           'Each runs against the current chat context (mode + attachments), same as the built-in skills.'
@@ -133,7 +134,6 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
         ta.inputEl.rows = 4;
-        ta.inputEl.style.width = '100%';
       });
 
     // ---------- Chat ----------

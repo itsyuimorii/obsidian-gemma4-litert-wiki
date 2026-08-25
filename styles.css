@@ -1004,6 +1004,24 @@
   --slider-thumb-border-color: var(--text-normal);
 }
 
+/* Textarea settings (tag vocabulary, custom skills): a right-column control
+   squeezes a multi-line box into a sliver. Stack it — name/desc on top, the
+   textarea full-width below — so it's actually usable. */
+.gemma4-textarea-setting {
+  display: block;
+}
+.gemma4-textarea-setting .setting-item-control {
+  padding-top: 8px;
+  justify-content: flex-start;
+}
+.gemma4-textarea-setting .setting-item-control textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
 .gemma4-settings input[type='range'] {
   accent-color: var(--text-normal) !important;
 }
