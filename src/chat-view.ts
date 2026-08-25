@@ -15,6 +15,7 @@ import type LiteRtSpikePlugin from './main';
 import {
   answerPagePath,
   appendLog,
+  clampToTokens,
   buildAnswerPage,
   ensureWikiScaffold,
   getIngestedSourcePaths,
@@ -70,10 +71,10 @@ class NotePickerModal extends FuzzySuggestModal<TFile> {
 
 export const VIEW_TYPE_CHAT = 'gemma4-litert-wiki-chat-view';
 
-// Only the read-and-answer-about-one-note path has been benchmarked
-// (up to ~700 words with no quality drop-off). Conservative product
-// default, not the model's real ceiling.
-const MAX_NOTE_CHARS = 20000;
+// The engine context is a hard 4096 tokens; with ~1024 reserved for the
+// answer and ~200 for instructions and the question, grounding material
+// gets this budget. Token-estimated (CJK-aware), not char-counted.
+const CONTEXT_TOKEN_BUDGET = 2400;
 
 export class ChatView extends ItemView {
   private plugin: LiteRtSpikePlugin;
@@ -557,7 +558,7 @@ export class ChatView extends ItemView {
       }
       const selected = scoreEntries(question, entries);
       const pages = selected.length
-        ? await loadPages(this.app.vault, selected, MAX_NOTE_CHARS)
+        ? await loadPages(this.app.vault, selected, CONTEXT_TOKEN_BUDGET * 3)
         : '';
       // Catalog + recent log always ride along: they are small, and they
       // make meta-questions answerable ("what is in my wiki?", "what did
@@ -565,6 +566,13 @@ export class ChatView extends ItemView {
       const catalog = entries.map((e) => `- ${e.title} — ${e.summary}`).join('\n');
       const logTail = await readLogTail(this.app.vault, 12);
       const attachments = await this.readAttachments();
+      const clampedWiki = clampToTokens(
+        (pages ? `## Relevant pages\n${pages}\n\n` : '') + attachments.blocks,
+        CONTEXT_TOKEN_BUDGET
+      );
+      if (clampedWiki.truncated) {
+        this.appendInfoMessage('Context was longer than the local model can hold — answering from the first part only.');
+      }
       return {
         systemPrompt:
           "You answer questions about the user's personal wiki. Use ONLY the material below: " +
@@ -574,8 +582,7 @@ export class ChatView extends ItemView {
           'may use markdown formatting.\n\n' +
           `## Catalog\n${catalog}\n\n` +
           (logTail ? `## Recent activity log\n${logTail}\n\n` : '') +
-          (pages ? `## Relevant pages\n${pages}\n\n` : '') +
-          attachments.blocks,
+          clampedWiki.text,
         sourcePath: 'wiki/index.md',
         sources: [
           ...attachments.sources,
@@ -598,23 +605,22 @@ export class ChatView extends ItemView {
     const sources: { title: string; linkPath: string }[] = [];
     if (file) {
       const noteContent = await this.app.vault.read(file);
-      if (noteContent.length > MAX_NOTE_CHARS) {
-        this.appendInfoMessage(
-          `"${file.basename}" is ${noteContent.length} chars, over the ${MAX_NOTE_CHARS} limit for this feature right now. Try a shorter note.`
-        );
-        return null;
-      }
       noteBlock = `## Open note: ${file.basename}\n${noteContent}\n\n`;
       sources.push({ title: file.basename, linkPath: file.path.replace(/\.md$/, '') });
     }
     sources.push(...attachments.sources);
+    const clamped = clampToTokens(noteBlock + attachments.blocks, CONTEXT_TOKEN_BUDGET);
+    if (clamped.truncated) {
+      this.appendInfoMessage(
+        'This note is longer than the local model can hold — answering from the first part only.'
+      );
+    }
     return {
       systemPrompt:
         "Answer the user's question using ONLY the notes below. If the answer is not in them, " +
         'say so plainly instead of guessing or using outside knowledge. Be concise. You may use ' +
         'markdown formatting.\n\n' +
-        noteBlock +
-        attachments.blocks,
+        clamped.text,
       sourcePath: file?.path ?? 'wiki/index.md',
       sources,
     };

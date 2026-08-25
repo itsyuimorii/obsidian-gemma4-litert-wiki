@@ -232,3 +232,29 @@ export async function readLogTail(vault: Vault, count: number): Promise<string> 
   const entries = content.split('\n').filter((l) => l.startsWith('## ['));
   return entries.slice(-count).join('\n');
 }
+
+// The engine context is a hard 4096 tokens. Char caps lied for CJK text
+// (Chinese runs ~1+ token per character vs ~1 per 4 for English), which
+// produced "Input token ids are too long" crashes. Estimate conservatively:
+// CJK-range code points count as 1.4 tokens, everything else as 1 per 3.4
+// chars.
+export function estimateTokens(text: string): number {
+  let cjk = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0) ?? 0;
+    if (c >= 0x2e80) cjk++;
+  }
+  return Math.ceil(cjk * 1.4 + (text.length - cjk) / 3.4);
+}
+
+// Trim text to fit a token budget (proportional cut, re-estimated), with a
+// visible marker so the model knows the tail is missing.
+export function clampToTokens(text: string, maxTokens: number): { text: string; truncated: boolean } {
+  if (estimateTokens(text) <= maxTokens) return { text, truncated: false };
+  let keep = text;
+  for (let i = 0; i < 6 && estimateTokens(keep) > maxTokens; i++) {
+    const ratio = maxTokens / estimateTokens(keep);
+    keep = keep.slice(0, Math.max(200, Math.floor(keep.length * ratio * 0.97)));
+  }
+  return { text: keep + '\n\n[truncated to fit the local model context]', truncated: true };
+}
