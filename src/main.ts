@@ -1414,6 +1414,15 @@ export default class LiteRtSpikePlugin extends Plugin {
   // the user still reviews them — and stops before the next one.
   private scanRunning = false;
   private scanCancelled = false;
+  // Set by the settings tab so the Scan button can follow the real state
+  // instead of a label set once at click time — which lost track whenever the
+  // pane re-rendered, leaving a running scan showing "Scan now".
+  onScanStateChange: (() => void) | null = null;
+
+  private setScanRunning(running: boolean): void {
+    this.scanRunning = running;
+    this.onScanStateChange?.();
+  }
 
   isScanning(): boolean {
     return this.scanRunning;
@@ -1440,12 +1449,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       );
       return;
     }
-    this.scanRunning = true;
+    this.setScanRunning(true);
     this.scanCancelled = false;
     try {
       await this.runScanAndReview(includePrefixes);
     } finally {
-      this.scanRunning = false;
+      this.setScanRunning(false);
       this.scanCancelled = false;
     }
   }
@@ -1481,6 +1490,15 @@ export default class LiteRtSpikePlugin extends Plugin {
     let failed = 0;
     let cancelled = false;
     const n = result.eligible.length;
+    // Drafting is one model call per note — minutes for a batch. Say so up
+    // front, and say the settings pane is not holding it: users sat watching
+    // a dialog they could have closed, unsure whether closing would cancel.
+    new Notice(
+      `Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each. You can close Settings ` +
+        'and keep working; the review dialog opens here when it is done. ' +
+        '(To stop early, reopen Settings and click "Stop scan".)',
+      9000
+    );
     // Pages drafted earlier in THIS batch are valid link targets for later
     // ones: they are about to be written together. Without this, scanning a
     // set of related notes into a fresh wiki gives every page an empty
