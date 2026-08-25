@@ -234,7 +234,9 @@ export function buildSchemaFile(
   conceptThreshold = DEFAULT_CONCEPT_THRESHOLD,
   pending: string[] = []
 ): string {
-  const tagLines = tags.length ? tags.map((t) => `- ${slugify(t)}`).join('\n') : '- (run "Suggest tag vocabulary" to fill this)';
+  const tagLines = tags.length
+    ? tags.map((t) => `- ${slugify(t)}`).join('\n')
+    : '- (no tags yet — ingest some notes, then run "Clean up tags" in settings to build this from them)';
   const namingLines = Object.entries(naming)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
@@ -250,13 +252,13 @@ export function buildSchemaFile(
     `wiki. Four sections:\n\n` +
     `- **Tags** — the controlled vocabulary. On ingest the model reuses these exact tags instead of\n` +
     `  inventing synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together\n` +
-    `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run the\n` +
-    `  command **"Suggest tag vocabulary"** and the model proposes it from the tags already on your\n` +
-    `  wiki; you review before it is written. One tag per line.\n` +
+    `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run\n` +
+    `  **"Clean up tags"** (settings, or the command palette) and the model builds it from the tags\n` +
+    `  your ingested notes already produced; you review before it is written. One tag per line.\n` +
     `- **Naming** — how pages are named, so names stay consistent.\n` +
     `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n` +
     `- **Pending** — new tags ingest has used that aren't in the vocabulary yet. They wait here for\n` +
-    `  you to promote them (move a line up into Tags), or just re-run "Suggest tag vocabulary" to\n` +
+    `  you to promote them (move a line up into Tags), or just re-run "Clean up tags" to\n` +
     `  fold them in and clear this list. The vocabulary never changes on its own.\n\n` +
     `## Tags\n\n${tagLines}\n\n` +
     `## Naming\n\n${namingLines}\n\n` +
@@ -278,7 +280,8 @@ export function parseSchema(content: string): WikiSchema {
   const tags = schemaSection(content, 'Tags')
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.startsWith('- ') && !l.includes('(run "Suggest'))
+    // A bullet whose content starts with "(" is a placeholder/comment, not a tag.
+    .filter((l) => l.startsWith('- ') && !l.slice(2).trim().startsWith('('))
     .map((l) => l.slice(2).trim())
     .filter(Boolean);
   const naming: Record<string, string> = {};
