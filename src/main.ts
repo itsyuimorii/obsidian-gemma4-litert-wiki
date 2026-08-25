@@ -1,4 +1,4 @@
-import { addIcon, FileSystemAdapter, MarkdownView, Notice, Plugin, setIcon, WorkspaceLeaf } from 'obsidian';
+import { addIcon, FileSystemAdapter, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
@@ -19,6 +19,7 @@ import {
   getIngestedSourcePaths,
   precheckNote,
   readIndexEntries,
+  setWikiDir,
   wikiPagePath,
   writeWikiPage,
   type IndexEntry,
@@ -26,7 +27,7 @@ import {
 } from './wiki-store';
 import { LintReportModal, runLint } from './lint';
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
-import { TFile } from 'obsidian';
+import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
 // runtime can load inside Obsidian's Electron renderer with zero external
@@ -79,6 +80,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
   private statusNotice: Notice | null = null;
+  settings: GemmaWikiSettings = { ...DEFAULT_SETTINGS };
 
   // One shared status Notice for the whole plugin: later messages update
   // the same toast instead of stacking a new one per operation — repeated
@@ -101,6 +103,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   async onload() {
+    await this.loadSettings();
+    setWikiDir(this.settings.wikiDir);
+    this.addSettingTab(new GemmaWikiSettingTab(this.app, this));
+
     // Brand mark (concept: a note card with a folded corner and a spark —
     // "a note, with local AI inside"), registered as a reusable icon.
     // addIcon expects inner SVG content sized for a 0 0 100 100 viewBox.
@@ -903,6 +909,61 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     throw new Error('unreachable');
+  }
+
+  async loadSettings() {
+    this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+
+  // Rename the wiki folder and rewrite the internal links that name it.
+  // source: frontmatter points at raw notes (untouched); only the layer's
+  // own paths (index links, Related links, path-prefixed wikilinks) move.
+  async renameWikiDir(prev: string, next: string) {
+    const notice = new Notice(`Renaming ${prev} → ${next}…`, 0);
+    try {
+      const prevFolder = this.app.vault.getAbstractFileByPath(prev);
+      if (prevFolder instanceof TFolder) {
+        // Rewrite internal references inside every markdown file first, so
+        // links stay valid after the move.
+        for (const file of this.app.vault.getMarkdownFiles()) {
+          if (!file.path.startsWith(`${prev}/`)) continue;
+          const body = await this.app.vault.read(file);
+          const rewritten = body
+            .split(`[[${prev}/`).join(`[[${next}/`)
+            .split(`](${prev}/`).join(`](${next}/`);
+          if (rewritten !== body) await this.app.vault.modify(file, rewritten);
+        }
+        const target = this.app.vault.getAbstractFileByPath(next);
+        if (target instanceof TFolder) {
+          // Merge into an existing target folder file by file.
+          for (const child of this.app.vault.getMarkdownFiles()) {
+            if (!child.path.startsWith(`${prev}/`)) continue;
+            const dest = next + child.path.slice(prev.length);
+            const destDir = dest.slice(0, dest.lastIndexOf('/'));
+            if (!this.app.vault.getAbstractFileByPath(destDir)) {
+              await this.app.vault.createFolder(destDir).catch(() => {});
+            }
+            await this.app.fileManager.renameFile(child, dest);
+          }
+        } else {
+          await this.app.fileManager.renameFile(prevFolder, next);
+        }
+      }
+      this.settings.wikiDir = next;
+      await this.saveSettings();
+      setWikiDir(next);
+      this.refreshIngestBadges();
+      notice.setMessage(`Wiki folder is now "${next}".`);
+      setTimeout(() => notice.hide(), 4000);
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] rename wiki dir failed', err);
+      notice.setMessage(`Rename failed — ${err instanceof Error ? err.message : String(err)}`);
+      setTimeout(() => notice.hide(), 8000);
+    }
   }
 
   private pluginAbsDir(): string {
