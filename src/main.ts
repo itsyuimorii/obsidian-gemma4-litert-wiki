@@ -1151,6 +1151,20 @@ export default class LiteRtSpikePlugin extends Plugin {
     const engine = await this.ensureEngine(onProgress);
     const { SamplerType } = await import('@litert-lm/core');
 
+    // Schema layer (issue #3): a user-maintained tag vocabulary. When set, it
+    // is injected here so ingest REUSES existing tags instead of inventing a
+    // fresh synonym every time ("llm-eval" vs "llm-evaluation" vs "evals").
+    // Naming rules aren't part of the schema because page names are already
+    // deterministic (slugified basenames) — the tag vocabulary is the only
+    // lever that actually needs governing.
+    const vocab = this.settings.tagVocabulary
+      .split(/[,\n]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const vocabLine = vocab.length
+      ? ` Prefer tags from this controlled vocabulary when one fits, reusing the exact spelling: ${vocab.join(', ')}. Only coin a new tag if none of these apply.`
+      : '';
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       onProgress(attempt === 1 ? 'Extracting…' : 'Extracting (retry)…');
       let conversation: import('@litert-lm/core').Conversation | undefined;
@@ -1169,7 +1183,8 @@ export default class LiteRtSpikePlugin extends Plugin {
                   'self-contained sentence stating concrete content from the note. confidence is ' +
                   '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
                   'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
-                  'misread).',
+                  'misread).' +
+                  vocabLine,
               },
             ],
           },
