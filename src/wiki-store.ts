@@ -41,6 +41,9 @@ export function logPath(): string {
 export function schemaPath(): string {
   return `${_wikiDir}/schema.md`;
 }
+export function wikiSkillsDir(): string {
+  return `${_wikiDir}/skills`;
+}
 
 export interface NoteExtraction {
   summary: string;
@@ -343,6 +346,112 @@ export async function queuePendingTags(vault: Vault, tags: string[]): Promise<vo
   if (!fresh.length) return;
   const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, [...schema.pending, ...fresh]);
   await writeFile(vault, schemaPath(), next);
+}
+
+// ---------------------------------------------------------------------------
+// Skills (issue #4) — "config as a note" applied to custom prompts.
+//
+// A skill is one file in <wiki>/skills/: frontmatter for how it shows up in
+// the ⚡ menu, the body is the prompt. Like the schema, the rules live as
+// editable notes that version with the wiki, not as a hidden settings string.
+// Each skill is still ONE structured ask against the current chat context —
+// no tool loop — which is the whole "wiki as input for repeat work" pattern.
+// ---------------------------------------------------------------------------
+
+export interface WikiSkill {
+  label: string;
+  icon: string;
+  prompt: string;
+  mode?: 'note' | 'wiki';
+}
+
+// A skill file is `key: value` frontmatter between --- fences, then the prompt
+// as the body. We parse only the handful of keys we use and treat everything
+// after the closing fence as the prompt, so a user can write the prompt as
+// ordinary markdown (lists, bold) without escaping anything.
+function parseSkillFile(name: string, content: string): WikiSkill | null {
+  const fm = content.match(/^---\n([\s\S]*?)\n---\n?/);
+  const front: Record<string, string> = {};
+  if (fm) {
+    for (const line of fm[1].split('\n')) {
+      const idx = line.indexOf(':');
+      if (idx === -1) continue;
+      front[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+    }
+  }
+  const prompt = content.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+  if (!prompt) return null;
+  const mode = front.mode === 'wiki' ? 'wiki' : front.mode === 'note' ? 'note' : undefined;
+  return {
+    label: front.name || front.label || name,
+    icon: front.icon || 'wand-2',
+    prompt,
+    mode,
+  };
+}
+
+// Read every skill file in <wiki>/skills/, sorted by filename so the menu
+// order is stable and the user can control it by renaming. Missing folder =
+// no custom skills (the built-ins still show).
+export async function readSkills(vault: Vault): Promise<WikiSkill[]> {
+  const folder = vault.getAbstractFileByPath(normalizePath(wikiSkillsDir()));
+  if (!folder) return [];
+  const skills: WikiSkill[] = [];
+  const files = vault
+    .getMarkdownFiles()
+    .filter((f) => f.path.startsWith(`${wikiSkillsDir()}/`) && f.basename.toLowerCase() !== 'readme')
+    .sort((a, b) => a.path.localeCompare(b.path));
+  for (const f of files) {
+    const skill = parseSkillFile(f.basename, await vault.read(f));
+    if (skill) skills.push(skill);
+  }
+  return skills;
+}
+
+function buildSkillFile(name: string, icon: string, mode: 'note' | 'wiki' | undefined, prompt: string): string {
+  const modeLine = mode ? `mode: ${mode}\n` : '';
+  return `---\nname: ${name}\nicon: ${icon}\n${modeLine}---\n\n${prompt}\n`;
+}
+
+const SKILLS_README =
+  `# Skills\n\n` +
+  `Each \`.md\` file in this folder is a custom skill — a one-shot prompt that shows up in\n` +
+  `the ⚡ menu of the chat panel. This is the same "config as a note" idea as \`schema.md\`:\n` +
+  `the rules live as plain notes you can read, edit, and version, not as a hidden setting.\n\n` +
+  `A skill file is frontmatter + a prompt body:\n\n` +
+  `\`\`\`\n---\nname: ELI5\nicon: wand-2\nmode: note\n---\n\nExplain this material like I am five.\n\`\`\`\n\n` +
+  `- **name** — what shows in the menu (defaults to the filename).\n` +
+  `- **icon** — any Obsidian (Lucide) icon name; defaults to \`wand-2\`.\n` +
+  `- **mode** — optional, \`note\` or \`wiki\`. If set, running the skill switches the chat to\n` +
+  `  that grounding first (use \`wiki\` for skills that need the catalog or activity log).\n` +
+  `- **body** — everything after the closing \`---\` is the prompt, written as ordinary markdown.\n\n` +
+  `Each skill is one structured ask against the current chat context (mode + attachments) —\n` +
+  `not a multi-step agent. Add a file, and it appears in the menu; delete it, and it is gone.\n` +
+  `Files named \`README\` (this one) are ignored.\n`;
+
+// Seed the skills folder with a README and two example skills, the first time
+// the user asks for it. Never overwrites an existing file, so re-running is safe.
+export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
+  const dir = normalizePath(wikiSkillsDir());
+  if (!vault.getAbstractFileByPath(dir)) {
+    await vault.createFolder(dir).catch(() => {});
+  }
+  const seeds: Array<[string, string]> = [
+    [`${wikiSkillsDir()}/README.md`, SKILLS_README],
+    [
+      `${wikiSkillsDir()}/eli5.md`,
+      buildSkillFile('ELI5', 'baby', 'note', 'Explain this material like I am five, in plain language and short sentences.'),
+    ],
+    [
+      `${wikiSkillsDir()}/action-items.md`,
+      buildSkillFile('Action items', 'list-checks', 'note', 'List the concrete next actions this material implies, as a checklist. One action per line, each starting with a verb.'),
+    ],
+  ];
+  for (const [path, content] of seeds) {
+    if (!vault.getAbstractFileByPath(normalizePath(path))) {
+      await vault.create(normalizePath(path), content).catch(() => {});
+    }
+  }
 }
 
 // Lexical retrieval over the index, per the "read the index, then read the
