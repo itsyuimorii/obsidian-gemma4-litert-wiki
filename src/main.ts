@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { IngestPreviewModal, OnboardingModal, RelinkPreviewModal, type RelinkProposal } from './ingest-modal';
-import { getModelBlob, isModelDownloaded, partialBytes } from './model-store';
+import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
   appendLog,
   buildWikiPage,
@@ -910,6 +910,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       const total = p.totalBytes ? ` / ${(p.totalBytes / 1e6).toFixed(0)} MB` : '';
       onProgress(`${p.resumed ? 'Resuming' : 'Downloading'} model… ${mb}${total} MB`);
     };
+    // Users who already downloaded under the old Cache-API scheme: move it
+    // to disk silently so they never see the onboarding/download prompt.
+    if (!isModelDownloaded(dir)) {
+      onProgress('Checking for an existing model…');
+      await tryMigrateLegacyCache(dir, MODEL_URL);
+    }
     if (isModelDownloaded(dir)) {
       onProgress('Loading model…');
       return getModelBlob(dir, MODEL_URL, report);
