@@ -49,6 +49,9 @@ export interface NoteExtraction {
   // Model's own confidence that the extraction faithfully represents the
   // note — surfaces low-trust pages for review (Dataview-queryable).
   confidence: 'high' | 'med' | 'low';
+  // Salient named entities / concepts the note refers to (issue #18). Stored
+  // in frontmatter so later features can cluster pages by shared mention.
+  mentions: string[];
 }
 
 export interface IndexEntry {
@@ -107,6 +110,10 @@ export function buildWikiPage(
   const date = new Date().toISOString().slice(0, 10);
   const tagsYaml = extraction.tags.map((t) => `  - ${slugify(t)}`).join('\n');
   const points = extraction.key_points.map((p) => `- ${p}`).join('\n');
+  const mentions = extraction.mentions ?? [];
+  const mentionsYaml = mentions.length
+    ? `mentions:\n${mentions.map((m) => `  - "${m.replace(/"/g, '')}"`).join('\n')}\n`
+    : '';
   const relatedSection = related.length
     ? `\n## Related\n\n${related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n')}\n`
     : '';
@@ -115,6 +122,7 @@ export function buildWikiPage(
     `tags:\n${tagsYaml}\n` +
     `source: "${sourcePath}"\n` +
     (sourceHash ? `source_hash: ${sourceHash}\n` : '') +
+    mentionsYaml +
     `created: ${date}\n` +
     `confidence: ${extraction.confidence}\n` +
     `---\n\n` +
