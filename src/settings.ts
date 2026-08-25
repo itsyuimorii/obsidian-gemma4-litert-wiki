@@ -99,10 +99,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       )
       .addButton((btn) => btn.setButtonText('Open schema.md').onClick(() => void this.plugin.openSchemaFile()))
       .addButton((btn) =>
-        btn
-          .setButtonText('Suggest tag vocabulary')
-          .setCta()
-          .onClick(() => void this.plugin.suggestTagVocabulary())
+        btn.setButtonText('Suggest tag vocabulary').onClick(() => void this.plugin.suggestTagVocabulary())
       );
 
     // ---------- Skills ----------
