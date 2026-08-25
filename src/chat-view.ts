@@ -218,6 +218,10 @@ export class ChatView extends ItemView {
       void (async () => {
         await ensureWikiScaffold(this.app.vault);
         await writeWikiPage(this.app.vault, pagePath, content);
+        // Index it too (issue #17) — without an index entry, Wiki-mode
+        // retrieval and lint can never see the saved transcript, so it was
+        // effectively write-only.
+        await upsertIndexEntry(this.app.vault, pagePath, firstQ.slice(0, 80), `Saved ${this.mode} chat: ${firstQ.slice(0, 100)}`);
         await appendLog(this.app.vault, 'chat', firstQ.slice(0, 60));
         new Notice(`Conversation saved: ${pagePath}`, 3000);
       })();
