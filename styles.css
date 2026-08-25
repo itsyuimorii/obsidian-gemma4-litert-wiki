@@ -301,6 +301,33 @@
   text-decoration: none;
 }
 
+/* Issue #7: per-answer opt-in hatch to ask Gemma ungrounded when no wiki
+   page matched. Dashed = "off the grounded path", quiet by default. */
+.gemma4-chat-hatch {
+  margin-top: 8px;
+}
+
+.gemma4-chat-hatch-btn {
+  background: transparent;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.gemma4-chat-hatch-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-chat-hatch-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---------- Spinner (replaces bouncing dots) ---------- */
 
 .gemma4-chat-spinner {
