@@ -1481,6 +1481,13 @@ export default class LiteRtSpikePlugin extends Plugin {
     let failed = 0;
     let cancelled = false;
     const n = result.eligible.length;
+    // Pages drafted earlier in THIS batch are valid link targets for later
+    // ones: they are about to be written together. Without this, scanning a
+    // set of related notes into a fresh wiki gives every page an empty
+    // Related section, because the index still holds only pre-batch pages.
+    // (A draft the user then unticks can leave a link to a page that was
+    // never written — the post-write prune below clears exactly that.)
+    const batchEntries: IndexEntry[] = [];
     for (let i = 0; i < n; i++) {
       if (this.scanCancelled) {
         cancelled = true;
@@ -1496,12 +1503,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         const sourceHash = contentHash(content);
         const pagePath = wikiPagePath(file.basename);
         const selfLink = pagePath.replace(/\.md$/, '');
-        const candidates = (await this.liveIndexEntries()).filter((e) => e.linkPath !== selfLink);
+        const candidates = [...(await this.liveIndexEntries()), ...batchEntries].filter(
+          (e) => e.linkPath !== selfLink
+        );
         let related: { title: string; linkPath: string }[] = [];
         if (candidates.length) {
           this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
           related = await this.pickRelatedPages(extraction.summary, candidates);
         }
+        batchEntries.push({ linkPath: selfLink, title: file.basename, summary: extraction.summary });
         drafts.push({
           file,
           reason,
@@ -1544,6 +1554,9 @@ export default class LiteRtSpikePlugin extends Plugin {
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
       await this.pruneIndex();
+      // Drafts could link to each other; if the user approved only some, the
+      // survivors may point at a page that was never written. Clear those.
+      await this.pruneDeadRelatedLinks();
       this.refreshIngestBadges();
       void this.refreshScanBadge();
       new Notice(`Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`, 4000);
@@ -1785,9 +1798,35 @@ export default class LiteRtSpikePlugin extends Plugin {
             return null;
           })
           .filter((t): t is string => !!t);
-        return titles
-          .map((t) => byTitle.get(t))
-          .filter((e): e is IndexEntry => !!e)
+        // Resolve titles tolerantly. The model has to echo a catalog title
+        // verbatim, and these are often slugs ("llm-inference-optimization");
+        // a 4B that tidies one into "LLM Inference Optimization" would have
+        // every pick dropped by an exact lookup, producing an empty Related
+        // section indistinguishable from "nothing qualified". Match on a
+        // normalized key (case, spacing and punctuation folded), then fall
+        // back to the page's slug.
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const byNorm = new Map<string, IndexEntry>();
+        for (const e of candidates) {
+          byNorm.set(norm(e.title), e);
+          const slug = e.linkPath.split('/').pop();
+          if (slug) byNorm.set(norm(slug), e);
+        }
+        const resolved = titles
+          .map((t) => byTitle.get(t) ?? byNorm.get(norm(t)))
+          .filter((e): e is IndexEntry => !!e);
+        if (titles.length && !resolved.length) {
+          // The model answered but nothing matched the catalog — a distinct
+          // failure from "no page qualified", and one the user cannot see.
+          console.warn(
+            '[gemma4-litert-wiki] related-pages: model returned titles that match no catalog entry',
+            { returned: titles, catalog: candidates.map((c) => c.title) }
+          );
+        }
+        // De-dupe: two spellings can resolve to the same page.
+        const seen = new Set<string>();
+        return resolved
+          .filter((e) => (seen.has(e.linkPath) ? false : (seen.add(e.linkPath), true)))
           .slice(0, 3)
           .map((e) => ({ title: e.title, linkPath: e.linkPath }));
       } finally {
