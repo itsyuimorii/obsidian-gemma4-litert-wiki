@@ -319,13 +319,21 @@ export function buildChatTranscript(turns: ChatTurnRecord[], mode: string, date:
   let body = `---\ntags:\n  - chat\nmode: ${mode}\ncreated: ${date}\n---\n\n# ${title}\n\n`;
   for (const t of turns) {
     if (t.role === 'user') {
-      body += `## \u{1f464} ${t.content}\n\n`;
+      // Blockquote, not a heading — H2 per question rendered huge and
+      // cluttered the outline. Quote reads as "the question asked".
+      const quoted = t.content
+        .trim()
+        .split('\n')
+        .map((line) => `> ${line}`)
+        .join('\n');
+      body += `${quoted}\n\n`;
     } else {
       body += `${t.content.trim()}\n\n`;
       if (t.sources?.length) {
         body += `*Sources: ${t.sources.map((sc) => `[[${sc.linkPath}|${sc.title}]]`).join(', ')}*\n\n`;
       }
+      body += `---\n\n`;
     }
   }
-  return body;
+  return body.trimEnd() + '\n';
 }
