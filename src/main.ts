@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { IngestPreviewModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
+import { ConfirmModal, IngestPreviewModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
   appendLog,
@@ -15,6 +15,7 @@ import {
   conceptPagePath,
   ensureSkillsScaffold,
   ensureWikiScaffold,
+  indexPath,
   readSchema,
   schemaPath,
   upsertIndexEntry,
@@ -194,8 +195,20 @@ export default class LiteRtSpikePlugin extends Plugin {
           return;
         }
         if (skip === 'unchanged') {
-          new Notice(`"${file.basename}" is already in the wiki and unchanged — skipped.`, 5000);
-          return;
+          // Not silently skipped: the note is already ingested and unchanged,
+          // but the user may want to re-ingest anyway — e.g. to regenerate its
+          // related links after the index changed, or just to refresh the page.
+          const proceed = await new Promise<boolean>((resolve) => {
+            new ConfirmModal(this.app, {
+              title: 'Already in the wiki',
+              body:
+                `"${file.basename}" is already ingested and unchanged. Re-ingest anyway? ` +
+                'This regenerates its wiki page (summary, tags, related links) and overwrites the existing one — you still review before it is written.',
+              confirmText: 'Re-ingest',
+              onResult: resolve,
+            }).open();
+          });
+          if (!proceed) return;
         }
         void pagePathForCheck;
 
@@ -238,6 +251,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               await ensureWikiScaffold(this.app.vault);
               await writeWikiPage(this.app.vault, pagePath, pageContent);
               await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
+              await this.pruneIndex();
               await appendLog(this.app.vault, 'ingest', file.basename);
               this.status(`Wiki page written: ${pagePath}`);
               this.statusEnd(undefined, 2500);
@@ -334,6 +348,22 @@ export default class LiteRtSpikePlugin extends Plugin {
       name: 'Lint wiki (orphans and index health)',
       callback: async () => {
         new LintReportModal(this.app, await runLint(this.app)).open();
+      },
+    });
+
+    this.addCommand({
+      id: 'litert-reconcile-index',
+      name: 'Reconcile wiki index (drop deleted pages)',
+      callback: async () => {
+        const before = (await readIndexEntries(this.app.vault)).length;
+        await this.pruneIndex();
+        const after = (await readIndexEntries(this.app.vault)).length;
+        new Notice(
+          before === after
+            ? 'Index is already clean — no deleted pages listed.'
+            : `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index.`,
+          5000
+        );
       },
     });
 
@@ -870,6 +900,23 @@ export default class LiteRtSpikePlugin extends Plugin {
     );
   }
 
+  // Keep index.md honest automatically: drop entries whose page file no longer
+  // exists. The index isn't pruned when the user deletes a page, so it
+  // accumulates ghosts that break related links and pollute retrieval. Called
+  // on every ingest so the index self-heals — no manual cleanup needed.
+  private async pruneIndex(): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(indexPath());
+    if (!(file instanceof TFile)) return;
+    const content = await this.app.vault.read(file);
+    const LINE = /^- \[\[([^\]|]+)\|/;
+    const lines = content.split('\n');
+    const kept = lines.filter((l) => {
+      const m = l.match(LINE);
+      return !m || this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile;
+    });
+    if (kept.length !== lines.length) await this.app.vault.modify(file, kept.join('\n'));
+  }
+
   // One strict-JSON call: given the tags currently in use (with counts),
   // return a SMALL merged vocabulary. A controlled vocabulary is meant to
   // converge — the model merges synonyms AND collapses narrow subtopics into
@@ -1128,6 +1175,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       for (const d of approved) {
         await writeWikiPage(this.app.vault, d.pagePath, d.pageContent);
         await upsertIndexEntry(this.app.vault, d.pagePath, d.file.basename, d.summary);
+        await this.pruneIndex();
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
       this.refreshIngestBadges();
