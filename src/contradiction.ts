@@ -15,6 +15,8 @@ export interface WikiPageMeta {
   title: string;
   summary: string;
   tags: string[];
+  // Page file mtime — pair ordering checks recently-changed pages first.
+  mtime: number;
 }
 
 export interface PagePair {
@@ -43,13 +45,17 @@ export async function collectWikiPages(app: App): Promise<WikiPageMeta[]> {
     if (!(file instanceof TFile)) continue;
     if (!file.path.startsWith(`${wikiDir()}/`)) continue;
     const tags = normalizeTags(app.metadataCache.getFileCache(file)?.frontmatter?.tags);
-    pages.push({ linkPath: e.linkPath, title: e.title, summary: e.summary, tags });
+    pages.push({ linkPath: e.linkPath, title: e.title, summary: e.summary, tags, mtime: file.stat.mtime });
   }
   return pages;
 }
 
-// Pairs of pages sharing at least one tag, capped. Deterministic order so a
-// re-run checks the same pairs first.
+// Pairs of pages sharing at least one tag, capped, ORDERED BY CHURN: the pair
+// whose fresher page changed most recently is checked first. The old
+// deterministic index order re-checked the same oldest pairs on every run —
+// with 65 qualifying pairs and a cap of 12, a freshly ingested pair ranked
+// #39 was never judged, run after run (issue #56). Recency puts new and
+// edited pages at the front, which is also where contradictions appear.
 // Returns the pairs to check (capped) AND how many qualified in total, so the
 // caller can say how many were left out. Stopping at the cap without counting
 // made truncation invisible: "0 flagged" then reads as "your wiki is
@@ -65,20 +71,23 @@ export function pairsSharingTag(
       const shared = pages[i].tags.some((t) => t && pages[j].tags.includes(t));
       if (!shared) continue;
       total++;
-      if (pairs.length < cap) pairs.push({ a: pages[i], b: pages[j] });
+      pairs.push({ a: pages[i], b: pages[j] });
     }
   }
-  return { pairs, total };
+  pairs.sort((x, y) => Math.max(y.a.mtime, y.b.mtime) - Math.max(x.a.mtime, x.b.mtime));
+  return { pairs: pairs.slice(0, cap), total };
 }
 
 export class ContradictionReportModal extends Modal {
   private flags: ContradictionFlag[];
   private checked: number;
+  private total: number;
 
-  constructor(app: App, flags: ContradictionFlag[], checked: number) {
+  constructor(app: App, flags: ContradictionFlag[], checked: number, total: number) {
     super(app);
     this.flags = flags;
     this.checked = checked;
+    this.total = total;
   }
 
   onOpen() {
@@ -87,7 +96,12 @@ export class ContradictionReportModal extends Modal {
     contentEl.createEl('h3', { text: 'Contradiction candidates' });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
-      text: `Checked ${this.checked} tag-sharing page pair${this.checked === 1 ? '' : 's'}. ${this.flags.length} flagged for a human look — these are candidates, not verdicts.`,
+      // The coverage fraction lives HERE, in the report the user reads — a
+      // transient toast is not where "53 pairs were never looked at" belongs.
+      text:
+        `Checked ${this.checked} of ${this.total} tag-sharing page pair${this.total === 1 ? '' : 's'}` +
+        `${this.total > this.checked ? ' (most recently changed first; run again after edits to rotate coverage)' : ''}. ` +
+        `${this.flags.length} flagged for a human look — these are candidates, not verdicts.`,
     });
 
     if (!this.flags.length) {

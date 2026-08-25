@@ -1110,7 +1110,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         8000
       );
     }
-    new ContradictionReportModal(this.app, flags, pairs.length).open();
+    new ContradictionReportModal(this.app, flags, pairs.length, uncappedPairs).open();
   }
 
   // Provenance spot-check (issue #21): sample a few wiki pages and, per page,
