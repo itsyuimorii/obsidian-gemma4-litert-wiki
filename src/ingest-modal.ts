@@ -98,3 +98,56 @@ export class RelinkPreviewModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+// First-run gate before the 2.97 GB download. Explicit consent (no
+// surprise multi-GB pull), stating the real costs: size, disk headroom,
+// one-time, offline after. onConfirm runs the resumable download.
+export class OnboardingModal extends Modal {
+  private resumeBytes: number;
+  private onResult: (confirmed: boolean) => void;
+  private decided = false;
+
+  constructor(app: App, resumeBytes: number, onResult: (confirmed: boolean) => void) {
+    super(app);
+    this.resumeBytes = resumeBytes;
+    this.onResult = onResult;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('gemma4-onboarding');
+    contentEl.createEl('h3', { text: 'Download the local model' });
+
+    const resuming = this.resumeBytes > 0;
+    contentEl.createEl('p', {
+      text: resuming
+        ? `A partial download of ${(this.resumeBytes / 1e9).toFixed(2)} GB is on disk — this will resume from there.`
+        : 'Gemma Wiki runs its model entirely on your machine. The first time, it downloads once and then works fully offline.',
+    });
+
+    const list = contentEl.createEl('ul', { cls: 'gemma4-onboarding-list' });
+    list.createEl('li', { text: 'Size: ~2.97 GB, downloaded one time and cached on disk.' });
+    list.createEl('li', { text: 'Free space: keep ~5 GB free for the download and its temporary file.' });
+    list.createEl('li', { text: 'Runs on your GPU via WebGPU — desktop only, no cloud, no API key.' });
+    list.createEl('li', { text: 'If the download is interrupted, run it again — it resumes where it stopped.' });
+
+    const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
+    const cancel = buttons.createEl('button', { text: 'Not now' });
+    cancel.addEventListener('click', () => this.close());
+    const confirm = buttons.createEl('button', {
+      cls: 'mod-cta',
+      text: resuming ? 'Resume download' : 'Download model',
+    });
+    confirm.addEventListener('click', () => {
+      this.decided = true;
+      this.close();
+      this.onResult(true);
+    });
+  }
+
+  onClose() {
+    // Closing any other way (Esc, backdrop, Not now) counts as declining.
+    if (!this.decided) this.onResult(false);
+    this.contentEl.empty();
+  }
+}

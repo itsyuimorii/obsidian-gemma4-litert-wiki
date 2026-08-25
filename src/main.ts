@@ -5,7 +5,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { IngestPreviewModal, RelinkPreviewModal, type RelinkProposal } from './ingest-modal';
+import { IngestPreviewModal, OnboardingModal, RelinkPreviewModal, type RelinkProposal } from './ingest-modal';
+import { getModelBlob, isModelDownloaded, partialBytes } from './model-store';
 import {
   appendLog,
   buildWikiPage,
@@ -46,7 +47,6 @@ const MIME: Record<string, string> = {
 
 const MODEL_URL =
   'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm';
-const CACHE_NAME = 'litert-spike-model-v1';
 
 function log(...args: unknown[]) {
   console.log('[litert-spike]', ...args);
@@ -69,54 +69,7 @@ async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
   }
 }
 
-// Same pattern as skim-recap's offscreen.ts fetchModelWithCache: stream the
-// download straight into the Cache API rather than buffering a 3 GB
-// response in JS memory, reporting progress as chunks arrive.
-async function fetchModelWithCache(onProgress: (text: string) => void): Promise<Blob> {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(MODEL_URL);
-  if (cached) {
-    onProgress('Loading cached model…');
-    return cached.blob();
-  }
-
-  onProgress('Downloading model (first run only, ~3GB)…');
-  const response = await fetch(MODEL_URL);
-  if (!response.ok || !response.body) {
-    throw new Error(`Model download failed: HTTP ${response.status}`);
-  }
-  const total = Number(response.headers.get('content-length') ?? 0);
-
-  let received = 0;
-  let lastLog = 0;
-  const counter = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      received += chunk.byteLength;
-      const now = Date.now();
-      if (now - lastLog > 1000) {
-        lastLog = now;
-        const mb = (received / 1e6).toFixed(0);
-        onProgress(
-          total > 0 ? `Downloading… ${mb} / ${(total / 1e6).toFixed(0)} MB` : `Downloading… ${mb} MB`
-        );
-      }
-      controller.enqueue(chunk);
-    },
-  });
-
-  await cache.put(
-    MODEL_URL,
-    new Response(response.body.pipeThrough(counter), {
-      headers: { 'content-type': 'application/octet-stream' },
-    })
-  );
-
-  const stored = await cache.match(MODEL_URL);
-  if (!stored) {
-    throw new Error('Model downloaded but could not be cached — free up disk space and retry.');
-  }
-  return stored.blob();
-}
+// Model download/caching moved to src/model-store.ts (resumable, on-disk).
 
 export default class LiteRtSpikePlugin extends Plugin {
   private server: Server | null = null;
@@ -348,20 +301,18 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-download-model',
       name: 'LiteRT spike: download Gemma 4 E4B model (one-time, ~3GB)',
       callback: async () => {
-        const notice = new Notice('Starting model download…', 0);
+        const notice = new Notice('Preparing model download…', 0);
         try {
-          await this.ensureWasmLoaded();
-          const blob = await fetchModelWithCache((text) => {
+          const blob = await this.ensureModelBlob((text) => {
             log(text);
             notice.setMessage(text);
           });
-          log('Model cached. Size bytes:', blob.size);
-          notice.setMessage(`Model cached. Size: ${(blob.size / 1e9).toFixed(2)} GB`);
+          notice.setMessage(`Model ready. Size: ${(blob.size / 1e9).toFixed(2)} GB`);
           setTimeout(() => notice.hide(), 5000);
         } catch (err) {
-          console.error('[litert-spike] model download failed', err);
-          notice.setMessage(`Download FAILED — see console. ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 12000);
+          console.error('[gemma4-litert-wiki] model download failed', err);
+          notice.setMessage(`Download: ${err instanceof Error ? err.message : String(err)}`);
+          setTimeout(() => notice.hide(), 10000);
         }
       },
     });
@@ -941,6 +892,37 @@ export default class LiteRtSpikePlugin extends Plugin {
     throw new Error('unreachable');
   }
 
+  private pluginAbsDir(): string {
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) {
+      throw new Error('Desktop only — model download needs the filesystem adapter.');
+    }
+    return path.join(adapter.getBasePath(), this.manifest.dir ?? '');
+  }
+
+  // Resolve the model as a Blob: on disk → load it; first run → show the
+  // onboarding gate, then resumable-download on explicit consent. Rejects
+  // with a friendly message if the user declines, so callers surface it.
+  private async ensureModelBlob(onProgress: (text: string) => void): Promise<Blob> {
+    const dir = this.pluginAbsDir();
+    const report = (p: { receivedBytes: number; totalBytes: number; resumed: boolean }) => {
+      const mb = (p.receivedBytes / 1e6).toFixed(0);
+      const total = p.totalBytes ? ` / ${(p.totalBytes / 1e6).toFixed(0)} MB` : '';
+      onProgress(`${p.resumed ? 'Resuming' : 'Downloading'} model… ${mb}${total} MB`);
+    };
+    if (isModelDownloaded(dir)) {
+      onProgress('Loading model…');
+      return getModelBlob(dir, MODEL_URL, report);
+    }
+    // First run (or incomplete): gate behind explicit consent.
+    const confirmed = await new Promise<boolean>((resolve) => {
+      new OnboardingModal(this.app, partialBytes(dir), resolve).open();
+    });
+    if (!confirmed) throw new Error('Model download declined.');
+    onProgress('Downloading model (first run, ~3GB)…');
+    return getModelBlob(dir, MODEL_URL, report);
+  }
+
   // Not private: ChatView (a separate class, same session) reuses the
   // single warm Engine instance rather than loading its own.
   ensureEngine(onProgress: (text: string) => void): Promise<Engine> {
@@ -948,7 +930,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.enginePromise = (async () => {
         await this.ensureWasmLoaded();
         const { Engine } = await import('@litert-lm/core');
-        const modelBlob = await fetchModelWithCache(onProgress);
+        const modelBlob = await this.ensureModelBlob(onProgress);
         onProgress('Moving model onto the GPU…');
         // benchmarkEnabled surfaces real prefill/decode tok/s + time-to-
         // first-token via conversation.getBenchmarkInfo() after generation,
