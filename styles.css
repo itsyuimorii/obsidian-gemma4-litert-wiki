@@ -848,3 +848,23 @@
   border-style: dashed;
   color: var(--text-normal);
 }
+
+/* ---------- Onboarding (first-run model download) ---------- */
+
+.gemma4-onboarding {
+  max-width: 460px;
+}
+
+.gemma4-onboarding p {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.gemma4-onboarding-list {
+  margin: 8px 0 16px;
+  padding-left: 18px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  line-height: 1.7;
+}
