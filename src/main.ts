@@ -11,6 +11,7 @@ import {
   buildWikiPage,
   ensureWikiScaffold,
   upsertIndexEntry,
+  clampToTokens,
   getIngestedSourcePaths,
   readIndexEntries,
   wikiPagePath,
@@ -182,14 +183,18 @@ export default class LiteRtSpikePlugin extends Plugin {
           new Notice('Note is empty — nothing to ingest.');
           return;
         }
-        if (content.length > 20000) {
-          new Notice(`Note is ${content.length} chars — over the 20000 limit for ingest right now.`, 8000);
-          return;
+        // Clamp to the engine context (token-estimated, CJK-aware) rather
+        // than rejecting on a char count — a summary card of the first
+        // part beats nothing, and the marker tells the model the tail is
+        // missing.
+        const clamped = clampToTokens(content, 2600);
+        if (clamped.truncated) {
+          new Notice('Note is long — ingesting a truncated version that fits the local model context.', 6000);
         }
 
         this.status(`Ingesting "${file.basename}"…`);
         try {
-          const extraction = await this.extractNoteMetadata(content, (t) =>
+          const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
             this.status(`Ingesting "${file.basename}" — ${t}`)
           );
           this.statusEnd();
