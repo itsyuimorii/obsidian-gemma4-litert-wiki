@@ -10,9 +10,6 @@ export interface GemmaWikiSettings {
   scanQuietHours: number;
   scanMaxPerRun: number;
   scanExclude: string; // comma-separated path prefixes to skip
-  // Custom skills (issue #4): one per line, "Label :: prompt", appended to
-  // the built-in skills menu.
-  customSkills: string;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -22,7 +19,6 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanQuietHours: 3,
   scanMaxPerRun: 10,
   scanExclude: '',
-  customSkills: '',
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -104,23 +100,14 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     // ---------- Skills ----------
     new Setting(containerEl).setName('Skills').setHeading();
-
-    new Setting(containerEl)
-      .setName('Custom skills')
-      .setClass('gemma4-textarea-setting')
-      .setDesc(
-        'Your own one-shot prompts, added to the ⚡ skills menu. One per line, "Label :: prompt". ' +
-          'Each runs against the current chat context (mode + attachments), same as the built-in skills.'
-      )
-      .addTextArea((ta) => {
-        ta.setPlaceholder('ELI5 :: Explain this material like I am five.\nAction items :: List concrete next actions from this material.')
-          .setValue(this.plugin.settings.customSkills)
-          .onChange(async (v) => {
-            this.plugin.settings.customSkills = v;
-            await this.plugin.saveSettings();
-          });
-        ta.inputEl.rows = 4;
-      });
+    containerEl.createEl('p', {
+      cls: 'setting-item-description',
+      text:
+        'Your own one-shot prompts live as files in the wiki\'s skills/ folder ("config as a note"), ' +
+        'one file per skill — frontmatter for name/icon/mode, the body is the prompt. Each appears in ' +
+        'the ⚡ menu of the chat panel. Run the command "Create skills folder with examples" to seed it ' +
+        'with a README and two starter skills, then add or edit files there.',
+    });
 
     // ---------- Chat ----------
     new Setting(containerEl).setName('Chat').setHeading();

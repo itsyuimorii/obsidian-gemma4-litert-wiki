@@ -13,6 +13,7 @@ import {
   buildSchemaFile,
   buildWikiPage,
   conceptPagePath,
+  ensureSkillsScaffold,
   ensureWikiScaffold,
   readSchema,
   schemaPath,
@@ -346,6 +347,18 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-suggest-vocab',
       name: 'Suggest tag vocabulary (schema.md, local Gemma)',
       callback: () => void this.suggestTagVocabulary(),
+    });
+
+    this.addCommand({
+      id: 'litert-create-skills-folder',
+      name: 'Create skills folder with examples',
+      callback: async () => {
+        await ensureSkillsScaffold(this.app.vault);
+        const path = `${wikiDir()}/skills`;
+        new Notice(`Skills folder ready at ${path}. Open its README, then add a .md file per skill.`, 6000);
+        const readme = this.app.vault.getAbstractFileByPath(`${path}/README.md`);
+        if (readme instanceof TFile) await this.app.workspace.getLeaf(true).openFile(readme);
+      },
     });
 
     this.addCommand({
