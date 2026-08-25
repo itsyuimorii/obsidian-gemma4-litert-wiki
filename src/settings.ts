@@ -27,6 +27,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    containerEl.addClass('gemma4-settings');
 
     // ---------- Model ----------
     new Setting(containerEl).setName('Model').setHeading();
