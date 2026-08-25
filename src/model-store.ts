@@ -52,9 +52,27 @@ export async function getModelBlob(
     }
   }
 
-  const buf = await fs.promises.readFile(final);
-  // Copy into a fresh ArrayBuffer so the Blob doesn't alias Node's Buffer pool.
-  return new Blob([new Uint8Array(buf)], { type: 'application/octet-stream' });
+  return fileToBlob(final);
+}
+
+// fs.readFile throws "File size ... is greater than 2 GiB" on files past
+// 2^31-1 bytes, and the model is ~2.97 GB. Stream it in chunks into an
+// array of Uint8Array and build one Blob from the parts — a Blob's total
+// size is not capped at 2 GiB, only a single Node Buffer is.
+async function fileToBlob(filePath: string): Promise<Blob> {
+  const parts: BlobPart[] = [];
+  await new Promise<void>((resolve, reject) => {
+    const rs = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 * 1024 });
+    rs.on('data', (chunk: string | Buffer) => {
+      const b = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      // Slice out a standalone ArrayBuffer so the part is a plain
+      // ArrayBuffer, not ArrayBufferLike (BlobPart typing).
+      parts.push(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
+    });
+    rs.on('end', resolve);
+    rs.on('error', reject);
+  });
+  return new Blob(parts, { type: 'application/octet-stream' });
 }
 
 async function downloadResumable(
@@ -146,11 +164,26 @@ export async function migrateFromLegacyCache(
     const cache = await caches.open(LEGACY_CACHE_NAME);
     const hit = await cache.match(modelUrl);
     if (!hit) return false;
+    if (!hit.body) return false;
     onProgress({ receivedBytes: 0, totalBytes: 0, resumed: true });
-    const buf = Buffer.from(await hit.arrayBuffer());
-    await fs.promises.writeFile(final, buf);
+    const tmp = final + PARTIAL_SUFFIX;
+    const out = fs.createWriteStream(tmp, { flags: 'w' });
+    const reader = hit.body.getReader();
+    let written = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        await new Promise<void>((resolve, reject) =>
+          out.write(Buffer.from(value), (err) => (err ? reject(err) : resolve()))
+        );
+        written += value.byteLength;
+      }
+    }
+    await new Promise<void>((resolve) => out.end(resolve));
+    await fs.promises.rename(tmp, final);
     await cache.delete(modelUrl).catch(() => {});
-    onProgress({ receivedBytes: buf.byteLength, totalBytes: buf.byteLength, resumed: true });
+    onProgress({ receivedBytes: written, totalBytes: written, resumed: true });
     return true;
   } catch {
     return false;
