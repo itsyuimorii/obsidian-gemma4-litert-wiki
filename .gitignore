@@ -7,3 +7,6 @@ wasm/
 # Downloaded model (multi-GB, never commit)
 gemma-4-E4B-it-web.litertlm
 *.partial
+
+# Per-user runtime settings (each install differs)
+data.json
