@@ -1099,7 +1099,26 @@ export default class LiteRtSpikePlugin extends Plugin {
   // The scan and the review modal live in auto-ingest.ts; the model calls
   // stay here because they need the engine. Manual trigger only — no
   // background timer yet, so nothing runs the GPU while you are away.
+  // Scan run-state: a scan drafts with the model for tens of seconds, so the
+  // UI needs to know it is running (button shows "Stop scan") and be able to
+  // cancel it. Cancel keeps the drafts already made — the GPU time is spent,
+  // the user still reviews them — and stops before the next one.
+  private scanRunning = false;
+  private scanCancelled = false;
+
+  isScanning(): boolean {
+    return this.scanRunning;
+  }
+
+  cancelScan(): void {
+    if (this.scanRunning) this.scanCancelled = true;
+  }
+
   async scanAndReviewIngest() {
+    if (this.scanRunning) {
+      new Notice('A scan is already running — use "Stop scan" in settings to cancel it.', 5000);
+      return;
+    }
     // Allow-list scope (opt-in): scan only looks at the folders the user named.
     // Blank means nothing to scan — guide them to set it (or ingest one note
     // by hand) rather than silently sweeping the whole vault.
@@ -1112,6 +1131,17 @@ export default class LiteRtSpikePlugin extends Plugin {
       );
       return;
     }
+    this.scanRunning = true;
+    this.scanCancelled = false;
+    try {
+      await this.runScanAndReview(includePrefixes);
+    } finally {
+      this.scanRunning = false;
+      this.scanCancelled = false;
+    }
+  }
+
+  private async runScanAndReview(includePrefixes: string[]) {
     this.status('Scanning for new or changed notes…');
     const result = await findIngestCandidates(this.app, {
       // Manual scan ignores the quiet period (issue #42): clicking "Scan now"
@@ -1140,8 +1170,13 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Failures are collected and skipped, never block the batch.
     const drafts: IngestDraft[] = [];
     let failed = 0;
+    let cancelled = false;
     const n = result.eligible.length;
     for (let i = 0; i < n; i++) {
+      if (this.scanCancelled) {
+        cancelled = true;
+        break;
+      }
       const { file, reason } = result.eligible[i];
       try {
         const content = await this.app.vault.read(file);
@@ -1176,13 +1211,18 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.statusEnd();
 
     if (!drafts.length) {
-      new Notice('Every draft failed to generate — nothing to review.', 6000);
+      new Notice(
+        cancelled ? 'Scan stopped — no drafts were finished.' : 'Every draft failed to generate — nothing to review.',
+        6000
+      );
       return;
     }
 
-    const capNote = result.cappedOut
-      ? ` (${result.cappedOut} more left for the next scan)`
-      : '';
+    const capNote = cancelled
+      ? ' (scan stopped — the rest will be offered next scan)'
+      : result.cappedOut
+        ? ` (${result.cappedOut} more left for the next scan)`
+        : '';
     new Notice(`${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}.`, 4000);
 
     new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {

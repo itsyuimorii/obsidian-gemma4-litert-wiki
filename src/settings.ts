@@ -165,7 +165,25 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           'all at once before anything is written — drafts are never saved without your tick. ' +
           'To ingest one specific note instead, use the command palette: "Ingest active note into wiki".'
       )
-      .addButton((btn) => btn.setButtonText('Scan now').onClick(() => void this.plugin.scanAndReviewIngest()));
+      .addButton((btn) => {
+        // The button doubles as the stop control: a scan drafts with the model
+        // for tens of seconds, so while it runs the label flips to "Stop scan"
+        // and a click cancels (keeping the drafts already made).
+        btn.setButtonText(this.plugin.isScanning() ? 'Stop scan' : 'Scan now');
+        btn.onClick(async () => {
+          if (this.plugin.isScanning()) {
+            this.plugin.cancelScan();
+            btn.setButtonText('Scan now');
+            return;
+          }
+          btn.setButtonText('Stop scan');
+          try {
+            await this.plugin.scanAndReviewIngest();
+          } finally {
+            btn.setButtonText('Scan now');
+          }
+        });
+      });
 
     new Setting(containerEl)
       .setName('Scan these folders')
