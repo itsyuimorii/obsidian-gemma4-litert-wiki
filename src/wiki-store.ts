@@ -5,7 +5,7 @@ import { normalizePath, TFile, Vault, type App } from 'obsidian';
 // content-oriented index.md the query path reads first, and an
 // append-only log.md with grep-friendly prefixed entries.
 
-export const WIKI_DIR = 'wiki';
+export const WIKI_DIR = 'gemma-wiki';
 export const WIKI_SOURCES_DIR = `${WIKI_DIR}/sources`;
 export const WIKI_ANSWERS_DIR = `${WIKI_DIR}/answers`;
 export const WIKI_CHATS_DIR = `${WIKI_DIR}/chats`;
