@@ -5,12 +5,36 @@ import { normalizePath, TFile, Vault, type App } from 'obsidian';
 // content-oriented index.md the query path reads first, and an
 // append-only log.md with grep-friendly prefixed entries.
 
-export const WIKI_DIR = 'gemma-wiki';
-export const WIKI_SOURCES_DIR = `${WIKI_DIR}/sources`;
-export const WIKI_ANSWERS_DIR = `${WIKI_DIR}/answers`;
-export const WIKI_CHATS_DIR = `${WIKI_DIR}/chats`;
-export const INDEX_PATH = `${WIKI_DIR}/index.md`;
-export const LOG_PATH = `${WIKI_DIR}/log.md`;
+// Wiki layer folder name is user-configurable (Settings). Held in one
+// mutable module var; every path derives from it through a getter so a
+// changed setting takes effect everywhere without re-import. The plugin
+// calls setWikiDir() on load before any wiki operation runs.
+export const DEFAULT_WIKI_DIR = 'gemma-wiki';
+let _wikiDir = DEFAULT_WIKI_DIR;
+
+export function setWikiDir(name: string): void {
+  const clean = name.trim().replace(/^\/+|\/+$/g, '');
+  _wikiDir = clean || DEFAULT_WIKI_DIR;
+}
+
+export function wikiDir(): string {
+  return _wikiDir;
+}
+export function wikiSourcesDir(): string {
+  return `${_wikiDir}/sources`;
+}
+export function wikiAnswersDir(): string {
+  return `${_wikiDir}/answers`;
+}
+export function wikiChatsDir(): string {
+  return `${_wikiDir}/chats`;
+}
+export function indexPath(): string {
+  return `${_wikiDir}/index.md`;
+}
+export function logPath(): string {
+  return `${_wikiDir}/log.md`;
+}
 
 export interface NoteExtraction {
   summary: string;
@@ -37,7 +61,7 @@ export function slugify(name: string): string {
 }
 
 export function wikiPagePath(sourceBasename: string): string {
-  return normalizePath(`${WIKI_SOURCES_DIR}/${slugify(sourceBasename)}.md`);
+  return normalizePath(`${wikiSourcesDir()}/${slugify(sourceBasename)}.md`);
 }
 
 export function buildWikiPage(
@@ -86,16 +110,16 @@ async function writeFile(vault: Vault, path: string, content: string): Promise<v
 }
 
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [WIKI_DIR, WIKI_SOURCES_DIR, WIKI_ANSWERS_DIR, WIKI_CHATS_DIR]) {
+  for (const dir of [wikiDir(), wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir()]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
   }
-  if (!vault.getAbstractFileByPath(INDEX_PATH)) {
-    await vault.create(INDEX_PATH, '# Wiki Index\n\nOne line per page: link, then a one-sentence summary.\n\n');
+  if (!vault.getAbstractFileByPath(indexPath())) {
+    await vault.create(indexPath(), '# Wiki Index\n\nOne line per page: link, then a one-sentence summary.\n\n');
   }
-  if (!vault.getAbstractFileByPath(LOG_PATH)) {
-    await vault.create(LOG_PATH, '# Wiki Log\n\nAppend-only timeline. One `- [date] action | title` line per operation.\n\n');
+  if (!vault.getAbstractFileByPath(logPath())) {
+    await vault.create(logPath(), '# Wiki Log\n\nAppend-only timeline. One `- [date] action | title` line per operation.\n\n');
   }
 }
 
@@ -113,7 +137,7 @@ export async function upsertIndexEntry(
 ): Promise<void> {
   const linkTarget = pagePath.replace(/\.md$/, '');
   const line = `- [[${linkTarget}|${title}]] — ${summary}`;
-  const current = (await readIfExists(vault, INDEX_PATH)) ?? '# Wiki Index\n\n';
+  const current = (await readIfExists(vault, indexPath())) ?? '# Wiki Index\n\n';
   const lines = current.split('\n');
   const existingIdx = lines.findIndex((l) => {
     const m = l.match(INDEX_LINE);
@@ -124,17 +148,17 @@ export async function upsertIndexEntry(
   } else {
     lines.push(line);
   }
-  await writeFile(vault, INDEX_PATH, lines.join('\n').replace(/\n{3,}/g, '\n\n'));
+  await writeFile(vault, indexPath(), lines.join('\n').replace(/\n{3,}/g, '\n\n'));
 }
 
 export async function appendLog(vault: Vault, action: string, title: string): Promise<void> {
   const date = new Date().toISOString().slice(0, 10);
-  const current = (await readIfExists(vault, LOG_PATH)) ?? '# Wiki Log\n\n';
-  await writeFile(vault, LOG_PATH, `${current.trimEnd()}\n- [${date}] ${action} | ${title}\n`);
+  const current = (await readIfExists(vault, logPath())) ?? '# Wiki Log\n\n';
+  await writeFile(vault, logPath(), `${current.trimEnd()}\n- [${date}] ${action} | ${title}\n`);
 }
 
 export async function readIndexEntries(vault: Vault): Promise<IndexEntry[]> {
-  const content = await readIfExists(vault, INDEX_PATH);
+  const content = await readIfExists(vault, indexPath());
   if (!content) return [];
   const entries: IndexEntry[] = [];
   for (const l of content.split('\n')) {
@@ -190,7 +214,7 @@ export async function loadPages(vault: Vault, entries: IndexEntry[], maxTotalCha
 }
 
 export function answerPagePath(question: string): string {
-  return normalizePath(`${WIKI_ANSWERS_DIR}/${slugify(question).slice(0, 60)}.md`);
+  return normalizePath(`${wikiAnswersDir()}/${slugify(question).slice(0, 60)}.md`);
 }
 
 export function buildAnswerPage(
@@ -218,7 +242,7 @@ export function buildAnswerPage(
 export function getIngestedSourcePaths(app: App): Set<string> {
   const ingested = new Set<string>();
   for (const f of app.vault.getMarkdownFiles()) {
-    if (!f.path.startsWith(`${WIKI_DIR}/`)) continue;
+    if (!f.path.startsWith(`${wikiDir()}/`)) continue;
     const src = app.metadataCache.getFileCache(f)?.frontmatter?.source;
     if (typeof src === 'string' && src.length) ingested.add(src);
   }
@@ -229,7 +253,7 @@ export function getIngestedSourcePaths(app: App): Set<string> {
 // did I add today?" from the append-only log instead of failing lexical
 // retrieval against page content.
 export async function readLogTail(vault: Vault, count: number): Promise<string> {
-  const file = vault.getAbstractFileByPath(LOG_PATH);
+  const file = vault.getAbstractFileByPath(logPath());
   if (!(file instanceof TFile)) return '';
   const content = await vault.read(file);
   // Match the current '- [' list format and legacy '## [' headings so
@@ -282,7 +306,7 @@ export function contentHash(text: string): string {
 export function getIngestedSourceHashes(app: App): Map<string, string> {
   const map = new Map<string, string>();
   for (const f of app.vault.getMarkdownFiles()) {
-    if (!f.path.startsWith(`${WIKI_DIR}/`)) continue;
+    if (!f.path.startsWith(`${wikiDir()}/`)) continue;
     const fm = app.metadataCache.getFileCache(f)?.frontmatter;
     const src = fm?.source;
     const hash = fm?.source_hash;
@@ -311,7 +335,7 @@ export interface ChatTurnRecord {
 }
 
 export function chatTranscriptPath(firstQuestion: string, stamp: string): string {
-  return normalizePath(`${WIKI_CHATS_DIR}/${stamp}-${slugify(firstQuestion).slice(0, 40)}.md`);
+  return normalizePath(`${wikiChatsDir()}/${stamp}-${slugify(firstQuestion).slice(0, 40)}.md`);
 }
 
 // Render a chat thread as a vault-native markdown file: frontmatter for

@@ -1,5 +1,5 @@
 import { App, Modal } from 'obsidian';
-import { INDEX_PATH, LOG_PATH, WIKI_DIR, readIndexEntries } from './wiki-store';
+import { indexPath, logPath, wikiDir, readIndexEntries } from './wiki-store';
 
 // Lint v1, deliberately model-free: orphans and index health are graph
 // facts the metadata cache already knows. LLM-driven lint phases
@@ -18,14 +18,14 @@ export async function runLint(app: App): Promise<LintReport> {
   const entries = await readIndexEntries(app.vault);
   const wikiFiles = app.vault
     .getMarkdownFiles()
-    .filter((f) => f.path.startsWith(`${WIKI_DIR}/`) && f.path !== INDEX_PATH && f.path !== LOG_PATH);
+    .filter((f) => f.path.startsWith(`${wikiDir()}/`) && f.path !== indexPath() && f.path !== logPath());
   const wikiPaths = new Set(wikiFiles.map((f) => f.path));
 
   // Inbound wiki-to-wiki links only. The index links to every page by
   // design, so counting it would make orphans structurally impossible.
   const inbound = new Map<string, number>();
   for (const [src, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
-    if (!src.startsWith(`${WIKI_DIR}/`) || src === INDEX_PATH || src === LOG_PATH) continue;
+    if (!src.startsWith(`${wikiDir()}/`) || src === indexPath() || src === logPath()) continue;
     for (const [tgt, count] of Object.entries(targets)) {
       if (tgt === src) continue;
       if (wikiPaths.has(tgt)) inbound.set(tgt, (inbound.get(tgt) ?? 0) + count);
