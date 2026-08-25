@@ -418,6 +418,12 @@ export default class LiteRtSpikePlugin extends Plugin {
     });
 
     this.addCommand({
+      id: 'litert-retag-pages',
+      name: 'Retag wiki pages to vocabulary (local Gemma)',
+      callback: () => void this.retagPagesToVocabulary(),
+    });
+
+    this.addCommand({
       id: 'litert-find-contradictions',
       name: 'Find contradictions in wiki (local Gemma)',
       callback: () => void this.findContradictions(),
@@ -1051,7 +1057,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const MAX_PAIRS = 12;
     this.status('Collecting wiki pages…');
     const pages: WikiPageMeta[] = await collectWikiPages(this.app);
-    const pairs = pairsSharingTag(pages, MAX_PAIRS);
+    const { pairs, total: uncappedPairs } = pairsSharingTag(pages, MAX_PAIRS);
     if (!pairs.length) {
       this.statusEnd(
         pages.length < 2
@@ -1063,18 +1069,37 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
 
     const flags: ContradictionFlag[] = [];
+    // Count the pairs the model failed to judge. Without this, twelve failed
+    // calls and twelve clean verdicts both report "0 flagged" — the same
+    // silent-failure pattern that hid the related-picker regression.
+    let unjudged = 0;
     try {
       for (let i = 0; i < pairs.length; i++) {
         const { a, b } = pairs[i];
         this.status(`Checking ${i + 1}/${pairs.length} — ${a.title} vs ${b.title}…`);
         const verdict = await this.judgeContradiction(a.title, a.summary, b.title, b.summary);
-        if (verdict?.contradict) flags.push({ a, b, reason: verdict.reason });
+        if (!verdict) unjudged++;
+        else if (verdict.contradict) flags.push({ a, b, reason: verdict.reason });
       }
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] contradiction scan failed', err);
       this.statusEnd(`Contradiction scan FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
       return;
+    }
+    // The pair cap is also silent otherwise: "0 flagged" reads as "your wiki is
+    // consistent" when pairs were never looked at.
+    const notChecked = uncappedPairs - pairs.length;
+    if (unjudged || notChecked) {
+      new Notice(
+        [
+          unjudged ? `${unjudged} of ${pairs.length} pairs could not be judged (see console)` : '',
+          notChecked ? `${notChecked} more pair${notChecked === 1 ? '' : 's'} not checked this run (cap ${MAX_PAIRS})` : '',
+        ]
+          .filter(Boolean)
+          .join('; ') + '.',
+        8000
+      );
     }
     new ContradictionReportModal(this.app, flags, pairs.length).open();
   }
@@ -1159,6 +1184,153 @@ export default class LiteRtSpikePlugin extends Plugin {
       const parsed = JSON.parse(match[0]) as { vocabulary?: unknown };
       if (!Array.isArray(parsed.vocabulary)) return [];
       return [...new Set(parsed.vocabulary.filter((t): t is string => typeof t === 'string').map((t) => slugify(t)).filter(Boolean))];
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
+  // Retag existing wiki pages to the current vocabulary. Organizing the
+  // vocabulary only affects FUTURE ingests, so after narrowing it (espresso ->
+  // coffee) the already-written pages still carry the old tags — and the same
+  // subject splits into two clusters that can each miss the concept threshold.
+  // This is the catch-up move: map each off-vocabulary tag to its closest
+  // vocabulary tag (one strict-JSON call for the whole set), show every
+  // per-page change, and only write after Approve. Wiki pages only — raw
+  // notes are never touched.
+  async retagPagesToVocabulary() {
+    const schema = await readSchema(this.app.vault);
+    const vocab = [...new Set(schema.tags.map((t) => slugify(t)).filter(Boolean))];
+    if (!vocab.length) {
+      new Notice('No vocabulary in schema.md yet — run "Organize tags" first.', 6000);
+      return;
+    }
+    const STRUCTURAL = new Set(['concept', 'answer', 'chat']);
+    const vocabSet = new Set(vocab);
+    // Collect each page's tags and the set of off-vocabulary ones.
+    const pages: { file: TFile; tags: string[] }[] = [];
+    const offVocab = new Set<string>();
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      if (fm?.kind === 'concept') continue; // concept pages are named BY their tag
+      const raw = fm?.tags;
+      const tags = Array.isArray(raw)
+        ? raw.map((t) => String(t))
+        : typeof raw === 'string'
+          ? raw.split(/[,\s]+/).filter(Boolean)
+          : [];
+      if (!tags.length) continue;
+      pages.push({ file: f, tags });
+      for (const t of tags) {
+        const s = slugify(t);
+        if (s && !vocabSet.has(s) && !STRUCTURAL.has(s)) offVocab.add(s);
+      }
+    }
+    if (!offVocab.size) {
+      new Notice('All page tags already match the vocabulary — nothing to retag.', 5000);
+      return;
+    }
+
+    this.status(`Mapping ${offVocab.size} old tag${offVocab.size === 1 ? '' : 's'} to the vocabulary…`);
+    let mapping: Map<string, string>;
+    try {
+      mapping = await this.mapTagsToVocabulary(vocab, [...offVocab]);
+      this.statusEnd();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] retag mapping failed', err);
+      this.statusEnd(`Retag FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return;
+    }
+
+    // Compute per-page changes. A tag with no confident mapping is KEPT —
+    // losing information silently is worse than leaving a stray tag.
+    const changes: { file: TFile; from: string[]; to: string[] }[] = [];
+    for (const p of pages) {
+      const to = [
+        ...new Set(
+          p.tags.map((t) => {
+            const s = slugify(t);
+            if (STRUCTURAL.has(s) || vocabSet.has(s)) return s;
+            return mapping.get(s) ?? s;
+          })
+        ),
+      ];
+      const from = p.tags.map((t) => slugify(t));
+      if (JSON.stringify(from) !== JSON.stringify(to)) changes.push({ file: p.file, from, to });
+    }
+    if (!changes.length) {
+      new Notice('The model kept every old tag as-is — nothing to retag.', 6000);
+      return;
+    }
+
+    const summary = changes
+      .map((c) => `${c.file.basename}:  ${c.from.join(', ')}  →  ${c.to.join(', ')}`)
+      .join('\n');
+    new ConfirmModal(this.app, {
+      title: `Retag ${changes.length} page${changes.length === 1 ? '' : 's'} to the vocabulary`,
+      body:
+        `Old tags are rewritten to their vocabulary equivalents so past and future pages cluster ` +
+        `together. Wiki pages only — your raw notes are not touched.\n\n${summary}`,
+      confirmText: 'Retag pages',
+      onResult: (ok) => {
+        if (!ok) return;
+        void (async () => {
+          for (const c of changes) {
+            await this.app.fileManager.processFrontMatter(c.file, (fm) => {
+              fm.tags = c.to;
+            });
+          }
+          await appendLog(this.app.vault, 'retag', `${changes.length} pages to vocabulary`);
+          new Notice(`Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`, 4000);
+        })();
+      },
+    }).open();
+  }
+
+  // One strict-JSON call: old tag -> closest vocabulary tag. Flat object in,
+  // flat object out (the nested-schema lesson). Tolerant validation: a value
+  // that isn't in the vocabulary means "keep the original tag".
+  async mapTagsToVocabulary(vocab: string[], oldTags: string[]): Promise<Map<string, string>> {
+    const engine = await this.ensureEngine((t) => this.status(t));
+    const { SamplerType } = await import('@litert-lm/core');
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You map old wiki tags onto a controlled vocabulary. Respond with ONLY a JSON ' +
+                'object, no fences: {"mapping": {"old-tag": "vocabulary-tag", ...}}. For each old ' +
+                'tag pick the vocabulary tag that covers it (espresso -> coffee). If NO vocabulary ' +
+                'tag fits, map the tag to itself to keep it. Values must come from the vocabulary ' +
+                'or repeat the old tag — never invent new tags.',
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 512 },
+      });
+      const message = await conversation.sendMessage(
+        `Vocabulary:\n${vocab.map((v) => `- ${v}`).join('\n')}\n\nOld tags:\n${oldTags.map((t) => `- ${t}`).join('\n')}`
+      );
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('Model returned no JSON.');
+      const parsed = JSON.parse(match[0]) as { mapping?: Record<string, unknown> };
+      const out = new Map<string, string>();
+      const vocabSet = new Set(vocab);
+      for (const t of oldTags) {
+        const v = parsed.mapping?.[t];
+        const slug = typeof v === 'string' ? slugify(v) : '';
+        // Only accept a mapping into the vocabulary; anything else keeps the tag.
+        if (slug && vocabSet.has(slug)) out.set(t, slug);
+      }
+      console.debug('[gemma4-litert-wiki] retag mapping', Object.fromEntries(out));
+      return out;
     } finally {
       await conversation?.delete().catch(() => {});
     }
@@ -1320,11 +1492,15 @@ export default class LiteRtSpikePlugin extends Plugin {
             {
               role: 'system',
               content:
-                'You compare two knowledge-base entries and decide if they FACTUALLY CONTRADICT — ' +
-                'state opposite or incompatible facts. Respond with ONLY a JSON object, no fences: ' +
-                '{"contradict": "yes" or "no", "reason": "one short sentence"}. Entries on different ' +
-                'topics do NOT contradict — answer "no". Only answer "yes" for a genuine factual ' +
-                'conflict, not merely different emphasis or overlap.',
+                'You compare two knowledge-base entries and decide whether they CONTRADICT each ' +
+                'other. Respond with ONLY a JSON object, no fences: ' +
+                '{"contradict": "yes" or "no", "reason": "one short sentence"}. ' +
+                'They contradict when they make OPPOSING claims about the same thing — one says a ' +
+                'method works and the other says it does not, one says a quantity is enough and the ' +
+                'other says it is not, one recommends an approach the other warns against. Both ' +
+                'cannot be true at once. ' +
+                'They do not contradict when they are simply about different topics, or cover the ' +
+                'same topic without disagreeing. Judge the claims as written.',
             },
           ],
         },
@@ -1339,11 +1515,23 @@ export default class LiteRtSpikePlugin extends Plugin {
       else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) return null;
-      const parsed = JSON.parse(match[0]) as { contradict?: string; reason?: string };
-      return {
-        contradict: String(parsed.contradict).toLowerCase() === 'yes',
-        reason: parsed.reason ?? '',
-      };
+      const parsed = JSON.parse(match[0]) as { contradict?: unknown; reason?: unknown };
+      // Accept every reasonable spelling of yes. The field is named
+      // "contradict", which reads boolean, so a model very naturally answers
+      // `true` — and matching only the exact string "yes" turned that into a
+      // silent NO. Same brittleness that made the related picker drop every
+      // pick when the model tidied a title.
+      const v = parsed.contradict;
+      const contradict =
+        v === true || (typeof v === 'string' && ['yes', 'true', 'y'].includes(v.trim().toLowerCase()));
+      const verdict = { contradict, reason: typeof parsed.reason === 'string' ? parsed.reason : '' };
+      console.debug('[gemma4-litert-wiki] contradiction verdict', {
+        a: titleA,
+        b: titleB,
+        raw: v,
+        contradict,
+      });
+      return verdict;
     } catch (err) {
       console.error('[gemma4-litert-wiki] judgeContradiction parse/gen failed', err);
       return null; // a bad judgment just drops the pair; never blocks the sweep
