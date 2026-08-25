@@ -13,6 +13,7 @@ import {
   ensureWikiScaffold,
   upsertIndexEntry,
   clampToTokens,
+  cleanClippedMarkdown,
   contentHash,
   getIngestedSourceHashes,
   getIngestedSourcePaths,
@@ -154,11 +155,14 @@ export default class LiteRtSpikePlugin extends Plugin {
         }
         void pagePathForCheck;
 
+        // Strip web-clip boilerplate (nav menus, footers, subscribe blocks)
+        // before spending context on it — critical with a 4096-token model.
+        const cleaned = cleanClippedMarkdown(content);
         // Clamp to the engine context (token-estimated, CJK-aware) rather
         // than rejecting on a char count — a summary card of the first
         // part beats nothing, and the marker tells the model the tail is
         // missing.
-        const clamped = clampToTokens(content, 2600);
+        const clamped = clampToTokens(cleaned, 2600);
         if (clamped.truncated) {
           new Notice('Note is long — ingesting a truncated version that fits the local model context.', 6000);
         }
