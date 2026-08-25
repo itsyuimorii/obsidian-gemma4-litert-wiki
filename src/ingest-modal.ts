@@ -15,7 +15,9 @@ export class ConfirmModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.createEl('h3', { text: this.opts.title });
-    contentEl.createEl('p', { text: this.opts.body });
+    // pre-line so multi-line bodies (e.g. the retag per-page change list)
+    // keep their line breaks; the class caps height and scrolls.
+    contentEl.createDiv({ cls: 'gemma4-confirm-body', text: this.opts.body });
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
     const cancel = buttons.createEl('button', { text: 'Cancel' });
     cancel.addEventListener('click', () => this.close());

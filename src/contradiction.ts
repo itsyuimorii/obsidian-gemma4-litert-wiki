@@ -50,16 +50,25 @@ export async function collectWikiPages(app: App): Promise<WikiPageMeta[]> {
 
 // Pairs of pages sharing at least one tag, capped. Deterministic order so a
 // re-run checks the same pairs first.
-export function pairsSharingTag(pages: WikiPageMeta[], cap: number): PagePair[] {
+// Returns the pairs to check (capped) AND how many qualified in total, so the
+// caller can say how many were left out. Stopping at the cap without counting
+// made truncation invisible: "0 flagged" then reads as "your wiki is
+// consistent" even when most pairs were never looked at.
+export function pairsSharingTag(
+  pages: WikiPageMeta[],
+  cap: number
+): { pairs: PagePair[]; total: number } {
   const pairs: PagePair[] = [];
+  let total = 0;
   for (let i = 0; i < pages.length; i++) {
     for (let j = i + 1; j < pages.length; j++) {
       const shared = pages[i].tags.some((t) => t && pages[j].tags.includes(t));
-      if (shared) pairs.push({ a: pages[i], b: pages[j] });
-      if (pairs.length >= cap) return pairs;
+      if (!shared) continue;
+      total++;
+      if (pairs.length < cap) pairs.push({ a: pages[i], b: pages[j] });
     }
   }
-  return pairs;
+  return { pairs, total };
 }
 
 export class ContradictionReportModal extends Modal {

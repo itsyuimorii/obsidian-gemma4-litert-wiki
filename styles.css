@@ -1037,3 +1037,12 @@
 .gemma4-settings input[type='range'] {
   accent-color: var(--text-normal) !important;
 }
+
+/* Multi-line confirm bodies (e.g. the retag change list): keep line breaks,
+   cap the height, scroll the overflow. */
+.gemma4-confirm-body {
+  white-space: pre-line;
+  max-height: 45vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
