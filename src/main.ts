@@ -378,15 +378,17 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-reconcile-index',
-      name: 'Reconcile wiki index (drop deleted pages)',
+      name: 'Reconcile wiki (drop links to deleted pages)',
       callback: async () => {
         const before = (await readIndexEntries(this.app.vault)).length;
         await this.pruneIndex();
+        await this.pruneDeadRelatedLinks();
         const after = (await readIndexEntries(this.app.vault)).length;
         new Notice(
           before === after
-            ? 'Index is already clean — no deleted pages listed.'
-            : `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index.`,
+            ? 'Wiki is already consistent — no links to deleted pages.'
+            : `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
+              'and any related links pointing at them.',
           5000
         );
       },
@@ -692,7 +694,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     // dead related link). Prune on any delete inside the wiki folder.
     this.registerEvent(
       this.app.vault.on('delete', (f) => {
-        if (f.path.startsWith(`${wikiDir()}/`)) void this.pruneIndex();
+        if (!f.path.startsWith(`${wikiDir()}/`)) return;
+        void (async () => {
+          await this.pruneIndex();
+          await this.pruneDeadRelatedLinks();
+        })();
       })
     );
   }
@@ -961,6 +967,36 @@ export default class LiteRtSpikePlugin extends Plugin {
       return !m || this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile;
     });
     if (kept.length !== lines.length) await this.app.vault.modify(file, kept.join('\n'));
+  }
+
+  // Deleting a wiki page leaves every OTHER page that linked to it holding a
+  // dead [[link]] in its "## Related" list — pruneIndex only fixes index.md.
+  // Strip those lines so related links never point at a page that is gone.
+  //
+  // Deterministic bookkeeping, not generation: it only removes bullets whose
+  // link target no longer exists, so it cannot lose information or touch the
+  // page's own content. Same standing as pruneIndex, which already repairs
+  // index.md on delete. Raw notes are never touched — wiki pages only.
+  private async pruneDeadRelatedLinks(): Promise<void> {
+    const RELATED_LINK = /^- \[\[([^\]|]+)\|/;
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      const content = await this.app.vault.read(f);
+      const idx = content.indexOf('\n## Related');
+      if (idx === -1) continue;
+      const head = content.slice(0, idx);
+      const tail = content.slice(idx);
+      const kept = tail.split('\n').filter((l) => {
+        const m = l.match(RELATED_LINK);
+        return !m || this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile;
+      });
+      if (kept.length === tail.split('\n').length) continue;
+      // If every link is gone, drop the empty heading too rather than leaving
+      // a bare "## Related" with nothing under it.
+      const rebuilt = kept.join('\n');
+      const hasLink = kept.some((l) => RELATED_LINK.test(l));
+      await this.app.vault.modify(f, hasLink ? head + rebuilt : `${head}\n`);
+    }
   }
 
   // Lint v2 (issue #5): flag contradiction candidates. Bounded — only pages
