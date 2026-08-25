@@ -12,7 +12,10 @@ import {
   ensureWikiScaffold,
   upsertIndexEntry,
   clampToTokens,
+  contentHash,
+  getIngestedSourceHashes,
   getIngestedSourcePaths,
+  precheckNote,
   readIndexEntries,
   wikiPagePath,
   writeWikiPage,
@@ -179,10 +182,25 @@ export default class LiteRtSpikePlugin extends Plugin {
           return;
         }
         const content = await this.app.vault.read(file);
-        if (!content.trim()) {
-          new Notice('Note is empty — nothing to ingest.');
+        // Precheck gate (deterministic, no model call): skip empty,
+        // frontmatter-only, and unchanged notes before the 20-40s model
+        // call. "Unchanged" compares a content hash against the existing
+        // page's source_hash.
+        const pagePathForCheck = wikiPagePath(file.basename);
+        const existingHash = getIngestedSourceHashes(this.app).get(file.path);
+        const skip = precheckNote(content, existingHash);
+        if (skip === 'empty' || skip === 'frontmatter-only') {
+          new Notice(
+            skip === 'empty' ? 'Note is empty — nothing to ingest.' : 'Note is only frontmatter — nothing to ingest.'
+          );
           return;
         }
+        if (skip === 'unchanged') {
+          new Notice(`"${file.basename}" is already in the wiki and unchanged — skipped.`, 5000);
+          return;
+        }
+        void pagePathForCheck;
+
         // Clamp to the engine context (token-estimated, CJK-aware) rather
         // than rejecting on a char count — a summary card of the first
         // part beats nothing, and the marker tells the model the tail is
@@ -199,6 +217,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           );
           this.statusEnd();
 
+          const sourceHash = contentHash(content);
           const pagePath = wikiPagePath(file.basename);
           const selfLink = pagePath.replace(/\.md$/, '');
           const candidates = (await readIndexEntries(this.app.vault)).filter(
@@ -210,7 +229,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             related = await this.pickRelatedPages(extraction.summary, candidates);
             this.statusEnd();
           }
-          const pageContent = buildWikiPage(file.basename, file.path, extraction, related);
+          const pageContent = buildWikiPage(file.basename, file.path, extraction, related, sourceHash);
           const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
 
           new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {

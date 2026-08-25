@@ -43,7 +43,8 @@ export function buildWikiPage(
   sourceBasename: string,
   sourcePath: string,
   extraction: NoteExtraction,
-  related: { title: string; linkPath: string }[] = []
+  related: { title: string; linkPath: string }[] = [],
+  sourceHash?: string
 ): string {
   const date = new Date().toISOString().slice(0, 10);
   const tagsYaml = extraction.tags.map((t) => `  - ${slugify(t)}`).join('\n');
@@ -55,6 +56,7 @@ export function buildWikiPage(
     `---\n` +
     `tags:\n${tagsYaml}\n` +
     `source: "${sourcePath}"\n` +
+    (sourceHash ? `source_hash: ${sourceHash}\n` : '') +
     `created: ${date}\n` +
     `confidence: ${extraction.confidence}\n` +
     `---\n\n` +
@@ -257,4 +259,44 @@ export function clampToTokens(text: string, maxTokens: number): { text: string; 
     keep = keep.slice(0, Math.max(200, Math.floor(keep.length * ratio * 0.97)));
   }
   return { text: keep + '\n\n[truncated to fit the local model context]', truncated: true };
+}
+
+// Cheap 32-bit content hash (FNV-1a) — only needs to detect "changed vs
+// not", so no crypto. Hex string, stored in page frontmatter as
+// source_hash so re-ingest and (later) auto-scan can skip unchanged notes.
+export function contentHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+// path -> source_hash for every ingested page. Companion to
+// getIngestedSourcePaths; lets ingest and auto-scan tell new/changed from
+// unchanged.
+export function getIngestedSourceHashes(app: App): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(`${WIKI_DIR}/`)) continue;
+    const fm = app.metadataCache.getFileCache(f)?.frontmatter;
+    const src = fm?.source;
+    const hash = fm?.source_hash;
+    if (typeof src === 'string' && src.length && typeof hash === 'string') map.set(src, hash);
+  }
+  return map;
+}
+
+export type PrecheckSkip = 'empty' | 'frontmatter-only' | 'unchanged' | null;
+
+// Deterministic pre-model gate: is this note worth spending a 20-40s model
+// call on? Strips a leading YAML frontmatter block to test for
+// "frontmatter-only", and compares content hash to the existing page's.
+export function precheckNote(content: string, existingHash: string | undefined): PrecheckSkip {
+  if (!content.trim()) return 'empty';
+  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  if (!body.trim()) return 'frontmatter-only';
+  if (existingHash && contentHash(content) === existingHash) return 'unchanged';
+  return null;
 }
