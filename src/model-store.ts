@@ -46,7 +46,10 @@ export async function getModelBlob(
   const { final, partial } = modelPaths(pluginDir);
 
   if (!fs.existsSync(final)) {
-    await downloadResumable(final, partial, modelUrl, onProgress, signal);
+    const migrated = await migrateFromLegacyCache(final, modelUrl, onProgress);
+    if (!migrated) {
+      await downloadResumable(final, partial, modelUrl, onProgress, signal);
+    }
   }
 
   const buf = await fs.promises.readFile(final);
@@ -129,4 +132,38 @@ async function downloadResumable(
 
   await fs.promises.rename(partial, final);
   onProgress({ receivedBytes: total || received, totalBytes: total || received, resumed: startByte > 0 });
+}
+
+const LEGACY_CACHE_NAME = 'litert-spike-model-v1';
+
+export async function migrateFromLegacyCache(
+  final: string,
+  modelUrl: string,
+  onProgress: (p: DownloadProgress) => void
+): Promise<boolean> {
+  try {
+    if (typeof caches === 'undefined') return false;
+    const cache = await caches.open(LEGACY_CACHE_NAME);
+    const hit = await cache.match(modelUrl);
+    if (!hit) return false;
+    onProgress({ receivedBytes: 0, totalBytes: 0, resumed: true });
+    const buf = Buffer.from(await hit.arrayBuffer());
+    await fs.promises.writeFile(final, buf);
+    await cache.delete(modelUrl).catch(() => {});
+    onProgress({ receivedBytes: buf.byteLength, totalBytes: buf.byteLength, resumed: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Pre-gate helper for callers that only have the plugin dir: silently move
+// a legacy Cache-API model to disk if present. Returns true if migrated.
+export async function tryMigrateLegacyCache(
+  pluginDir: string,
+  modelUrl: string
+): Promise<boolean> {
+  const { final } = modelPaths(pluginDir);
+  if (fs.existsSync(final)) return true;
+  return migrateFromLegacyCache(final, modelUrl, () => {});
 }
