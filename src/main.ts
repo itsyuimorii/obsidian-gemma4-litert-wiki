@@ -649,6 +649,15 @@ export default class LiteRtSpikePlugin extends Plugin {
     // resolves (covers wiki page creation, deletion, and vault sync).
     this.app.workspace.onLayoutReady(() => this.refreshIngestBadges());
     this.registerEvent(this.app.metadataCache.on('resolved', () => this.refreshIngestBadges()));
+
+    // Keep the index honest when a wiki page is deleted: index.md isn't updated
+    // by the delete itself, so a removed page lingers as a ghost entry (and a
+    // dead related link). Prune on any delete inside the wiki folder.
+    this.registerEvent(
+      this.app.vault.on('delete', (f) => {
+        if (f.path.startsWith(`${wikiDir()}/`)) void this.pruneIndex();
+      })
+    );
   }
 
   // Small file-explorer badge on raw notes that already have a wiki page.
@@ -1475,6 +1484,10 @@ export default class LiteRtSpikePlugin extends Plugin {
           // Tolerate a missing/invalid confidence rather than failing the
           // whole extraction — default to 'med'.
           if (!['high', 'med', 'low'].includes(parsed.confidence)) parsed.confidence = 'med';
+          // Force the summary to a single line: index.md is one-entry-per-line,
+          // so a multi-line summary would break across lines and pollute the
+          // index with non-entry junk.
+          parsed.summary = parsed.summary.replace(/\s*\n\s*/g, ' ').trim();
           return parsed;
         }
         throw new Error('Model returned JSON with the wrong shape.');
