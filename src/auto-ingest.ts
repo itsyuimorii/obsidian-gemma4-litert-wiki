@@ -22,6 +22,11 @@ export interface ScanOptions {
   // Path prefixes to skip (templates, attachments, etc.). The wiki folder is
   // always excluded automatically.
   excludePrefixes: string[];
+  // Allow-list: when non-empty, only notes under one of these path prefixes
+  // are considered — scan never touches the rest of the vault. When omitted or
+  // empty, the caller has decided scope some other way (the scan command guards
+  // on an empty allow-list before calling; the badge falls back to whole-vault).
+  includePrefixes?: string[];
 }
 
 export interface ScanCandidate {
@@ -34,6 +39,10 @@ export interface ScanResult {
   eligible: ScanCandidate[];
   // How many eligible notes were left out by maxPerRun this run.
   cappedOut: number;
+  // How many notes the quiet period skipped (edited within quietHours).
+  // Tracked so the caller can SAY so — a silent skip reads as "scan is
+  // broken" to a user who just added notes (issue #41).
+  skippedQuiet: number;
 }
 
 // Deterministic, no model call. Walk the vault, drop the wiki folder and
@@ -53,15 +62,25 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
   const hashes = getIngestedSourceHashes(app);
   const wikiPrefix = `${wikiDir()}/`;
   const cutoff = Date.now() - opts.quietHours * 3_600_000;
+  const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
+  const under = (path: string, prefix: string) => path === prefix || path.startsWith(norm(prefix));
   const excludes = opts.excludePrefixes.map((p) => p.trim()).filter(Boolean);
+  const includes = (opts.includePrefixes ?? []).map((p) => p.trim()).filter(Boolean);
 
   let scanned = 0;
+  let skippedQuiet = 0;
   const eligible: ScanCandidate[] = [];
   for (const f of app.vault.getMarkdownFiles()) {
     if (f.path.startsWith(wikiPrefix)) continue;
-    if (excludes.some((p) => f.path === p || f.path.startsWith(p.endsWith('/') ? p : `${p}/`))) continue;
+    // Allow-list (opt-in scope): if set, only notes under an allowed folder.
+    if (includes.length && !includes.some((p) => under(f.path, p))) continue;
+    if (excludes.some((p) => under(f.path, p))) continue;
     scanned++;
-    if (f.stat.mtime > cutoff) continue; // quiet period — likely mid-edit
+    if (f.stat.mtime > cutoff) {
+      // Quiet period — likely mid-edit. Counted, not silent (issue #41).
+      skippedQuiet++;
+      continue;
+    }
     const content = await app.vault.read(f);
     if (precheckNote(content, undefined) !== null) continue; // empty / frontmatter-only
 
@@ -75,7 +94,7 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
   }
 
   const cappedOut = Math.max(0, eligible.length - opts.maxPerRun);
-  return { scanned, eligible: eligible.slice(0, opts.maxPerRun), cappedOut };
+  return { scanned, eligible: eligible.slice(0, opts.maxPerRun), cappedOut, skippedQuiet };
 }
 
 // A generated-but-not-written draft awaiting the human tick.

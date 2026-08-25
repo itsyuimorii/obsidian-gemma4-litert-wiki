@@ -26,6 +26,7 @@ import {
   loadPages,
   readIndexEntries,
   readLogTail,
+  readSkills,
   scoreEntries,
   upsertIndexEntry,
   writeWikiPage,
@@ -399,31 +400,28 @@ export class ChatView extends ItemView {
       },
     ];
 
-    // Custom skills (issue #4): user-defined "Label :: prompt" lines from
-    // settings, appended after the built-ins. A line without "::" is skipped.
-    for (const line of this.plugin.settings.customSkills.split('\n')) {
-      const sep = line.indexOf('::');
-      if (sep === -1) continue;
-      const label = line.slice(0, sep).trim();
-      const prompt = line.slice(sep + 2).trim();
-      if (label && prompt) SKILLS.push({ label, icon: 'wand-2', prompt });
-    }
-
+    // Custom skills (issue #4) live as files in <wiki>/skills/ — "config as a
+    // note", read fresh on each menu open so adding or editing a skill file
+    // takes effect without reloading. Built-ins first, then the user's, in
+    // filename order.
     skillsBtn.addEventListener('click', (evt) => {
-      const menu = new Menu();
-      for (const skill of SKILLS) {
-        menu.addItem((item) =>
-          item
-            .setTitle(skill.label)
-            .setIcon(skill.icon)
-            .onClick(() => {
-              if (skill.mode && skill.mode !== this.mode) this.setMode(skill.mode);
-              this.inputEl.value = skill.prompt;
-              void this.handleSend();
-            })
-        );
-      }
-      menu.showAtMouseEvent(evt);
+      void (async () => {
+        const custom = await readSkills(this.app.vault);
+        const menu = new Menu();
+        for (const skill of [...SKILLS, ...custom]) {
+          menu.addItem((item) =>
+            item
+              .setTitle(skill.label)
+              .setIcon(skill.icon)
+              .onClick(() => {
+                if (skill.mode && skill.mode !== this.mode) this.setMode(skill.mode);
+                this.inputEl.value = skill.prompt;
+                void this.handleSend();
+              })
+          );
+        }
+        menu.showAtMouseEvent(evt);
+      })();
     });
 
     // Expand toggle: square outline button that switches the input between
