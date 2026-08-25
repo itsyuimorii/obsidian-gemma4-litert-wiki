@@ -94,13 +94,15 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       .setName('Tag vocabulary & naming rules')
       .setClass('gemma4-stack-buttons')
       .setDesc(
-        'These live in the wiki\'s schema.md ("config as a note"), not here — open it to read or ' +
-          'edit the rules. "Suggest tags" has local Gemma read the tags already on your ' +
-          'wiki, merge near-synonyms into one clean list, and write it back for you to review first.'
+        'Tag rules live in the wiki\'s schema.md ("config as a note"), not here. "Open schema.md" ' +
+          'opens that file (creating it first if it doesn\'t exist yet) so you can read or edit the ' +
+          'rules directly. "Clean up tags" has local Gemma read the tags already on your wiki, merge ' +
+          'near-synonyms into one clean list, and write it back for you to review first — it can take ' +
+          'a while on the first run while the local model loads, watch the notice in the corner for progress.'
       )
       .addButton((btn) => btn.setButtonText('Open schema.md').onClick(() => void this.plugin.openSchemaFile()))
       .addButton((btn) =>
-        btn.setButtonText('Suggest tags').onClick(() => void this.plugin.suggestTagVocabulary())
+        btn.setButtonText('Clean up tags').onClick(() => void this.plugin.suggestTagVocabulary())
       );
 
     // ---------- Skills ----------

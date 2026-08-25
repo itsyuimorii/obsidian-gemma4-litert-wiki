@@ -345,7 +345,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-suggest-vocab',
-      name: 'Suggest tag vocabulary (schema.md, local Gemma)',
+      name: 'Clean up tags (schema.md, local Gemma)',
       callback: () => void this.suggestTagVocabulary(),
     });
 
@@ -813,7 +813,11 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     if (!counts.size) {
-      new Notice('No tags on your wiki yet — ingest a few notes first, then run this.', 6000);
+      new Notice(
+        'No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
+          'Ingest a few notes first, then run "Clean up tags".',
+        7000
+      );
       return;
     }
 
@@ -822,7 +826,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     try {
       const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
       vocab = await this.cleanTagVocabulary(sorted);
-      this.statusEnd();
+      this.statusEnd('Vocabulary ready — review it below.', 2500);
     } catch (err) {
       console.error('[gemma4-litert-wiki] vocab suggest failed', err);
       this.statusEnd(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
@@ -874,6 +878,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 512 },
       });
       const list = tagsWithCounts.map(([t, n]) => `- ${t} (${n})`).join('\n');
+      this.status('Asking Gemma to clean up the vocabulary…');
       const message = await conversation.sendMessage(`Tags in use:\n${list}`);
       let raw = '';
       const c = message.content;
