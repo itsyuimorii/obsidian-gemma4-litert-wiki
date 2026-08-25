@@ -10,6 +10,9 @@ export interface GemmaWikiSettings {
   scanQuietHours: number;
   scanMaxPerRun: number;
   scanExclude: string; // comma-separated path prefixes to skip
+  // Custom skills (issue #4): one per line, "Label :: prompt", appended to
+  // the built-in skills menu.
+  customSkills: string;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -19,6 +22,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanQuietHours: 3,
   scanMaxPerRun: 10,
   scanExclude: '',
+  customSkills: '',
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -87,6 +91,26 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           this.display();
         })
       );
+
+    // ---------- Skills ----------
+    new Setting(containerEl).setName('Skills').setHeading();
+
+    new Setting(containerEl)
+      .setName('Custom skills')
+      .setDesc(
+        'Your own one-shot prompts, added to the ⚡ skills menu. One per line, "Label :: prompt". ' +
+          'Each runs against the current chat context (mode + attachments), same as the built-in skills.'
+      )
+      .addTextArea((ta) => {
+        ta.setPlaceholder('ELI5 :: Explain this material like I am five.\nAction items :: List concrete next actions from this material.')
+          .setValue(this.plugin.settings.customSkills)
+          .onChange(async (v) => {
+            this.plugin.settings.customSkills = v;
+            await this.plugin.saveSettings();
+          });
+        ta.inputEl.rows = 4;
+        ta.inputEl.style.width = '100%';
+      });
 
     // ---------- Chat ----------
     new Setting(containerEl).setName('Chat').setHeading();
