@@ -910,3 +910,16 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* Settings: keep the plugin monochrome (shadcn) regardless of the user's
+   theme accent — override the accent tokens locally so sliders, toggles,
+   and buttons here render neutral, without touching the global theme. */
+.gemma4-settings {
+  --interactive-accent: var(--text-normal);
+  --interactive-accent-hover: var(--text-normal);
+  --slider-thumb-border-color: var(--text-normal);
+}
+
+.gemma4-settings input[type='range'] {
+  accent-color: var(--text-normal);
+}
