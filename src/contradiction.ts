@@ -1,0 +1,112 @@
+import { App, Modal, TFile } from 'obsidian';
+import { readIndexEntries, wikiDir } from './wiki-store';
+
+// Lint v2 (issue #5): contradiction candidates. Unlike Lint v1 (graph facts,
+// no model), this needs the model to judge whether two pages state
+// incompatible things. Two guards keep it honest and cheap:
+//  1. Flag-only — it never edits anything; a wrong flag is just ignored,
+//     same fault-tolerance as the related-links picker.
+//  2. Bounded — only pages that share a tag are paired (a note about ETFs
+//     and a note about TCP can't contradict), and the pair count is capped,
+//     so an O(n^2) model sweep can't run away on a big wiki.
+
+export interface WikiPageMeta {
+  linkPath: string;
+  title: string;
+  summary: string;
+  tags: string[];
+}
+
+export interface PagePair {
+  a: WikiPageMeta;
+  b: WikiPageMeta;
+}
+
+export interface ContradictionFlag {
+  a: WikiPageMeta;
+  b: WikiPageMeta;
+  reason: string;
+}
+
+function normalizeTags(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((t) => String(t).toLowerCase());
+  if (typeof raw === 'string') return raw.split(/[,\s]+/).filter(Boolean).map((t) => t.toLowerCase());
+  return [];
+}
+
+// Wiki pages with their index summary (one line each) and frontmatter tags.
+export async function collectWikiPages(app: App): Promise<WikiPageMeta[]> {
+  const entries = await readIndexEntries(app.vault);
+  const pages: WikiPageMeta[] = [];
+  for (const e of entries) {
+    const file = app.vault.getAbstractFileByPath(`${e.linkPath}.md`);
+    if (!(file instanceof TFile)) continue;
+    if (!file.path.startsWith(`${wikiDir()}/`)) continue;
+    const tags = normalizeTags(app.metadataCache.getFileCache(file)?.frontmatter?.tags);
+    pages.push({ linkPath: e.linkPath, title: e.title, summary: e.summary, tags });
+  }
+  return pages;
+}
+
+// Pairs of pages sharing at least one tag, capped. Deterministic order so a
+// re-run checks the same pairs first.
+export function pairsSharingTag(pages: WikiPageMeta[], cap: number): PagePair[] {
+  const pairs: PagePair[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    for (let j = i + 1; j < pages.length; j++) {
+      const shared = pages[i].tags.some((t) => t && pages[j].tags.includes(t));
+      if (shared) pairs.push({ a: pages[i], b: pages[j] });
+      if (pairs.length >= cap) return pairs;
+    }
+  }
+  return pairs;
+}
+
+export class ContradictionReportModal extends Modal {
+  private flags: ContradictionFlag[];
+  private checked: number;
+
+  constructor(app: App, flags: ContradictionFlag[], checked: number) {
+    super(app);
+    this.flags = flags;
+    this.checked = checked;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('gemma4-lint-modal');
+    contentEl.createEl('h3', { text: 'Contradiction candidates' });
+    contentEl.createDiv({
+      cls: 'gemma4-lint-summary',
+      text: `Checked ${this.checked} tag-sharing page pair${this.checked === 1 ? '' : 's'}. ${this.flags.length} flagged for a human look — these are candidates, not verdicts.`,
+    });
+
+    if (!this.flags.length) {
+      contentEl.createDiv({ cls: 'gemma4-lint-ok', text: 'No contradictions flagged.' });
+      return;
+    }
+
+    const list = contentEl.createDiv({ cls: 'gemma4-review-list' });
+    for (const f of this.flags) {
+      const row = list.createDiv({ cls: 'gemma4-lint-section' });
+      const titles = row.createDiv({ cls: 'gemma4-review-titlerow' });
+      for (const p of [f.a, f.b]) {
+        const link = titles.createEl('a', { cls: 'gemma4-review-title', text: p.title });
+        link.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          void this.app.workspace.openLinkText(p.linkPath, '', false);
+        });
+      }
+      row.createDiv({ cls: 'gemma4-review-summary', text: f.reason });
+    }
+
+    contentEl.createDiv({
+      cls: 'gemma4-lint-hint',
+      text: 'Open both pages, check them against their source notes, and re-ingest whichever drifted. Nothing was changed.',
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
