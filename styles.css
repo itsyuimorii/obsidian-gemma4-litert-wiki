@@ -868,3 +868,45 @@
   color: var(--text-normal);
   line-height: 1.7;
 }
+
+/* ---------- Review board ---------- */
+
+.gemma4-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.gemma4-review-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+
+.gemma4-review-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-review-title {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.gemma4-review-title:hover {
+  text-decoration: underline;
+}
+
+.gemma4-review-reasons {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
