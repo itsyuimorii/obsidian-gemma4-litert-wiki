@@ -95,7 +95,7 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
     await vault.create(INDEX_PATH, '# Wiki Index\n\nOne line per page: link, then a one-sentence summary.\n\n');
   }
   if (!vault.getAbstractFileByPath(LOG_PATH)) {
-    await vault.create(LOG_PATH, '# Wiki Log\n\nAppend-only. One `## [date] action | title` entry per operation.\n\n');
+    await vault.create(LOG_PATH, '# Wiki Log\n\nAppend-only timeline. One `- [date] action | title` line per operation.\n\n');
   }
 }
 
@@ -130,7 +130,7 @@ export async function upsertIndexEntry(
 export async function appendLog(vault: Vault, action: string, title: string): Promise<void> {
   const date = new Date().toISOString().slice(0, 10);
   const current = (await readIfExists(vault, LOG_PATH)) ?? '# Wiki Log\n\n';
-  await writeFile(vault, LOG_PATH, `${current.trimEnd()}\n## [${date}] ${action} | ${title}\n`);
+  await writeFile(vault, LOG_PATH, `${current.trimEnd()}\n- [${date}] ${action} | ${title}\n`);
 }
 
 export async function readIndexEntries(vault: Vault): Promise<IndexEntry[]> {
@@ -232,7 +232,9 @@ export async function readLogTail(vault: Vault, count: number): Promise<string> 
   const file = vault.getAbstractFileByPath(LOG_PATH);
   if (!(file instanceof TFile)) return '';
   const content = await vault.read(file);
-  const entries = content.split('\n').filter((l) => l.startsWith('## ['));
+  // Match the current '- [' list format and legacy '## [' headings so
+  // logs written before the format change still parse.
+  const entries = content.split('\n').filter((l) => l.startsWith('- [') || l.startsWith('## ['));
   return entries.slice(-count).join('\n');
 }
 
