@@ -274,7 +274,8 @@ export default class LiteRtSpikePlugin extends Plugin {
               await ensureWikiScaffold(this.app.vault);
               await writeWikiPage(this.app.vault, pagePath, pageContent);
               await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
-              await queuePendingTags(this.app.vault, extraction.tags);
+              const pending = await queuePendingTags(this.app.vault, extraction.tags);
+              this.notePendingGrowth(pending.before, pending.after);
               await this.pruneIndex();
               await appendLog(this.app.vault, 'ingest', file.basename);
               this.status(`Wiki page written: ${pagePath}`);
@@ -979,6 +980,22 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (kept.length !== lines.length) await this.app.vault.modify(file, kept.join('\n'));
   }
 
+  // Pending is the queue of tags ingest coined that aren't in the vocabulary.
+  // It works as a soft vocabulary (ingest reads it too), but past a point a
+  // long queue means the vocabulary itself is stale and clusters are
+  // fragmenting. Nudge once, when the queue crosses the mark — not on every
+  // ingest, which would just train the user to ignore it.
+  private notePendingGrowth(before: number, after: number): void {
+    const MARK = 20;
+    if (before < MARK && after >= MARK) {
+      new Notice(
+        `${after} tags are waiting in schema.md's Pending list. Run "Organize tags" to fold them ` +
+          'into the vocabulary — until then, similar notes keep coining near-duplicate tags.',
+        9000
+      );
+    }
+  }
+
   // A page's Related section is "healthy" when it exists, lists at least one
   // link, and every link still resolves. Anything else — no section, an empty
   // one, or one holding a dead link — is a candidate for re-syncing (#44).
@@ -1565,12 +1582,19 @@ export default class LiteRtSpikePlugin extends Plugin {
     new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
       if (!approved.length) return;
       await ensureWikiScaffold(this.app.vault);
+      // Track Pending across the whole batch so the nudge fires once for the
+      // run, not once per approved page.
+      let pendingBefore: number | null = null;
+      let pendingAfter = 0;
       for (const d of approved) {
         await writeWikiPage(this.app.vault, d.pagePath, d.pageContent);
         await upsertIndexEntry(this.app.vault, d.pagePath, d.file.basename, d.summary);
-        await queuePendingTags(this.app.vault, d.tags);
+        const pending = await queuePendingTags(this.app.vault, d.tags);
+        if (pendingBefore === null) pendingBefore = pending.before;
+        pendingAfter = pending.after;
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
+      if (pendingBefore !== null) this.notePendingGrowth(pendingBefore, pendingAfter);
       await this.pruneIndex();
       // Drafts could link to each other; if the user approved only some, the
       // survivors may point at a page that was never written. Clear those.
@@ -1870,16 +1894,30 @@ export default class LiteRtSpikePlugin extends Plugin {
     const engine = await this.ensureEngine(onProgress);
     const { SamplerType } = await import('@litert-lm/core');
 
-    // Schema layer (issues #3, #38): reuse existing tags instead of inventing a
-    // fresh synonym every time ("llm-eval" vs "llm-evaluation" vs "evals"). Two
-    // tiers so it works before a vocabulary exists: prefer the curated
-    // schema.md vocabulary; if there is none yet, fall back to the tags already
-    // in use on the wiki (frequency-ranked). Either way capped so the list
-    // never crowds the 4096-token context.
+    // Schema layer (issues #3, #38, #47): reuse existing tags instead of
+    // inventing a fresh synonym every time ("llm-eval" vs "llm-evaluation" vs
+    // "evals"). This is a UNION of every tag the wiki already knows, in
+    // descending authority: the curated schema.md vocabulary, then Pending
+    // (used but not yet approved), then anything else in use, frequency-ranked.
+    //
+    // It used to be a binary either/or — schema tags IF ANY, else the tags in
+    // use. That collapsed on a young wiki: a single curated tag is "truthy",
+    // so a vocabulary of one irrelevant tag suppressed the fallback entirely
+    // and every note coined fresh tags. Worse, Pending was never shown at all,
+    // so a tag sitting there ("espresso") did nothing to stop the next note
+    // coining "espresso-basics" — the cluster fragmented and never reached the
+    // concept-page threshold. Capped so the list never crowds the context.
     const VOCAB_CAP = 40;
     const schema = await readSchema(this.app.vault);
-    const schemaTags = schema.tags;
-    const vocab = (schemaTags.length ? schemaTags : this.wikiTagCounts().map(([t]) => t)).slice(0, VOCAB_CAP);
+    const vocab: string[] = [];
+    const seenTag = new Set<string>();
+    for (const t of [...schema.tags, ...schema.pending, ...this.wikiTagCounts().map(([tag]) => tag)]) {
+      const tag = slugify(t);
+      if (!tag || seenTag.has(tag)) continue;
+      seenTag.add(tag);
+      vocab.push(tag);
+      if (vocab.length >= VOCAB_CAP) break;
+    }
     const vocabLine = vocab.length
       ? ` Prefer tags from this list when one fits, reusing the exact spelling: ${vocab.join(', ')}. Only coin a new tag if none of these apply.`
       : '';

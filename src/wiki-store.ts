@@ -337,15 +337,24 @@ export async function readSchema(vault: Vault): Promise<WikiSchema> {
 // the schema's Pending section — so the vocabulary stays curated and new tags
 // wait for your approval instead of entering it silently. No-op if there is no
 // schema.md yet (nothing to govern against).
-export async function queuePendingTags(vault: Vault, tags: string[]): Promise<void> {
+// Returns the Pending count before and after, so the caller can notice when
+// the queue has grown past the point where it is worth folding in (#47) —
+// without nagging on every ingest.
+export async function queuePendingTags(
+  vault: Vault,
+  tags: string[]
+): Promise<{ before: number; after: number }> {
   const content = await readIfExists(vault, schemaPath());
-  if (!content) return;
+  if (!content) return { before: 0, after: 0 };
   const schema = parseSchema(content);
+  const before = schema.pending.length;
   const known = new Set([...schema.tags, ...schema.pending].map((t) => slugify(t)));
   const fresh = tags.map((t) => slugify(t)).filter((t) => t && !known.has(t));
-  if (!fresh.length) return;
-  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, [...schema.pending, ...fresh]);
+  if (!fresh.length) return { before, after: before };
+  const pending = [...schema.pending, ...fresh];
+  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, pending);
   await writeFile(vault, schemaPath(), next);
+  return { before, after: pending.length };
 }
 
 // ---------------------------------------------------------------------------
