@@ -271,7 +271,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-check-webgpu',
-      name: 'LiteRT spike: check WebGPU',
+      name: '[Test] Check WebGPU',
       callback: async () => {
         const result = await checkWebGPU();
         log('WebGPU check:', result);
@@ -281,7 +281,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-load-wasm',
-      name: 'LiteRT spike: load WASM runtime (no model download)',
+      name: '[Test] Load WASM runtime (no model download)',
       callback: async () => {
         new Notice('Loading LiteRT-LM WASM runtime… check the developer console (Cmd+Opt+I) for detail.', 5000);
         try {
@@ -299,7 +299,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-download-model',
-      name: 'LiteRT spike: download Gemma 4 E4B model (one-time, ~3GB)',
+      name: 'Download model (one-time, ~3GB)',
       callback: async () => {
         const notice = new Notice('Preparing model download…', 0);
         try {
@@ -319,7 +319,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-fix-grammar',
-      name: 'LiteRT spike: fix grammar of selection',
+      name: '[Test] Fix grammar of selection',
       editorCallback: async (editor) => {
         const selection = editor.getSelection();
         if (!selection.trim()) {
@@ -418,7 +418,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-json-reliability',
-      name: 'LiteRT spike: JSON reliability test (5 runs)',
+      name: '[Test] JSON reliability test (5 runs)',
       editorCallback: async (editor) => {
         const selection = editor.getSelection();
         if (!selection.trim()) {
