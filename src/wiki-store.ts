@@ -213,6 +213,45 @@ export async function loadPages(vault: Vault, entries: IndexEntry[], maxTotalCha
   return out;
 }
 
+// One-hop link expansion (issue #14): given the seed pages the lexical
+// scorer picked, pull in the wiki pages they link to and the pages that link
+// to them. A wiki-link neighbour is often the page that actually holds the
+// answer even when its own summary didn't share the question's words —
+// lexical retrieval alone can't see that, the link graph can.
+export function expandByLinks(
+  app: App,
+  seeds: IndexEntry[],
+  allEntries: IndexEntry[],
+  maxExtra: number
+): IndexEntry[] {
+  if (!seeds.length || maxExtra <= 0) return [];
+  const byPath = new Map(allEntries.map((e) => [`${e.linkPath}.md`, e]));
+  const seedPaths = new Set(seeds.map((e) => `${e.linkPath}.md`));
+  const prefix = `${wikiDir()}/`;
+  const resolved = app.metadataCache.resolvedLinks;
+  const neighbours = new Set<string>();
+
+  // Outbound: seed -> targets.
+  for (const seedPath of seedPaths) {
+    for (const tgt of Object.keys(resolved[seedPath] ?? {})) {
+      if (byPath.has(tgt) && !seedPaths.has(tgt)) neighbours.add(tgt);
+    }
+  }
+  // Inbound: any wiki page -> a seed (backlinks).
+  for (const [src, targets] of Object.entries(resolved)) {
+    if (!src.startsWith(prefix) || !byPath.has(src) || seedPaths.has(src)) continue;
+    if (Object.keys(targets).some((t) => seedPaths.has(t))) neighbours.add(src);
+  }
+
+  const extra: IndexEntry[] = [];
+  for (const p of neighbours) {
+    const e = byPath.get(p);
+    if (e) extra.push(e);
+    if (extra.length >= maxExtra) break;
+  }
+  return extra;
+}
+
 export function answerPagePath(question: string): string {
   return normalizePath(`${wikiAnswersDir()}/${slugify(question).slice(0, 60)}.md`);
 }
