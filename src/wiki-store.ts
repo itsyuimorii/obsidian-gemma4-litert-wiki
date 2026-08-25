@@ -234,7 +234,7 @@ export function buildSchemaFile(
 ): string {
   const tagLines = tags.length
     ? tags.map((t) => `- ${slugify(t)}`).join('\n')
-    : '- (no tags yet — ingest some notes, then run "Clean up tags" in settings to build this from them)';
+    : '_No tags yet. Ingest a few notes, then run "Clean up tags" to build the vocabulary from them._';
   const namingLines = Object.entries(naming)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
