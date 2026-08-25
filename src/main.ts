@@ -1701,17 +1701,44 @@ export default class LiteRtSpikePlugin extends Plugin {
       includePrefixes,
       excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
     });
-    if (!result.eligible.length) {
+    let eligible = result.eligible;
+    let cappedOut = result.cappedOut;
+    if (!eligible.length) {
       const quietNote = result.skippedQuiet
         ? ` (${result.skippedQuiet} skipped — edited within the quiet period)`
         : '';
-      this.statusEnd(
-        result.scanned
-          ? `Scanned ${result.scanned} notes — nothing new or changed to ingest.${quietNote}`
-          : 'No notes in scope to scan.',
-        6000
-      );
-      return;
+      this.statusEnd();
+      // Nothing new or changed — but if the scope holds already-ingested,
+      // unchanged notes, offer to re-ingest them instead of dead-ending
+      // (same gate the single-note command has). The point of re-ingesting
+      // unchanged notes is regeneration: new vocabulary, new prompts.
+      if (result.unchanged.length) {
+        const n = result.unchanged.length;
+        const proceed = await new Promise<boolean>((resolve) => {
+          new ConfirmModal(this.app, {
+            title: 'Everything here is already in the wiki',
+            body:
+              `No new or changed notes${quietNote} — but ${n} note${n === 1 ? ' is' : 's are'} already ` +
+              'ingested and unchanged. Re-ingest to regenerate their pages (summary, tags, related) ' +
+              'with the current vocabulary and prompts? You still review every draft before writing.',
+            confirmText: `Re-ingest ${n} note${n === 1 ? '' : 's'}`,
+            onResult: resolve,
+          }).open();
+        });
+        if (!proceed) return;
+        eligible = result.unchanged
+          .slice(0, this.settings.scanMaxPerRun)
+          .map((file) => ({ file, reason: 'refresh' as const }));
+        cappedOut = Math.max(0, result.unchanged.length - this.settings.scanMaxPerRun);
+      } else {
+        new Notice(
+          result.scanned
+            ? `Scanned ${result.scanned} notes — nothing new or changed to ingest.${quietNote}`
+            : 'No notes in scope to scan.',
+          6000
+        );
+        return;
+      }
     }
 
     // Draft each candidate through the same pipeline as manual ingest.
@@ -1719,7 +1746,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const drafts: IngestDraft[] = [];
     let failed = 0;
     let cancelled = false;
-    const n = result.eligible.length;
+    const n = eligible.length;
     // Drafting is one model call per note — minutes for a batch. Say so up
     // front, and say the settings pane is not holding it: users sat watching
     // a dialog they could have closed, unsure whether closing would cancel.
@@ -1741,7 +1768,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         cancelled = true;
         break;
       }
-      const { file, reason } = result.eligible[i];
+      const { file, reason } = eligible[i];
       try {
         const content = await this.app.vault.read(file);
         const clamped = clampToTokens(cleanClippedMarkdown(content), 2600);
@@ -1787,8 +1814,8 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     const capNote = cancelled
       ? ' (scan stopped — the rest will be offered next scan)'
-      : result.cappedOut
-        ? ` (${result.cappedOut} more left for the next scan)`
+      : cappedOut
+        ? ` (${cappedOut} more left for the next scan)`
         : '';
     new Notice(`${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}.`, 4000);
 
