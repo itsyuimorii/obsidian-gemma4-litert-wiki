@@ -222,6 +222,10 @@ export interface WikiSchema {
   tags: string[];
   naming: Record<string, string>;
   conceptThreshold: number;
+  // New tags ingest has seen that aren't in the vocabulary yet, waiting for
+  // you to promote them (issue #3). The vocabulary stays curated; nothing
+  // enters it silently.
+  pending: string[];
 }
 
 const DEFAULT_NAMING: Record<string, string> = {
@@ -235,29 +239,51 @@ const DEFAULT_CONCEPT_THRESHOLD = 4;
 export function buildSchemaFile(
   tags: string[],
   naming: Record<string, string> = DEFAULT_NAMING,
-  conceptThreshold = DEFAULT_CONCEPT_THRESHOLD
+  conceptThreshold = DEFAULT_CONCEPT_THRESHOLD,
+  pending: string[] = []
 ): string {
-  const tagLines = tags.length ? tags.map((t) => `- ${slugify(t)}`).join('\n') : '- (run "Suggest tag vocabulary" to fill this)';
+  const tagLines = tags.length
+    ? tags.map((t) => `- ${slugify(t)}`).join('\n')
+    : '_No tags yet. Ingest a few notes, then run "Organize tags" to build the vocabulary from them._';
   const namingLines = Object.entries(naming)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
+  const pendingLines = pending.length
+    ? pending.map((t) => `- ${slugify(t)}`).join('\n')
+    : '(none)';
   return (
     `# Wiki Schema\n\n` +
     `This file is the wiki's own configuration — what Andrej Karpathy calls "config as a note".\n` +
     `It is plain markdown you can read and edit by hand, and the plugin parses it before every\n` +
     `ingest. Keeping the rules as a note (not a hidden setting) means they version with your wiki,\n` +
     `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
-    `wiki. Three sections:\n\n` +
+    `wiki. Four sections:\n\n` +
     `- **Tags** — the controlled vocabulary. On ingest the model reuses these exact tags instead of\n` +
     `  inventing synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together\n` +
-    `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run the\n` +
-    `  command **"Suggest tag vocabulary"** and the model proposes it from the tags already on your\n` +
-    `  wiki; you review before it is written. One tag per line.\n` +
+    `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run\n` +
+    `  **"Organize tags"** (settings, or the command palette) and the model builds it from the tags\n` +
+    `  your ingested notes already produced; you review before it is written. One tag per line.\n` +
     `- **Naming** — how pages are named, so names stay consistent.\n` +
-    `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n\n` +
+    `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n` +
+    `- **Pending** — new tags ingest has used that aren't in the vocabulary yet. They wait here for\n` +
+    `  you to promote them (move a line up into Tags), or just re-run "Organize tags" to\n` +
+    `  fold them in and clear this list. The vocabulary never changes on its own.\n\n` +
     `## Tags\n\n${tagLines}\n\n` +
     `## Naming\n\n${namingLines}\n\n` +
-    `## Concept threshold\n\n${conceptThreshold}\n`
+    `## Concept threshold\n\n${conceptThreshold}\n\n` +
+    `## Pending\n\n` +
+    // Collapsed how-to callout (issue #43): the guidance lives right where the
+    // user is looking, and MUST be emitted here — queuePendingTags and
+    // Organize tags regenerate the whole file, wiping hand-added notes.
+    // Parser-safe: parseSchema only reads "- " lines; these start with "> ".
+    `> [!tip]- How to clear these\n` +
+    `> New tags ingest used that aren't in your vocabulary yet.\n` +
+    `> - **Keep one** — cut its line and paste it under \`## Tags\` above; later ingests reuse it.\n` +
+    `> - **Drop one** — delete its line; it won't enter the vocabulary (the tag still stays on the note it came from).\n` +
+    `> - **Fold them all in** — run **Organize tags**: it rebuilds the vocabulary from every tag in use and clears this list (the model may merge or rename).\n` +
+    `> The vocabulary never changes on its own. Moving a tag up takes effect immediately for\n` +
+    `> **future** ingests — it never re-runs or edits notes you already have.\n\n` +
+    `${pendingLines}\n`
   );
 }
 
@@ -274,7 +300,8 @@ export function parseSchema(content: string): WikiSchema {
   const tags = schemaSection(content, 'Tags')
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.startsWith('- ') && !l.includes('(run "Suggest'))
+    // A bullet whose content starts with "(" is a placeholder/comment, not a tag.
+    .filter((l) => l.startsWith('- ') && !l.slice(2).trim().startsWith('('))
     .map((l) => l.slice(2).trim())
     .filter(Boolean);
   const naming: Record<string, string> = {};
@@ -283,17 +310,39 @@ export function parseSchema(content: string): WikiSchema {
     if (m) naming[m[1].toLowerCase()] = m[2].trim();
   }
   const tm = schemaSection(content, 'Concept threshold').match(/\d+/);
+  const pending = schemaSection(content, 'Pending')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('- '))
+    .map((l) => l.slice(2).trim())
+    .filter((t) => t && t.toLowerCase() !== '(none)');
   return {
     tags,
     naming: Object.keys(naming).length ? naming : DEFAULT_NAMING,
     conceptThreshold: tm ? parseInt(tm[0], 10) : DEFAULT_CONCEPT_THRESHOLD,
+    pending,
   };
 }
 
 export async function readSchema(vault: Vault): Promise<WikiSchema> {
   const content = await readIfExists(vault, schemaPath());
-  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD };
+  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD, pending: [] };
   return parseSchema(content);
+}
+
+// After an approved ingest, queue any tags that aren't in the vocabulary into
+// the schema's Pending section — so the vocabulary stays curated and new tags
+// wait for your approval instead of entering it silently. No-op if there is no
+// schema.md yet (nothing to govern against).
+export async function queuePendingTags(vault: Vault, tags: string[]): Promise<void> {
+  const content = await readIfExists(vault, schemaPath());
+  if (!content) return;
+  const schema = parseSchema(content);
+  const known = new Set([...schema.tags, ...schema.pending].map((t) => slugify(t)));
+  const fresh = tags.map((t) => slugify(t)).filter((t) => t && !known.has(t));
+  if (!fresh.length) return;
+  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, [...schema.pending, ...fresh]);
+  await writeFile(vault, schemaPath(), next);
 }
 
 // Lexical retrieval over the index, per the "read the index, then read the
