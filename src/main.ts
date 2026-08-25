@@ -25,6 +25,7 @@ import {
   type NoteExtraction,
 } from './wiki-store';
 import { LintReportModal, runLint } from './lint';
+import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { TFile } from 'obsidian';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
@@ -262,6 +263,14 @@ export default class LiteRtSpikePlugin extends Plugin {
             new Notice(`Related sections added to ${proposals.length} pages.`, 4000);
           })();
         }).open();
+      },
+    });
+
+    this.addCommand({
+      id: 'litert-review-board',
+      name: 'Review board (low-confidence and stale pages)',
+      callback: () => {
+        new ReviewBoardModal(this.app, buildReviewBoard(this.app)).open();
       },
     });
 
