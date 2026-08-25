@@ -393,6 +393,17 @@ export class ChatView extends ItemView {
           'grouped by topic.',
       },
     ];
+
+    // Custom skills (issue #4): user-defined "Label :: prompt" lines from
+    // settings, appended after the built-ins. A line without "::" is skipped.
+    for (const line of this.plugin.settings.customSkills.split('\n')) {
+      const sep = line.indexOf('::');
+      if (sep === -1) continue;
+      const label = line.slice(0, sep).trim();
+      const prompt = line.slice(sep + 2).trim();
+      if (label && prompt) SKILLS.push({ label, icon: 'wand-2', prompt });
+    }
+
     skillsBtn.addEventListener('click', (evt) => {
       const menu = new Menu();
       for (const skill of SKILLS) {
