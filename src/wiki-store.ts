@@ -304,11 +304,23 @@ const STOPWORDS = new Set([
   'talking', 'say', 'says', 'tell', 'show',
 ]);
 
+// Kanji/kana/fullwidth ranges — CJK has no spaces, so a whitespace/ASCII
+// tokenizer drops it entirely and a Chinese or Japanese question matched
+// zero pages (issue #23).
+const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
+
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
-  const terms = question
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  const q = question.toLowerCase();
+  const ascii = q.split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  // CJK: no word boundaries, so use sliding 2-char windows (bigrams) as
+  // terms — specific enough to avoid single-char particle noise (的/は/て),
+  // and they substring-match the equally-CJK haystack.
+  const cjk: string[] = [];
+  for (const run of q.match(CJK_RUN) ?? []) {
+    if (run.length === 1) cjk.push(run);
+    else for (let i = 0; i < run.length - 1; i++) cjk.push(run.slice(i, i + 2));
+  }
+  const terms = [...new Set([...ascii, ...cjk])];
   if (!terms.length) return [];
   const scored = entries
     .map((e) => {
