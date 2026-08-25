@@ -352,13 +352,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.addCommand({
       id: 'litert-create-skills-folder',
       name: 'Create skills folder with examples',
-      callback: async () => {
-        await ensureSkillsScaffold(this.app.vault);
-        const path = `${wikiDir()}/skills`;
-        new Notice(`Skills folder ready at ${path}. Open its README, then add a .md file per skill.`, 6000);
-        const readme = this.app.vault.getAbstractFileByPath(`${path}/README.md`);
-        if (readme instanceof TFile) await this.app.workspace.getLeaf(true).openFile(readme);
-      },
+      callback: () => void this.createSkillsFolder(),
     });
 
     this.addCommand({
@@ -775,6 +769,30 @@ export default class LiteRtSpikePlugin extends Plugin {
   // ask the model to merge near-synonyms into a clean canonical list, and
   // write it into schema.md (config-as-note) behind the preview gate. The
   // Naming and Concept-threshold sections are preserved if the file exists.
+  // Open schema.md so the user can read/edit the config-as-a-note directly.
+  // Seeds a default (empty-vocab) schema first if the file does not exist yet,
+  // so the button always lands on a real, self-documenting file.
+  async openSchemaFile() {
+    await ensureWikiScaffold(this.app.vault);
+    const path = schemaPath();
+    let file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      await this.app.vault.create(path, buildSchemaFile([]));
+      file = this.app.vault.getAbstractFileByPath(path);
+    }
+    if (file instanceof TFile) await this.app.workspace.getLeaf(true).openFile(file);
+  }
+
+  // Seed <wiki>/skills/ with a README and two example skills, then open the
+  // README. Shared by the command and the settings button.
+  async createSkillsFolder() {
+    await ensureSkillsScaffold(this.app.vault);
+    const path = `${wikiDir()}/skills`;
+    new Notice(`Skills folder ready at ${path}. Open its README, then add a .md file per skill.`, 6000);
+    const readme = this.app.vault.getAbstractFileByPath(`${path}/README.md`);
+    if (readme instanceof TFile) await this.app.workspace.getLeaf(true).openFile(readme);
+  }
+
   async suggestTagVocabulary() {
     // Tally existing wiki-page tags (frontmatter), skipping the plugin's own
     // structural tags.

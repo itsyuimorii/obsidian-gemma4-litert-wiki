@@ -90,24 +90,32 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     // ---------- Schema ----------
     new Setting(containerEl).setName('Schema').setHeading();
-    containerEl.createEl('p', {
-      cls: 'setting-item-description',
-      text:
-        'The tag vocabulary and naming rules live in the wiki\'s schema.md ("config as a note"), ' +
-        'not here — open it to read or edit the rules. Run the command "Suggest tag vocabulary" to ' +
-        'generate it from the tags already on your wiki; the model proposes it, you review before it is written.',
-    });
+    new Setting(containerEl)
+      .setName('Tag vocabulary & naming rules')
+      .setDesc(
+        'These live in the wiki\'s schema.md ("config as a note"), not here — open it to read or ' +
+          'edit the rules. "Suggest tag vocabulary" has local Gemma read the tags already on your ' +
+          'wiki, merge near-synonyms into one clean list, and write it back for you to review first.'
+      )
+      .addButton((btn) => btn.setButtonText('Open schema.md').onClick(() => void this.plugin.openSchemaFile()))
+      .addButton((btn) =>
+        btn
+          .setButtonText('Suggest tag vocabulary')
+          .setCta()
+          .onClick(() => void this.plugin.suggestTagVocabulary())
+      );
 
     // ---------- Skills ----------
     new Setting(containerEl).setName('Skills').setHeading();
-    containerEl.createEl('p', {
-      cls: 'setting-item-description',
-      text:
-        'Your own one-shot prompts live as files in the wiki\'s skills/ folder ("config as a note"), ' +
-        'one file per skill — frontmatter for name/icon/mode, the body is the prompt. Each appears in ' +
-        'the ⚡ menu of the chat panel. Run the command "Create skills folder with examples" to seed it ' +
-        'with a README and two starter skills, then add or edit files there.',
-    });
+    new Setting(containerEl)
+      .setName('Custom skills')
+      .setDesc(
+        'Your one-shot prompts live as files in the wiki\'s skills/ folder ("config as a note"), ' +
+          'one file per skill — frontmatter for name/icon/mode, the body is the prompt. Each appears ' +
+          'in the ⚡ menu of the chat panel. Create the folder with a README and two examples, then ' +
+          'add or edit files there.'
+      )
+      .addButton((btn) => btn.setButtonText('Create skills folder').onClick(() => void this.plugin.createSkillsFolder()));
 
     // ---------- Chat ----------
     new Setting(containerEl).setName('Chat').setHeading();
