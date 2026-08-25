@@ -40,6 +40,11 @@ import {
   type ContradictionFlag,
   type WikiPageMeta,
 } from './contradiction';
+import {
+  ProvenanceReportModal,
+  sampleWikiPages,
+  type ProvenanceFlag,
+} from './provenance';
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
@@ -360,6 +365,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-find-contradictions',
       name: 'Find contradictions in wiki (local Gemma)',
       callback: () => void this.findContradictions(),
+    });
+
+    this.addCommand({
+      id: 'litert-provenance-check',
+      name: 'Provenance spot-check (local Gemma)',
+      callback: () => void this.spotCheckProvenance(),
     });
 
     this.addCommand({
@@ -867,6 +878,39 @@ export default class LiteRtSpikePlugin extends Plugin {
     new ContradictionReportModal(this.app, flags, pairs.length).open();
   }
 
+  // Provenance spot-check (issue #21): sample a few wiki pages and, per page,
+  // ask the model which of its key points the SOURCE note does not support.
+  // Bounded (a handful of pages, one call each) and flag-only.
+  async spotCheckProvenance() {
+    const LIMIT = 8;
+    this.status('Sampling wiki pages…');
+    const samples = await sampleWikiPages(this.app, LIMIT);
+    if (!samples.length) {
+      this.statusEnd('No ingested pages with key points to check.', 5000);
+      return;
+    }
+    const flags: ProvenanceFlag[] = [];
+    try {
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        this.status(`Checking ${i + 1}/${samples.length} — ${s.title}…`);
+        const srcFile = this.app.vault.getAbstractFileByPath(s.sourcePath);
+        if (!(srcFile instanceof TFile)) continue; // source note gone
+        const srcText = clampToTokens(cleanClippedMarkdown(await this.app.vault.read(srcFile)), 2200).text;
+        const unsupported = await this.checkProvenance(srcText, s.keyPoints);
+        if (unsupported.length) {
+          flags.push({ linkPath: s.linkPath, title: s.title, sourcePath: s.sourcePath, unsupported });
+        }
+      }
+      this.statusEnd();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] provenance check failed', err);
+      this.statusEnd(`Provenance check FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return;
+    }
+    new ProvenanceReportModal(this.app, flags, samples.length).open();
+  }
+
   // One strict-JSON call: given the tags currently in use (with counts),
   // return a merged canonical vocabulary. The model only reshapes tags that
   // already exist — it merges synonyms and drops noise, it does not invent.
@@ -1059,6 +1103,50 @@ export default class LiteRtSpikePlugin extends Plugin {
     } catch (err) {
       console.error('[gemma4-litert-wiki] judgeContradiction parse/gen failed', err);
       return null; // a bad judgment just drops the pair; never blocks the sweep
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
+  // One strict-JSON judgment per page: which claims does the source not
+  // support? Validated against the actual key-point list (the model can only
+  // flag points that were really there); a bad parse drops the page.
+  async checkProvenance(sourceText: string, keyPoints: string[]): Promise<string[]> {
+    const engine = await this.ensureEngine((t) => this.status(t));
+    const { SamplerType } = await import('@litert-lm/core');
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You verify provenance. Given a SOURCE note and CLAIMS said to come from it, respond ' +
+                'with ONLY a JSON object, no fences: {"unsupported": ["<claim>", ...]} listing the ' +
+                'claims the source does NOT state or clearly imply. Copy unsupported claims verbatim. ' +
+                'If every claim is supported, return {"unsupported": []}. Be fair — a claim the note ' +
+                'clearly implies counts as supported.',
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 256 },
+      });
+      const claimsBlock = keyPoints.map((p) => `- ${p}`).join('\n');
+      const message = await conversation.sendMessage(`Source:\n${sourceText}\n\nClaims:\n${claimsBlock}`);
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return [];
+      const parsed = JSON.parse(match[0]) as { unsupported?: unknown };
+      if (!Array.isArray(parsed.unsupported)) return [];
+      const valid = new Set(keyPoints);
+      return parsed.unsupported.filter((u): u is string => typeof u === 'string' && valid.has(u));
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] checkProvenance parse/gen failed', err);
+      return [];
     } finally {
       await conversation?.delete().catch(() => {});
     }
