@@ -33,6 +33,13 @@ import {
   type NoteExtraction,
 } from './wiki-store';
 import { LintReportModal, runLint } from './lint';
+import {
+  collectWikiPages,
+  ContradictionReportModal,
+  pairsSharingTag,
+  type ContradictionFlag,
+  type WikiPageMeta,
+} from './contradiction';
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
@@ -346,6 +353,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-suggest-vocab',
       name: 'Suggest tag vocabulary (schema.md, local Gemma)',
       callback: () => void this.suggestTagVocabulary(),
+    });
+
+    this.addCommand({
+      id: 'litert-find-contradictions',
+      name: 'Find contradictions in wiki (local Gemma)',
+      callback: () => void this.findContradictions(),
     });
 
     this.addCommand({
@@ -818,6 +831,41 @@ export default class LiteRtSpikePlugin extends Plugin {
     }).open();
   }
 
+  // Lint v2 (issue #5): flag contradiction candidates. Bounded — only pages
+  // sharing a tag are paired, capped at 12 pairs — so the O(n^2) model sweep
+  // can't run away. Flag-only: it never edits anything.
+  async findContradictions() {
+    const MAX_PAIRS = 12;
+    this.status('Collecting wiki pages…');
+    const pages: WikiPageMeta[] = await collectWikiPages(this.app);
+    const pairs = pairsSharingTag(pages, MAX_PAIRS);
+    if (!pairs.length) {
+      this.statusEnd(
+        pages.length < 2
+          ? 'Need at least two wiki pages to compare.'
+          : 'No tag-sharing page pairs to check — nothing can contradict.',
+        5000
+      );
+      return;
+    }
+
+    const flags: ContradictionFlag[] = [];
+    try {
+      for (let i = 0; i < pairs.length; i++) {
+        const { a, b } = pairs[i];
+        this.status(`Checking ${i + 1}/${pairs.length} — ${a.title} vs ${b.title}…`);
+        const verdict = await this.judgeContradiction(a.title, a.summary, b.title, b.summary);
+        if (verdict?.contradict) flags.push({ a, b, reason: verdict.reason });
+      }
+      this.statusEnd();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] contradiction scan failed', err);
+      this.statusEnd(`Contradiction scan FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return;
+    }
+    new ContradictionReportModal(this.app, flags, pairs.length).open();
+  }
+
   // One strict-JSON call: given the tags currently in use (with counts),
   // return a merged canonical vocabulary. The model only reshapes tags that
   // already exist — it merges synonyms and drops noise, it does not invent.
@@ -959,6 +1007,57 @@ export default class LiteRtSpikePlugin extends Plugin {
       const text = raw.trim().replace(/^#+\s.*$/gm, '').trim();
       if (!text) throw new Error('Model returned an empty overview.');
       return text;
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
+  // One strict-JSON judgment per page pair (single fill-in, not a tool loop).
+  // Compares one-line summaries — cheap, and enough for a candidate flag the
+  // human then verifies against the full pages.
+  async judgeContradiction(
+    titleA: string,
+    summaryA: string,
+    titleB: string,
+    summaryB: string
+  ): Promise<{ contradict: boolean; reason: string } | null> {
+    const engine = await this.ensureEngine((t) => this.status(t));
+    const { SamplerType } = await import('@litert-lm/core');
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You compare two knowledge-base entries and decide if they FACTUALLY CONTRADICT — ' +
+                'state opposite or incompatible facts. Respond with ONLY a JSON object, no fences: ' +
+                '{"contradict": "yes" or "no", "reason": "one short sentence"}. Entries on different ' +
+                'topics do NOT contradict — answer "no". Only answer "yes" for a genuine factual ' +
+                'conflict, not merely different emphasis or overlap.',
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 128 },
+      });
+      const message = await conversation.sendMessage(
+        `Entry A — ${titleA}: ${summaryA}\n\nEntry B — ${titleB}: ${summaryB}`
+      );
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return null;
+      const parsed = JSON.parse(match[0]) as { contradict?: string; reason?: string };
+      return {
+        contradict: String(parsed.contradict).toLowerCase() === 'yes',
+        reason: parsed.reason ?? '',
+      };
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] judgeContradiction parse/gen failed', err);
+      return null; // a bad judgment just drops the pair; never blocks the sweep
     } finally {
       await conversation?.delete().catch(() => {});
     }
