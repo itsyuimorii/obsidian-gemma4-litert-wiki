@@ -1069,7 +1069,6 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
   }
 
-<<<<<<< HEAD
   // One strict-JSON judgment per page pair (single fill-in, not a tool loop).
   // Compares one-line summaries — cheap, and enough for a candidate flag the
   // human then verifies against the full pages.
