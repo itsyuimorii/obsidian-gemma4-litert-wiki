@@ -1166,6 +1166,9 @@ export default class LiteRtSpikePlugin extends Plugin {
                 'into their broader parent (e.g. llm-eval / llm-evaluation / evals -> llm-evaluation; ' +
                 'index-funds / etf-basics / active-management -> investing; gpu-serving / llm-inference ' +
                 '-> llm-optimization). Drop one-off noise. Prefer broad, reusable tags over fine ones. ' +
+                'Every entry must be a TOPIC someone would browse by — a subject or domain term. Drop ' +
+                'generic process words (extraction, editing, motion): they mean different things in ' +
+                'different fields, so they group unrelated pages. ' +
                 'Use lowercase kebab-case. Only reshape tags from the input — do NOT invent new topics.',
             },
           ],
@@ -2154,7 +2157,10 @@ export default class LiteRtSpikePlugin extends Plugin {
                   'no markdown fences, no explanation: ' +
                   '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."], ' +
                   '"confidence": "high", "mentions": ["Name or Concept", "..."]}. ' +
-                  'Exactly 3 tags (short lowercase noun phrases). 3 to 5 key_points, each ONE short ' +
+                  '1 to 3 tags. A tag names the note\'s TOPIC — a subject several notes could ' +
+                  'share — using domain terminology, NOT the note\'s fine details and NOT a generic ' +
+                  'process word (extraction, editing, motion) that means different things in ' +
+                  'different fields. One good topic tag beats three narrow ones. 3 to 5 key_points, each ONE short ' +
                   'self-contained sentence stating concrete content from the note. confidence is ' +
                   '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
                   'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
