@@ -111,7 +111,10 @@ export function buildWikiPage(
   sourceHash?: string
 ): string {
   const date = new Date().toISOString().slice(0, 10);
-  const tagsYaml = extraction.tags.map((t) => `  - ${slugify(t)}`).join('\n');
+  // Every tag can be filtered away (e.g. all rejected) — omit the block then.
+  const tagsYaml = extraction.tags.length
+    ? `tags:\n${extraction.tags.map((t) => `  - ${slugify(t)}`).join('\n')}\n`
+    : '';
   const points = extraction.key_points.map((p) => `- ${p}`).join('\n');
   const mentions = extraction.mentions ?? [];
   const mentionsYaml = mentions.length
@@ -122,7 +125,7 @@ export function buildWikiPage(
     : '';
   return (
     `---\n` +
-    `tags:\n${tagsYaml}\n` +
+    tagsYaml +
     `source: "${sourcePath}"\n` +
     (sourceHash ? `source_hash: ${sourceHash}\n` : '') +
     mentionsYaml +
@@ -249,6 +252,11 @@ export interface WikiSchema {
   // you to promote them (issue #3). The vocabulary stays curated; nothing
   // enters it silently.
   pending: string[];
+  // Tags the user has banned by hand. Highest authority: Organize never
+  // re-proposes them, ingest never uses them, Pending never queues them —
+  // a plain deletion from Tags only lasts until the next rebuild, because
+  // rebuilds read the tags still in use on pages. This list is permanent.
+  rejected: string[];
 }
 
 const DEFAULT_NAMING: Record<string, string> = {
@@ -263,7 +271,8 @@ export function buildSchemaFile(
   tags: string[],
   naming: Record<string, string> = DEFAULT_NAMING,
   conceptThreshold = DEFAULT_CONCEPT_THRESHOLD,
-  pending: string[] = []
+  pending: string[] = [],
+  rejected: string[] = []
 ): string {
   const tagLines = tags.length
     ? tags.map((t) => `- ${slugify(t)}`).join('\n')
@@ -273,6 +282,9 @@ export function buildSchemaFile(
     .join('\n');
   const pendingLines = pending.length
     ? pending.map((t) => `- ${slugify(t)}`).join('\n')
+    : '(none)';
+  const rejectedLines = rejected.length
+    ? rejected.map((t) => `- ${slugify(t)}`).join('\n')
     : '(none)';
   // Every section carries its own collapsed callout (issues #43, #50) so the
   // rules explain themselves where you are looking, instead of in a preamble
@@ -332,7 +344,16 @@ export function buildSchemaFile(
     `> or the command plus **Approve** — no change. Approving the preview *is* your approval, just\n` +
     `> wholesale instead of retail.\n` +
     `> Either way it takes effect for **future** ingests; pages you already have are never touched.\n\n` +
-    `${pendingLines}\n`
+    `${pendingLines}\n\n` +
+    `## Rejected\n\n` +
+    `> [!tip]- What this is\n` +
+    `> Tags you've banned — your veto, and it outranks everything: **Organize tags** will never\n` +
+    `> re-propose one, ingest will never apply one, and Pending will never queue one.\n` +
+    `> Deleting a tag from \`## Tags\` alone only lasts until the next Organize, because rebuilds\n` +
+    `> read the tags still in use on your pages — a page still carrying it brings it back. Moving\n` +
+    `> the line HERE instead makes the removal permanent. (Run **Retag wiki pages to vocabulary**\n` +
+    `> to clear a banned tag off existing pages too.)\n\n` +
+    `${rejectedLines}\n`
   );
 }
 
@@ -373,17 +394,24 @@ export function parseSchema(content: string): WikiSchema {
     .filter((l) => l.startsWith('- '))
     .map((l) => l.slice(2).trim())
     .filter((t) => t && t.toLowerCase() !== '(none)');
+  const rejected = schemaSection(content, 'Rejected')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('- '))
+    .map((l) => l.slice(2).trim())
+    .filter((t) => t && t.toLowerCase() !== '(none)');
   return {
     tags,
     naming: Object.keys(naming).length ? naming : DEFAULT_NAMING,
     conceptThreshold: tm ? parseInt(tm[0], 10) : DEFAULT_CONCEPT_THRESHOLD,
     pending,
+    rejected,
   };
 }
 
 export async function readSchema(vault: Vault): Promise<WikiSchema> {
   const content = await readIfExists(vault, schemaPath());
-  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD, pending: [] };
+  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD, pending: [], rejected: [] };
   return parseSchema(content);
 }
 
@@ -402,11 +430,14 @@ export async function queuePendingTags(
   if (!content) return { before: 0, after: 0 };
   const schema = parseSchema(content);
   const before = schema.pending.length;
-  const known = new Set([...schema.tags, ...schema.pending].map((t) => slugify(t)));
+  // Rejected tags never enter the queue — the ban is the user's veto (#56).
+  const known = new Set(
+    [...schema.tags, ...schema.pending, ...schema.rejected].map((t) => slugify(t))
+  );
   const fresh = tags.map((t) => slugify(t)).filter((t) => t && !known.has(t));
   if (!fresh.length) return { before, after: before };
   const pending = [...schema.pending, ...fresh];
-  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, pending);
+  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, pending, schema.rejected);
   await writeFile(vault, schemaPath(), next);
   return { before, after: pending.length };
 }
