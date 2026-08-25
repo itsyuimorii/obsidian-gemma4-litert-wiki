@@ -15,8 +15,10 @@ import type LiteRtSpikePlugin from './main';
 import {
   answerPagePath,
   appendLog,
-  clampToTokens,
   buildAnswerPage,
+  buildChatTranscript,
+  chatTranscriptPath,
+  clampToTokens,
   ensureWikiScaffold,
   getIngestedSourcePaths,
   loadPages,
@@ -25,6 +27,7 @@ import {
   scoreEntries,
   upsertIndexEntry,
   writeWikiPage,
+  type ChatTurnRecord,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
 
@@ -85,6 +88,7 @@ export class ChatView extends ItemView {
   private stopButton!: HTMLButtonElement;
   private noteChipEl!: HTMLElement;
   private busy = false;
+  private turns: ChatTurnRecord[] = [];
   private lastQuestion: string | null = null;
   private activeConversation: Conversation | null = null;
   private mode: 'note' | 'wiki' = 'note';
@@ -194,9 +198,32 @@ export class ChatView extends ItemView {
     }
   }
 
+  // Persist the thread as a vault-native markdown file (Copilot-style):
+  // frontmatter for Dataview/Query reuse, Q/A blocks with sources. Goes
+  // through the same review-gated write path as saved answers.
+  private async saveConversation() {
+    if (!this.turns.length) {
+      new Notice('Nothing to save yet — ask something first.');
+      return;
+    }
+    const firstQ = this.turns.find((t) => t.role === 'user')?.content ?? 'chat';
+    const stamp = window.moment().format('YYYY-MM-DD-HHmmss');
+    const pagePath = chatTranscriptPath(firstQ, stamp);
+    const content = buildChatTranscript(this.turns, this.mode, stamp.slice(0, 10));
+    new IngestPreviewModal(this.app, pagePath, content, false, () => {
+      void (async () => {
+        await ensureWikiScaffold(this.app.vault);
+        await writeWikiPage(this.app.vault, pagePath, content);
+        await appendLog(this.app.vault, 'chat', firstQ.slice(0, 60));
+        new Notice(`Conversation saved: ${pagePath}`, 3000);
+      })();
+    }).open();
+  }
+
   private clearChat() {
     if (this.busy) this.activeConversation?.cancel();
     this.lastQuestion = null;
+    this.turns = [];
     this.messagesEl.empty();
     this.buildEmptyState();
   }
@@ -253,6 +280,14 @@ export class ChatView extends ItemView {
     setIcon(titleIcon, 'gemma-wiki-logo');
     titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma Wiki' });
     titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: 'local' });
+    const saveConvBtn = titleRow.createEl('button', {
+      cls: 'gemma4-chat-clear',
+      attr: { 'aria-label': 'Save conversation to wiki' },
+    });
+    setIcon(saveConvBtn, 'save');
+    setTooltip(saveConvBtn, 'Save conversation to wiki');
+    saveConvBtn.addEventListener('click', () => void this.saveConversation());
+
     const clearBtn = titleRow.createEl('button', {
       cls: 'gemma4-chat-clear',
       attr: { 'aria-label': 'Clear chat' },
@@ -537,6 +572,7 @@ export class ChatView extends ItemView {
     this.inputEl.value = '';
     this.autoGrowInput();
     this.lastQuestion = question;
+    this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
     await this.runGeneration(question);
   }
@@ -702,6 +738,7 @@ export class ChatView extends ItemView {
         });
       }
 
+      this.turns.push({ role: 'assistant', content: answer, sources: context.sources });
       this.addAssistantActions(row, () => answer, question, context.sources);
       this.scrollToBottom();
     } catch (err) {
