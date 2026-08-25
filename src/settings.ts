@@ -36,7 +36,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       .setName('Local model')
       .setDesc(
         status.downloaded
-          ? `Downloaded (${status.sizeGB} GB on disk). Runs fully offline on your GPU.`
+          ? `Downloaded (${status.sizeGB} GB on disk). Runs fully offline on your GPU — no API key, no per-token cost.`
           : status.partialGB
             ? `Partial download on disk (${status.partialGB} GB). Resume to finish.`
             : 'Not downloaded yet (~2.97 GB, one time). Downloads on first use, or start it here.'
