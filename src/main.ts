@@ -310,7 +310,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-relink-wiki',
-      name: 'Relink wiki pages (fill missing Related sections)',
+      name: 'Relink wiki pages (fill or re-sync Related sections)',
       callback: async () => {
         // Backfill for pages ingested before the related-links feature
         // existed — they have no cross-links and show up as orphans in
@@ -327,7 +327,11 @@ export default class LiteRtSpikePlugin extends Plugin {
           const file = this.app.vault.getAbstractFileByPath(`${entry.linkPath}.md`);
           if (!(file instanceof TFile)) continue;
           const content = await this.app.vault.read(file);
-          if (!content.trim() || content.includes('\n## Related')) continue;
+          // Re-sync, not backfill-only (issue #44): skip a page only when its
+          // Related section is HEALTHY — present, non-empty, and every link
+          // resolving. Skipping on mere presence meant a section that was
+          // empty or had gone stale could never be repaired.
+          if (!content.trim() || this.relatedIsHealthy(content)) continue;
           this.status(`Relinking ${i}/${entries.length} — ${entry.title}…`);
           const candidates = entries.filter((e) => e.linkPath !== entry.linkPath);
           const related = await this.pickRelatedPages(entry.summary, candidates);
@@ -337,7 +341,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         }
         this.statusEnd();
         if (!proposals.length) {
-          new Notice('Nothing to relink — every page already has a Related section or no matches were found.');
+          new Notice('Nothing to relink — every page has an up-to-date Related section, or no matches were found.');
           return;
         }
         new RelinkPreviewModal(this.app, proposals, () => {
@@ -350,10 +354,16 @@ export default class LiteRtSpikePlugin extends Plugin {
                 `\n## Related\n\n` +
                 prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
                 `\n`;
-              await this.app.vault.modify(file, content.trimEnd() + '\n' + section);
+              // Replace an existing Related section rather than appending a
+              // second one — now that relink re-syncs stale sections, a plain
+              // append would duplicate the heading. Related is the last section
+              // generated pages carry, so truncating at it is safe.
+              const cut = content.indexOf('\n## Related');
+              const head = cut === -1 ? content : content.slice(0, cut);
+              await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
               await appendLog(this.app.vault, 'relink', prop.title);
             }
-            new Notice(`Related sections added to ${proposals.length} pages.`, 4000);
+            new Notice(`Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`, 4000);
           })();
         }).open();
       },
@@ -967,6 +977,24 @@ export default class LiteRtSpikePlugin extends Plugin {
       return !m || this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile;
     });
     if (kept.length !== lines.length) await this.app.vault.modify(file, kept.join('\n'));
+  }
+
+  // A page's Related section is "healthy" when it exists, lists at least one
+  // link, and every link still resolves. Anything else — no section, an empty
+  // one, or one holding a dead link — is a candidate for re-syncing (#44).
+  private relatedIsHealthy(content: string): boolean {
+    const cut = content.indexOf('\n## Related');
+    if (cut === -1) return false;
+    const RELATED_LINK = /^- \[\[([^\]|]+)\|/;
+    const links = content
+      .slice(cut)
+      .split('\n')
+      .map((l) => l.match(RELATED_LINK))
+      .filter((m): m is RegExpMatchArray => !!m);
+    if (!links.length) return false;
+    return links.every(
+      (m) => this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile
+    );
   }
 
   // Deleting a wiki page leaves every OTHER page that linked to it holding a
