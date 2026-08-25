@@ -9,8 +9,6 @@ import { indexPath, logPath, wikiDir } from './wiki-store';
 // hallucination-pollution as the #1 new risk. Both are best caught by a
 // human eye on a short, prioritized list, not by more model calls.
 
-const STALE_DAYS = 30;
-
 export interface ReviewItem {
   path: string;
   title: string;
@@ -31,7 +29,7 @@ function ageInDays(created: unknown): number | null {
   return Math.floor((Date.now() - t) / 86_400_000);
 }
 
-export function buildReviewBoard(app: App): ReviewBoard {
+export function buildReviewBoard(app: App, staleDays: number): ReviewBoard {
   const files = app.vault
     .getMarkdownFiles()
     .filter((f) => f.path.startsWith(`${wikiDir()}/`) && f.path !== indexPath() && f.path !== logPath());
@@ -44,7 +42,7 @@ export function buildReviewBoard(app: App): ReviewBoard {
     const reasons: string[] = [];
     if (confidence === 'low') reasons.push('low confidence');
     if (confidence === 'med') reasons.push('medium confidence');
-    if (ageDays !== null && ageDays >= STALE_DAYS) reasons.push(`${ageDays}d since ingest`);
+    if (ageDays !== null && ageDays >= staleDays) reasons.push(`${ageDays}d since ingest`);
     if (reasons.length) {
       items.push({ path: f.path, title: f.basename, confidence, ageDays, reasons });
     }
@@ -59,10 +57,12 @@ export function buildReviewBoard(app: App): ReviewBoard {
 
 export class ReviewBoardModal extends Modal {
   private board: ReviewBoard;
+  private staleDays: number;
 
-  constructor(app: App, board: ReviewBoard) {
+  constructor(app: App, board: ReviewBoard, staleDays: number) {
     super(app);
     this.board = board;
+    this.staleDays = staleDays;
   }
 
   onOpen() {
@@ -71,7 +71,7 @@ export class ReviewBoardModal extends Modal {
     contentEl.createEl('h3', { text: 'Wiki review board' });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
-      text: `${this.board.items.length} of ${this.board.scanned} pages worth a look — low-confidence extractions and pages untouched for ${STALE_DAYS}+ days.`,
+      text: `${this.board.items.length} of ${this.board.scanned} pages worth a look — low-confidence extractions and pages untouched for ${this.staleDays}+ days.`,
     });
 
     if (!this.board.items.length) {
