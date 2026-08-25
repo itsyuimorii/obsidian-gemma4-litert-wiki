@@ -41,6 +41,12 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // Closing the pane drops the button this callback writes to; leaving it
+  // registered would have a finishing scan poke a detached element.
+  hide(): void {
+    this.plugin.onScanStateChange = null;
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -170,25 +176,24 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       .setDesc(
         'Sweep the folders below for new or changed notes, draft a card for each, and review them ' +
           'all at once before anything is written — drafts are never saved without your tick. ' +
+          'A scan is one model call per note, so it takes a while: you can close this window and ' +
+          'keep working, and the review dialog opens when it finishes. ' +
           'To ingest one specific note instead, use the command palette: "Ingest active note into wiki".'
       )
       .addButton((btn) => {
-        // The button doubles as the stop control: a scan drafts with the model
-        // for tens of seconds, so while it runs the label flips to "Stop scan"
-        // and a click cancels (keeping the drafts already made).
-        btn.setButtonText(this.plugin.isScanning() ? 'Stop scan' : 'Scan now');
-        btn.onClick(async () => {
+        // The button doubles as the stop control. Its label follows the
+        // plugin's real scan state via onScanStateChange — setting it once at
+        // click time went stale whenever this pane re-rendered, so a running
+        // scan could still read "Scan now".
+        const sync = () => btn.setButtonText(this.plugin.isScanning() ? 'Stop scan' : 'Scan now');
+        sync();
+        this.plugin.onScanStateChange = sync;
+        btn.onClick(() => {
           if (this.plugin.isScanning()) {
             this.plugin.cancelScan();
-            btn.setButtonText('Scan now');
             return;
           }
-          btn.setButtonText('Stop scan');
-          try {
-            await this.plugin.scanAndReviewIngest();
-          } finally {
-            btn.setButtonText('Scan now');
-          }
+          void this.plugin.scanAndReviewIngest();
         });
       });
 

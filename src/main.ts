@@ -274,7 +274,8 @@ export default class LiteRtSpikePlugin extends Plugin {
               await ensureWikiScaffold(this.app.vault);
               await writeWikiPage(this.app.vault, pagePath, pageContent);
               await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
-              await queuePendingTags(this.app.vault, extraction.tags);
+              const pending = await queuePendingTags(this.app.vault, extraction.tags);
+              this.notePendingGrowth(pending.before, pending.after);
               await this.pruneIndex();
               await appendLog(this.app.vault, 'ingest', file.basename);
               this.status(`Wiki page written: ${pagePath}`);
@@ -310,7 +311,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-relink-wiki',
-      name: 'Relink wiki pages (fill missing Related sections)',
+      name: 'Relink wiki pages (fill or re-sync Related sections)',
       callback: async () => {
         // Backfill for pages ingested before the related-links feature
         // existed — they have no cross-links and show up as orphans in
@@ -327,7 +328,11 @@ export default class LiteRtSpikePlugin extends Plugin {
           const file = this.app.vault.getAbstractFileByPath(`${entry.linkPath}.md`);
           if (!(file instanceof TFile)) continue;
           const content = await this.app.vault.read(file);
-          if (!content.trim() || content.includes('\n## Related')) continue;
+          // Re-sync, not backfill-only (issue #44): skip a page only when its
+          // Related section is HEALTHY — present, non-empty, and every link
+          // resolving. Skipping on mere presence meant a section that was
+          // empty or had gone stale could never be repaired.
+          if (!content.trim() || this.relatedIsHealthy(content)) continue;
           this.status(`Relinking ${i}/${entries.length} — ${entry.title}…`);
           const candidates = entries.filter((e) => e.linkPath !== entry.linkPath);
           const related = await this.pickRelatedPages(entry.summary, candidates);
@@ -337,7 +342,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         }
         this.statusEnd();
         if (!proposals.length) {
-          new Notice('Nothing to relink — every page already has a Related section or no matches were found.');
+          new Notice('Nothing to relink — every page has an up-to-date Related section, or no matches were found.');
           return;
         }
         new RelinkPreviewModal(this.app, proposals, () => {
@@ -350,10 +355,16 @@ export default class LiteRtSpikePlugin extends Plugin {
                 `\n## Related\n\n` +
                 prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
                 `\n`;
-              await this.app.vault.modify(file, content.trimEnd() + '\n' + section);
+              // Replace an existing Related section rather than appending a
+              // second one — now that relink re-syncs stale sections, a plain
+              // append would duplicate the heading. Related is the last section
+              // generated pages carry, so truncating at it is safe.
+              const cut = content.indexOf('\n## Related');
+              const head = cut === -1 ? content : content.slice(0, cut);
+              await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
               await appendLog(this.app.vault, 'relink', prop.title);
             }
-            new Notice(`Related sections added to ${proposals.length} pages.`, 4000);
+            new Notice(`Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`, 4000);
           })();
         }).open();
       },
@@ -378,15 +389,17 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-reconcile-index',
-      name: 'Reconcile wiki index (drop deleted pages)',
+      name: 'Reconcile wiki (drop links to deleted pages)',
       callback: async () => {
         const before = (await readIndexEntries(this.app.vault)).length;
         await this.pruneIndex();
+        await this.pruneDeadRelatedLinks();
         const after = (await readIndexEntries(this.app.vault)).length;
         new Notice(
           before === after
-            ? 'Index is already clean — no deleted pages listed.'
-            : `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index.`,
+            ? 'Wiki is already consistent — no links to deleted pages.'
+            : `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
+              'and any related links pointing at them.',
           5000
         );
       },
@@ -394,7 +407,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-concept-page',
-      name: 'Build a concept page from a tag (local Gemma)',
+      name: 'Build a concept page from a tag or mention (local Gemma)',
       callback: () => void this.createConceptPage(),
     });
 
@@ -692,7 +705,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     // dead related link). Prune on any delete inside the wiki folder.
     this.registerEvent(
       this.app.vault.on('delete', (f) => {
-        if (f.path.startsWith(`${wikiDir()}/`)) void this.pruneIndex();
+        if (!f.path.startsWith(`${wikiDir()}/`)) return;
+        void (async () => {
+          await this.pruneIndex();
+          await this.pruneDeadRelatedLinks();
+        })();
       })
     );
   }
@@ -963,6 +980,70 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (kept.length !== lines.length) await this.app.vault.modify(file, kept.join('\n'));
   }
 
+  // Pending is the queue of tags ingest coined that aren't in the vocabulary.
+  // It works as a soft vocabulary (ingest reads it too), but past a point a
+  // long queue means the vocabulary itself is stale and clusters are
+  // fragmenting. Nudge once, when the queue crosses the mark — not on every
+  // ingest, which would just train the user to ignore it.
+  private notePendingGrowth(before: number, after: number): void {
+    const MARK = 20;
+    if (before < MARK && after >= MARK) {
+      new Notice(
+        `${after} tags are waiting in schema.md's Pending list. Run "Organize tags" to fold them ` +
+          'into the vocabulary — until then, similar notes keep coining near-duplicate tags.',
+        9000
+      );
+    }
+  }
+
+  // A page's Related section is "healthy" when it exists, lists at least one
+  // link, and every link still resolves. Anything else — no section, an empty
+  // one, or one holding a dead link — is a candidate for re-syncing (#44).
+  private relatedIsHealthy(content: string): boolean {
+    const cut = content.indexOf('\n## Related');
+    if (cut === -1) return false;
+    const RELATED_LINK = /^- \[\[([^\]|]+)\|/;
+    const links = content
+      .slice(cut)
+      .split('\n')
+      .map((l) => l.match(RELATED_LINK))
+      .filter((m): m is RegExpMatchArray => !!m);
+    if (!links.length) return false;
+    return links.every(
+      (m) => this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile
+    );
+  }
+
+  // Deleting a wiki page leaves every OTHER page that linked to it holding a
+  // dead [[link]] in its "## Related" list — pruneIndex only fixes index.md.
+  // Strip those lines so related links never point at a page that is gone.
+  //
+  // Deterministic bookkeeping, not generation: it only removes bullets whose
+  // link target no longer exists, so it cannot lose information or touch the
+  // page's own content. Same standing as pruneIndex, which already repairs
+  // index.md on delete. Raw notes are never touched — wiki pages only.
+  private async pruneDeadRelatedLinks(): Promise<void> {
+    const RELATED_LINK = /^- \[\[([^\]|]+)\|/;
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      const content = await this.app.vault.read(f);
+      const idx = content.indexOf('\n## Related');
+      if (idx === -1) continue;
+      const head = content.slice(0, idx);
+      const tail = content.slice(idx);
+      const kept = tail.split('\n').filter((l) => {
+        const m = l.match(RELATED_LINK);
+        return !m || this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile;
+      });
+      if (kept.length === tail.split('\n').length) continue;
+      // If every link is gone, drop the empty heading too rather than leaving
+      // a bare "## Related" with nothing under it.
+      const rebuilt = kept.join('\n');
+      const hasLink = kept.some((l) => RELATED_LINK.test(l));
+      await this.app.vault.modify(f, hasLink ? head + rebuilt : `${head}\n`);
+    }
+  }
+
   // Lint v2 (issue #5): flag contradiction candidates. Bounded — only pages
   // sharing a tag are paired, capped at 12 pairs — so the O(n^2) model sweep
   // can't run away. Flag-only: it never edits anything.
@@ -1095,16 +1176,30 @@ export default class LiteRtSpikePlugin extends Plugin {
     // threshold there actually changes what is offered.
     const { conceptThreshold } = await readSchema(this.app.vault);
     const minMembers = Math.max(2, conceptThreshold);
-    // Gather tag -> member pages (from page frontmatter tags + index summaries).
+    // Cluster pages by shared tag AND by shared mention (#48). Mentions are
+    // the entities ingest already extracts — "the things several pages talk
+    // about" is exactly what a concept page is for, so they are a second,
+    // finer-grained source of candidates. It also gives the mentions field a
+    // real consumer instead of being write-only. Grouped case-insensitively;
+    // the first spelling seen names the cluster.
     const entries = await readIndexEntries(this.app.vault);
     const byLinkPath = new Map(entries.map((e) => [e.linkPath, e]));
     const clusters = new Map<string, IndexEntry[]>();
+    const clusterLabel = new Map<string, string>();
     const SKIP = new Set(['concept', 'answer', 'chat']);
+    const addTo = (key: string, label: string, entry: IndexEntry) => {
+      if (!clusterLabel.has(key)) clusterLabel.set(key, label);
+      const list = clusters.get(key) ?? [];
+      // A page can carry the same subject as both a tag and a mention.
+      if (!list.some((e) => e.linkPath === entry.linkPath)) list.push(entry);
+      clusters.set(key, list);
+    };
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!f.path.startsWith(`${wikiDir()}/`)) continue;
       const entry = byLinkPath.get(f.path.replace(/\.md$/, ''));
       if (!entry) continue;
-      const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      const raw = fm?.tags;
       const tags = Array.isArray(raw)
         ? raw.map((t) => String(t))
         : typeof raw === 'string'
@@ -1112,19 +1207,26 @@ export default class LiteRtSpikePlugin extends Plugin {
           : [];
       for (const t of tags) {
         if (SKIP.has(t)) continue;
-        const list = clusters.get(t) ?? [];
-        list.push(entry);
-        clusters.set(t, list);
+        addTo(slugify(t), t, entry);
+      }
+      const rawMentions = fm?.mentions;
+      const mentions = Array.isArray(rawMentions)
+        ? rawMentions.map((m) => String(m)).filter((m) => m.trim())
+        : [];
+      for (const m of mentions) {
+        const key = slugify(m);
+        if (!key || SKIP.has(key)) continue;
+        addTo(key, m.trim(), entry);
       }
     }
     const candidates = [...clusters.entries()]
       .filter(([, members]) => members.length >= minMembers)
-      .map(([tag, members]) => ({ tag, members }))
+      .map(([key, members]) => ({ tag: clusterLabel.get(key) ?? key, members }))
       .sort((a, b) => b.members.length - a.members.length);
 
     if (!candidates.length) {
       new Notice(
-        `No tag is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
+        `No tag or mention is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
           'Ingest more notes, or lower the threshold in schema.md.',
         7000
       );
@@ -1350,6 +1452,15 @@ export default class LiteRtSpikePlugin extends Plugin {
   // the user still reviews them — and stops before the next one.
   private scanRunning = false;
   private scanCancelled = false;
+  // Set by the settings tab so the Scan button can follow the real state
+  // instead of a label set once at click time — which lost track whenever the
+  // pane re-rendered, leaving a running scan showing "Scan now".
+  onScanStateChange: (() => void) | null = null;
+
+  private setScanRunning(running: boolean): void {
+    this.scanRunning = running;
+    this.onScanStateChange?.();
+  }
 
   isScanning(): boolean {
     return this.scanRunning;
@@ -1376,12 +1487,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       );
       return;
     }
-    this.scanRunning = true;
+    this.setScanRunning(true);
     this.scanCancelled = false;
     try {
       await this.runScanAndReview(includePrefixes);
     } finally {
-      this.scanRunning = false;
+      this.setScanRunning(false);
       this.scanCancelled = false;
     }
   }
@@ -1417,6 +1528,22 @@ export default class LiteRtSpikePlugin extends Plugin {
     let failed = 0;
     let cancelled = false;
     const n = result.eligible.length;
+    // Drafting is one model call per note — minutes for a batch. Say so up
+    // front, and say the settings pane is not holding it: users sat watching
+    // a dialog they could have closed, unsure whether closing would cancel.
+    new Notice(
+      `Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each. You can close Settings ` +
+        'and keep working; the review dialog opens here when it is done. ' +
+        '(To stop early, reopen Settings and click "Stop scan".)',
+      9000
+    );
+    // Pages drafted earlier in THIS batch are valid link targets for later
+    // ones: they are about to be written together. Without this, scanning a
+    // set of related notes into a fresh wiki gives every page an empty
+    // Related section, because the index still holds only pre-batch pages.
+    // (A draft the user then unticks can leave a link to a page that was
+    // never written — the post-write prune below clears exactly that.)
+    const batchEntries: IndexEntry[] = [];
     for (let i = 0; i < n; i++) {
       if (this.scanCancelled) {
         cancelled = true;
@@ -1432,12 +1559,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         const sourceHash = contentHash(content);
         const pagePath = wikiPagePath(file.basename);
         const selfLink = pagePath.replace(/\.md$/, '');
-        const candidates = (await this.liveIndexEntries()).filter((e) => e.linkPath !== selfLink);
+        const candidates = [...(await this.liveIndexEntries()), ...batchEntries].filter(
+          (e) => e.linkPath !== selfLink
+        );
         let related: { title: string; linkPath: string }[] = [];
         if (candidates.length) {
           this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
           related = await this.pickRelatedPages(extraction.summary, candidates);
         }
+        batchEntries.push({ linkPath: selfLink, title: file.basename, summary: extraction.summary });
         drafts.push({
           file,
           reason,
@@ -1473,13 +1603,23 @@ export default class LiteRtSpikePlugin extends Plugin {
     new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
       if (!approved.length) return;
       await ensureWikiScaffold(this.app.vault);
+      // Track Pending across the whole batch so the nudge fires once for the
+      // run, not once per approved page.
+      let pendingBefore: number | null = null;
+      let pendingAfter = 0;
       for (const d of approved) {
         await writeWikiPage(this.app.vault, d.pagePath, d.pageContent);
         await upsertIndexEntry(this.app.vault, d.pagePath, d.file.basename, d.summary);
-        await queuePendingTags(this.app.vault, d.tags);
+        const pending = await queuePendingTags(this.app.vault, d.tags);
+        if (pendingBefore === null) pendingBefore = pending.before;
+        pendingAfter = pending.after;
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
+      if (pendingBefore !== null) this.notePendingGrowth(pendingBefore, pendingAfter);
       await this.pruneIndex();
+      // Drafts could link to each other; if the user approved only some, the
+      // survivors may point at a page that was never written. Clear those.
+      await this.pruneDeadRelatedLinks();
       this.refreshIngestBadges();
       void this.refreshScanBadge();
       new Notice(`Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`, 4000);
@@ -1623,15 +1763,19 @@ export default class LiteRtSpikePlugin extends Plugin {
   // else is dropped in validation. Failure returns [] and never blocks
   // ingest; related links are an enhancement, not a requirement.
   //
-  // Prompt design (deliberate, after weak-link complaints):
+  // Prompt design (deliberate, and corrected once):
   // - The model's only evidence is the summaries, so the criterion is
   //   anchored there: a SPECIFIC subject (concept / entity / method /
   //   question) that appears in BOTH summaries — not "feels related",
   //   which a one-line summary cannot support, and not a shared broad
   //   field, which over-links everything in a small single-topic wiki.
-  // - Each pick must NAME that shared subject ("shared" field). This is a
-  //   structural self-check: a weak pick has nothing to write there, so it
-  //   tends not to be emitted. Still ONE strict-JSON fill-in — no loop.
+  // - The OUTPUT stays a flat list of titles. An earlier version demanded
+  //   {"title","shared"} objects so each pick had to justify itself; that
+  //   read well but broke in practice — nested JSON is a much harder
+  //   generation task for a 4B, the per-pick explanations bloated the
+  //   response into truncation, and any imperfection was silently dropped,
+  //   so pages came out with NO related links at all. Reliability wins:
+  //   keep the strict criterion in prose, keep the schema trivial.
   // - The empty case is stated neutrally ("when no page qualifies"), not
   //   praised — praising it makes a small model lazily return [] and
   //   starves the wiki of the real cross-links it exists for.
@@ -1672,18 +1816,17 @@ export default class LiteRtSpikePlugin extends Plugin {
                 content:
                   'You cross-link pages in a personal wiki. The user gives you a new page summary ' +
                   'and a catalog of existing pages (title: summary). Respond with ONLY a JSON ' +
-                  'object, no fences, no explanation: ' +
-                  '{"related": [{"title": "Exact Title", "shared": "the specific subject both pages share"}, ...]}. ' +
+                  'object, no fences, no explanation: {"related": ["Exact Title", ...]}. ' +
                   'Include a page only if a SPECIFIC concept, entity, method, or question appears ' +
-                  'in BOTH its summary and the new page summary — name it in "shared". Belonging ' +
-                  'to the same general field is not enough. At most 3, strongest first; titles ' +
-                  'must match the catalog EXACTLY. Return {"related": []} when no page qualifies.',
+                  'in BOTH its summary and the new page summary. Belonging to the same general ' +
+                  'field is not enough. At most 3, strongest first; titles must match the catalog ' +
+                  'EXACTLY. Return {"related": []} when no page qualifies.',
               },
             ],
           },
           sessionConfig: {
             samplerParams: { type: SamplerType.GREEDY },
-            maxOutputTokens: 320,
+            maxOutputTokens: 256,
           },
         });
         const message = await conversation.sendMessage(
@@ -1705,30 +1848,58 @@ export default class LiteRtSpikePlugin extends Plugin {
         const parsed = JSON.parse(cleaned) as { related?: unknown };
         if (!Array.isArray(parsed.related)) return [];
         const byTitle = new Map(candidates.map((e) => [e.title, e]));
-        // Expected entries are {title, shared}; an object with no named
-        // shared subject failed its own justification and is dropped. Plain
-        // strings (the model regressing to the old shape) are tolerated —
-        // losing the self-check beats losing every link to a shape drift.
+        // Entries are titles. An object with a `title` is still accepted —
+        // if the model volunteers a richer shape we take the title rather
+        // than dropping the pick, since a dropped pick is indistinguishable
+        // from "nothing qualified" to the user.
         const titles = parsed.related
           .map((r) => {
             if (typeof r === 'string') return r;
             if (r && typeof r === 'object' && typeof (r as { title?: unknown }).title === 'string') {
-              const shared = (r as { shared?: unknown }).shared;
-              return typeof shared === 'string' && shared.trim() ? (r as { title: string }).title : null;
+              return (r as { title: string }).title;
             }
             return null;
           })
           .filter((t): t is string => !!t);
-        return titles
-          .map((t) => byTitle.get(t))
-          .filter((e): e is IndexEntry => !!e)
+        // Resolve titles tolerantly. The model has to echo a catalog title
+        // verbatim, and these are often slugs ("llm-inference-optimization");
+        // a 4B that tidies one into "LLM Inference Optimization" would have
+        // every pick dropped by an exact lookup, producing an empty Related
+        // section indistinguishable from "nothing qualified". Match on a
+        // normalized key (case, spacing and punctuation folded), then fall
+        // back to the page's slug.
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const byNorm = new Map<string, IndexEntry>();
+        for (const e of candidates) {
+          byNorm.set(norm(e.title), e);
+          const slug = e.linkPath.split('/').pop();
+          if (slug) byNorm.set(norm(slug), e);
+        }
+        const resolved = titles
+          .map((t) => byTitle.get(t) ?? byNorm.get(norm(t)))
+          .filter((e): e is IndexEntry => !!e);
+        if (titles.length && !resolved.length) {
+          // The model answered but nothing matched the catalog — a distinct
+          // failure from "no page qualified", and one the user cannot see.
+          console.warn(
+            '[gemma4-litert-wiki] related-pages: model returned titles that match no catalog entry',
+            { returned: titles, catalog: candidates.map((c) => c.title) }
+          );
+        }
+        // De-dupe: two spellings can resolve to the same page.
+        const seen = new Set<string>();
+        return resolved
+          .filter((e) => (seen.has(e.linkPath) ? false : (seen.add(e.linkPath), true)))
           .slice(0, 3)
           .map((e) => ({ title: e.title, linkPath: e.linkPath }));
       } finally {
         await conversation?.delete().catch(() => {});
       }
     } catch (err) {
-      console.error('[gemma4-litert-wiki] related-pages pick failed (non-blocking)', err);
+      // Non-blocking: ingest proceeds without related links. Logged loudly
+      // because an empty Related section otherwise looks identical to
+      // "nothing qualified" — this is how a broken picker stayed invisible.
+      console.error('[gemma4-litert-wiki] related-pages pick FAILED — page will have no Related section', err);
       return [];
     }
   }
@@ -1744,16 +1915,30 @@ export default class LiteRtSpikePlugin extends Plugin {
     const engine = await this.ensureEngine(onProgress);
     const { SamplerType } = await import('@litert-lm/core');
 
-    // Schema layer (issues #3, #38): reuse existing tags instead of inventing a
-    // fresh synonym every time ("llm-eval" vs "llm-evaluation" vs "evals"). Two
-    // tiers so it works before a vocabulary exists: prefer the curated
-    // schema.md vocabulary; if there is none yet, fall back to the tags already
-    // in use on the wiki (frequency-ranked). Either way capped so the list
-    // never crowds the 4096-token context.
+    // Schema layer (issues #3, #38, #47): reuse existing tags instead of
+    // inventing a fresh synonym every time ("llm-eval" vs "llm-evaluation" vs
+    // "evals"). This is a UNION of every tag the wiki already knows, in
+    // descending authority: the curated schema.md vocabulary, then Pending
+    // (used but not yet approved), then anything else in use, frequency-ranked.
+    //
+    // It used to be a binary either/or — schema tags IF ANY, else the tags in
+    // use. That collapsed on a young wiki: a single curated tag is "truthy",
+    // so a vocabulary of one irrelevant tag suppressed the fallback entirely
+    // and every note coined fresh tags. Worse, Pending was never shown at all,
+    // so a tag sitting there ("espresso") did nothing to stop the next note
+    // coining "espresso-basics" — the cluster fragmented and never reached the
+    // concept-page threshold. Capped so the list never crowds the context.
     const VOCAB_CAP = 40;
     const schema = await readSchema(this.app.vault);
-    const schemaTags = schema.tags;
-    const vocab = (schemaTags.length ? schemaTags : this.wikiTagCounts().map(([t]) => t)).slice(0, VOCAB_CAP);
+    const vocab: string[] = [];
+    const seenTag = new Set<string>();
+    for (const t of [...schema.tags, ...schema.pending, ...this.wikiTagCounts().map(([tag]) => tag)]) {
+      const tag = slugify(t);
+      if (!tag || seenTag.has(tag)) continue;
+      seenTag.add(tag);
+      vocab.push(tag);
+      if (vocab.length >= VOCAB_CAP) break;
+    }
     const vocabLine = vocab.length
       ? ` Prefer tags from this list when one fits, reusing the exact spelling: ${vocab.join(', ')}. Only coin a new tag if none of these apply.`
       : '';
@@ -1827,10 +2012,24 @@ export default class LiteRtSpikePlugin extends Plugin {
           if (!['high', 'med', 'low'].includes(parsed.confidence)) parsed.confidence = 'med';
           // mentions is optional (issue #18) — default to [] and cap at 6 so
           // a model that omits or over-produces it never fails the extraction.
-          parsed.mentions =
-            Array.isArray(parsed.mentions)
-              ? parsed.mentions.filter((m) => typeof m === 'string' && m.trim()).slice(0, 6)
-              : [];
+          // Trimmed and de-duped case-insensitively (#48): the model emits
+          // "Espresso" on one page and "espresso" on the next, which would
+          // otherwise read as two different entities everywhere mentions are
+          // grouped. First spelling seen wins, so the display keeps the
+          // model's own capitalisation for proper nouns.
+          const seenMention = new Set<string>();
+          parsed.mentions = Array.isArray(parsed.mentions)
+            ? parsed.mentions
+                .filter((m): m is string => typeof m === 'string' && !!m.trim())
+                .map((m) => m.trim())
+                .filter((m) => {
+                  const key = m.toLowerCase();
+                  if (seenMention.has(key)) return false;
+                  seenMention.add(key);
+                  return true;
+                })
+                .slice(0, 6)
+            : [];
           // Force the summary to a single line: index.md is one-entry-per-line,
           // so a multi-line summary would break across lines and pollute the
           // index with non-entry junk.

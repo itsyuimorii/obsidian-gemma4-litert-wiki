@@ -153,17 +153,37 @@ async function writeFile(vault: Vault, path: string, content: string): Promise<v
   }
 }
 
+const INDEX_HEADER =
+  `# Wiki Index\n\n` +
+  `> [!info]- What this file is\n` +
+  `> The wiki's directory: one line per page — a link, then a one-sentence summary.\n` +
+  `> The plugin maintains it. Wiki-mode chat reads this file FIRST to decide which pages to open,\n` +
+  `> which is why summaries live here and not just on the pages.\n` +
+  `> It repairs itself: entries for pages you delete are dropped automatically (and you can force a\n` +
+  `> pass with **Reconcile wiki**). Safe to read; you should not need to hand-edit it.\n\n`;
+
+const LOG_HEADER =
+  `# Wiki Log\n\n` +
+  `> [!info]- What this file is\n` +
+  `> An append-only timeline of what the plugin did, one \`- [date] action | title\` line per\n` +
+  `> operation (\`ingest\`, \`concept\`, \`relink\`, \`schema\`). Nothing here is read back — it exists so\n` +
+  `> you can check what happened and when, and it greps cleanly by action.\n\n`;
+
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   for (const dir of [wikiDir(), wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir()]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
   }
+  // Both files carry a collapsed self-explanation (#50), same pattern as
+  // schema.md: the generated parts of the wiki should say what they are where
+  // you open them. Callout lines start with "> " and the entry parsers read
+  // only "- [[...]]" lines, so the header can never be read as data.
   if (!vault.getAbstractFileByPath(indexPath())) {
-    await vault.create(indexPath(), '# Wiki Index\n\nOne line per page: link, then a one-sentence summary.\n\n');
+    await vault.create(indexPath(), INDEX_HEADER);
   }
   if (!vault.getAbstractFileByPath(logPath())) {
-    await vault.create(logPath(), '# Wiki Log\n\nAppend-only timeline. One `- [date] action | title` line per operation.\n\n');
+    await vault.create(logPath(), LOG_HEADER);
   }
 }
 
@@ -181,7 +201,7 @@ export async function upsertIndexEntry(
 ): Promise<void> {
   const linkTarget = pagePath.replace(/\.md$/, '');
   const line = `- [[${linkTarget}|${title}]] — ${summary}`;
-  const current = (await readIfExists(vault, indexPath())) ?? '# Wiki Index\n\n';
+  const current = (await readIfExists(vault, indexPath())) ?? INDEX_HEADER;
   const lines = current.split('\n');
   const existingIdx = lines.findIndex((l) => {
     const m = l.match(INDEX_LINE);
@@ -197,7 +217,7 @@ export async function upsertIndexEntry(
 
 export async function appendLog(vault: Vault, action: string, title: string): Promise<void> {
   const date = new Date().toISOString().slice(0, 10);
-  const current = (await readIfExists(vault, logPath())) ?? '# Wiki Log\n\n';
+  const current = (await readIfExists(vault, logPath())) ?? LOG_HEADER;
   await writeFile(vault, logPath(), `${current.trimEnd()}\n- [${date}] ${action} | ${title}\n`);
 }
 
@@ -254,38 +274,60 @@ export function buildSchemaFile(
   const pendingLines = pending.length
     ? pending.map((t) => `- ${slugify(t)}`).join('\n')
     : '(none)';
+  // Every section carries its own collapsed callout (issues #43, #50) so the
+  // rules explain themselves where you are looking, instead of in a preamble
+  // you scroll past. These MUST be emitted here rather than hand-added:
+  // queuePendingTags and Organize tags regenerate the whole file, so anything
+  // written by hand outside the parsed values is lost on the next ingest.
+  //
+  // Parser-safe by construction: every callout line starts with "> ". The Tags
+  // and Pending parsers read only "- " lines, Naming matches "key: value" at
+  // line start, and the threshold parser strips "> " lines before looking for
+  // its number — so no callout text can be mistaken for a value.
   return (
     `# Wiki Schema\n\n` +
     `This file is the wiki's own configuration — what Andrej Karpathy calls "config as a note".\n` +
     `It is plain markdown you can read and edit by hand, and the plugin parses it before every\n` +
     `ingest. Keeping the rules as a note (not a hidden setting) means they version with your wiki,\n` +
     `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
-    `wiki. Four sections:\n\n` +
-    `- **Tags** — the controlled vocabulary. On ingest the model reuses these exact tags instead of\n` +
-    `  inventing synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together\n` +
-    `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run\n` +
-    `  **"Organize tags"** (settings, or the command palette) and the model builds it from the tags\n` +
-    `  your ingested notes already produced; you review before it is written. One tag per line.\n` +
-    `- **Naming** — how pages are named, so names stay consistent.\n` +
-    `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n` +
-    `- **Pending** — new tags ingest has used that aren't in the vocabulary yet. They wait here for\n` +
-    `  you to promote them (move a line up into Tags), or just re-run "Organize tags" to\n` +
-    `  fold them in and clear this list. The vocabulary never changes on its own.\n\n` +
-    `## Tags\n\n${tagLines}\n\n` +
-    `## Naming\n\n${namingLines}\n\n` +
-    `## Concept threshold\n\n${conceptThreshold}\n\n` +
+    `wiki. Each section below explains itself — click a ▸ to expand it.\n\n` +
+    `## Tags\n\n` +
+    `> [!tip]- What this is\n` +
+    `> Your controlled vocabulary. On ingest the model reuses these exact tags instead of coining\n` +
+    `> synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together share one\n` +
+    `> tag — and can then reach the concept-page threshold below.\n` +
+    `> You do **not** hand-write this list: run **Organize tags** (settings, or the command palette)\n` +
+    `> and the model builds it from the tags your ingested notes already produced. You review the\n` +
+    `> result before anything is written. One tag per line.\n` +
+    `> Editing it affects **future** ingests only — it never re-runs or edits pages you already have.\n\n` +
+    `${tagLines}\n\n` +
+    `## Naming\n\n` +
+    `> [!tip]- What this does\n` +
+    `> The \`concept:\` line is fed into the tag-naming prompt, so editing it changes how new tags are\n` +
+    `> named (e.g. asking for a singular noun). It is guidance, not a guarantee — the local model is\n` +
+    `> small, so treat it as a nudge.\n` +
+    `> File and page names are lower-case and hyphenated no matter what this says: that part is done\n` +
+    `> mechanically, not by the model.\n\n` +
+    `${namingLines}\n\n` +
+    `## Concept threshold\n\n` +
+    `> [!tip]- What this does\n` +
+    `> When this many pages share a tag — or share a mention — **Build a concept page** offers that\n` +
+    `> cluster as a candidate. Raise it to be shown only well-established clusters, lower it to see\n` +
+    `> thin ones. Leave the value blank and it falls back to ${DEFAULT_CONCEPT_THRESHOLD}.\n\n` +
+    `${conceptThreshold}\n\n` +
     `## Pending\n\n` +
-    // Collapsed how-to callout (issue #43): the guidance lives right where the
-    // user is looking, and MUST be emitted here — queuePendingTags and
-    // Organize tags regenerate the whole file, wiping hand-added notes.
-    // Parser-safe: parseSchema only reads "- " lines; these start with "> ".
     `> [!tip]- How to clear these\n` +
-    `> New tags ingest used that aren't in your vocabulary yet.\n` +
-    `> - **Keep one** — cut its line and paste it under \`## Tags\` above; later ingests reuse it.\n` +
-    `> - **Drop one** — delete its line; it won't enter the vocabulary (the tag still stays on the note it came from).\n` +
-    `> - **Fold them all in** — run **Organize tags**: it rebuilds the vocabulary from every tag in use and clears this list (the model may merge or rename).\n` +
-    `> The vocabulary never changes on its own. Moving a tag up takes effect immediately for\n` +
-    `> **future** ingests — it never re-runs or edits notes you already have.\n\n` +
+    `> New tags ingest used that aren't in your vocabulary yet. Ingest also reads this list, so a tag\n` +
+    `> waiting here already helps later notes reuse it instead of coining a near-duplicate.\n` +
+    `> Two ways to clear them, and **both are your approval**:\n` +
+    `> - **By hand** (retail) — cut a line up into \`## Tags\` to keep it; delete the line to reject it.\n` +
+    `>   Precise, good for a few tags.\n` +
+    `> - **Organize tags** (wholesale) — rebuilds the vocabulary from the tags currently in use, merges\n` +
+    `>   near-synonyms, and clears this list. You approve the result in a preview first.\n` +
+    `> "The vocabulary never changes on its own" means exactly that: no action of yours — a hand-edit,\n` +
+    `> or the command plus **Approve** — no change. Approving the preview *is* your approval, just\n` +
+    `> wholesale instead of retail.\n` +
+    `> Either way it takes effect for **future** ingests; pages you already have are never touched.\n\n` +
     `${pendingLines}\n`
   );
 }
@@ -312,7 +354,15 @@ export function parseSchema(content: string): WikiSchema {
     const m = l.match(/^([a-z][a-z0-9-]*)\s*:\s*(.+)$/i);
     if (m) naming[m[1].toLowerCase()] = m[2].trim();
   }
-  const tm = schemaSection(content, 'Concept threshold').match(/\d+/);
+  // Read the threshold from the section's own lines, ignoring callout lines:
+  // this takes the FIRST number it finds, so any digit inside an explanatory
+  // "> ..." block above the value would otherwise be parsed as the threshold.
+  // Dropping "> " lines also makes a hand-written callout harmless.
+  const tm = schemaSection(content, 'Concept threshold')
+    .split('\n')
+    .filter((l) => !l.trim().startsWith('>'))
+    .join('\n')
+    .match(/\d+/);
   const pending = schemaSection(content, 'Pending')
     .split('\n')
     .map((l) => l.trim())
@@ -337,15 +387,24 @@ export async function readSchema(vault: Vault): Promise<WikiSchema> {
 // the schema's Pending section — so the vocabulary stays curated and new tags
 // wait for your approval instead of entering it silently. No-op if there is no
 // schema.md yet (nothing to govern against).
-export async function queuePendingTags(vault: Vault, tags: string[]): Promise<void> {
+// Returns the Pending count before and after, so the caller can notice when
+// the queue has grown past the point where it is worth folding in (#47) —
+// without nagging on every ingest.
+export async function queuePendingTags(
+  vault: Vault,
+  tags: string[]
+): Promise<{ before: number; after: number }> {
   const content = await readIfExists(vault, schemaPath());
-  if (!content) return;
+  if (!content) return { before: 0, after: 0 };
   const schema = parseSchema(content);
+  const before = schema.pending.length;
   const known = new Set([...schema.tags, ...schema.pending].map((t) => slugify(t)));
   const fresh = tags.map((t) => slugify(t)).filter((t) => t && !known.has(t));
-  if (!fresh.length) return;
-  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, [...schema.pending, ...fresh]);
+  if (!fresh.length) return { before, after: before };
+  const pending = [...schema.pending, ...fresh];
+  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, pending);
   await writeFile(vault, schemaPath(), next);
+  return { before, after: pending.length };
 }
 
 // ---------------------------------------------------------------------------
