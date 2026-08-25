@@ -214,7 +214,12 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           this.plugin.settings.autoScanEnabled = v;
           await this.plugin.saveSettings();
           this.plugin.rescheduleAutoScan();
-          this.display(); // reveal / hide the background-only knobs below
+          // Re-render to reveal/hide the background-only knobs below —
+          // preserving the scroll position, since display() rebuilds the pane
+          // and would otherwise snap the view back to the top.
+          const scrollTop = this.containerEl.scrollTop;
+          this.display();
+          this.containerEl.scrollTop = scrollTop;
         })
       );
 
