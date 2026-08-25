@@ -8,6 +8,7 @@ import { normalizePath, TFile, Vault, type App } from 'obsidian';
 export const WIKI_DIR = 'wiki';
 export const WIKI_SOURCES_DIR = `${WIKI_DIR}/sources`;
 export const WIKI_ANSWERS_DIR = `${WIKI_DIR}/answers`;
+export const WIKI_CHATS_DIR = `${WIKI_DIR}/chats`;
 export const INDEX_PATH = `${WIKI_DIR}/index.md`;
 export const LOG_PATH = `${WIKI_DIR}/log.md`;
 
@@ -85,7 +86,7 @@ async function writeFile(vault: Vault, path: string, content: string): Promise<v
 }
 
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [WIKI_DIR, WIKI_SOURCES_DIR, WIKI_ANSWERS_DIR]) {
+  for (const dir of [WIKI_DIR, WIKI_SOURCES_DIR, WIKI_ANSWERS_DIR, WIKI_CHATS_DIR]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
@@ -299,4 +300,32 @@ export function precheckNote(content: string, existingHash: string | undefined):
   if (!body.trim()) return 'frontmatter-only';
   if (existingHash && contentHash(content) === existingHash) return 'unchanged';
   return null;
+}
+
+export interface ChatTurnRecord {
+  role: 'user' | 'assistant';
+  content: string;
+  sources?: { title: string; linkPath: string }[];
+}
+
+export function chatTranscriptPath(firstQuestion: string, stamp: string): string {
+  return normalizePath(`${WIKI_CHATS_DIR}/${stamp}-${slugify(firstQuestion).slice(0, 40)}.md`);
+}
+
+// Render a chat thread as a vault-native markdown file: frontmatter for
+// Dataview/Query reuse, then Q/A blocks with the deterministic sources.
+export function buildChatTranscript(turns: ChatTurnRecord[], mode: string, date: string): string {
+  const title = turns.find((t) => t.role === 'user')?.content.slice(0, 80) ?? 'Chat';
+  let body = `---\ntags:\n  - chat\nmode: ${mode}\ncreated: ${date}\n---\n\n# ${title}\n\n`;
+  for (const t of turns) {
+    if (t.role === 'user') {
+      body += `## \u{1f464} ${t.content}\n\n`;
+    } else {
+      body += `${t.content.trim()}\n\n`;
+      if (t.sources?.length) {
+        body += `*Sources: ${t.sources.map((sc) => `[[${sc.linkPath}|${sc.title}]]`).join(', ')}*\n\n`;
+      }
+    }
+  }
+  return body;
 }
