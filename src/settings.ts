@@ -153,12 +153,14 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     // ---------- Scan ----------
     new Setting(containerEl).setName('Scan for new notes').setHeading();
-    containerEl.createEl('p', {
-      cls: 'setting-item-description',
-      text:
-        'Run the "Scan notes for wiki" command to find new or changed notes, draft a card for each, ' +
-        'and review them all at once before anything is written. Drafts are never saved without your tick.',
-    });
+    new Setting(containerEl)
+      .setName('Scan now')
+      .setDesc(
+        'Find new or changed notes, draft a card for each, and review them all at once before ' +
+          'anything is written. Drafts are never saved without your tick. (Also available from the ' +
+          'command palette as "Scan notes for wiki".)'
+      )
+      .addButton((btn) => btn.setButtonText('Scan now').onClick(() => void this.plugin.scanAndReviewIngest()));
 
     new Setting(containerEl)
       .setName('Quiet period (hours)')
