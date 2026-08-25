@@ -273,7 +273,8 @@ export function buildSchemaFile(
     `> - **Keep one** — cut its line and paste it under \`## Tags\` above; later ingests reuse it.\n` +
     `> - **Drop one** — delete its line; it won't enter the vocabulary (the tag still stays on the note it came from).\n` +
     `> - **Fold them all in** — run **Organize tags**: it rebuilds the vocabulary from every tag in use and clears this list (the model may merge or rename).\n` +
-    `> The vocabulary never changes on its own.\n\n` +
+    `> The vocabulary never changes on its own. Moving a tag up takes effect immediately for\n` +
+    `> **future** ingests — it never re-runs or edits notes you already have.\n\n` +
     `${pendingLines}\n`
   );
 }
