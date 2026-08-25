@@ -186,7 +186,10 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Quiet period (hours)')
-      .setDesc('Skip notes edited within this many hours — you are probably still working on them.')
+      .setDesc(
+        'Background auto-scan skips notes edited within this many hours — you may still be writing ' +
+          'them. Manual "Scan now" always includes them: clicking the button is an explicit ask.'
+      )
       .addSlider((sl) =>
         sl
           .setLimits(0, 24, 1)

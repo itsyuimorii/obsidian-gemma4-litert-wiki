@@ -39,6 +39,10 @@ export interface ScanResult {
   eligible: ScanCandidate[];
   // How many eligible notes were left out by maxPerRun this run.
   cappedOut: number;
+  // How many notes the quiet period skipped (edited within quietHours).
+  // Tracked so the caller can SAY so — a silent skip reads as "scan is
+  // broken" to a user who just added notes (issue #41).
+  skippedQuiet: number;
 }
 
 // Deterministic, no model call. Walk the vault, drop the wiki folder and
@@ -64,6 +68,7 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
   const includes = (opts.includePrefixes ?? []).map((p) => p.trim()).filter(Boolean);
 
   let scanned = 0;
+  let skippedQuiet = 0;
   const eligible: ScanCandidate[] = [];
   for (const f of app.vault.getMarkdownFiles()) {
     if (f.path.startsWith(wikiPrefix)) continue;
@@ -71,7 +76,11 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
     if (includes.length && !includes.some((p) => under(f.path, p))) continue;
     if (excludes.some((p) => under(f.path, p))) continue;
     scanned++;
-    if (f.stat.mtime > cutoff) continue; // quiet period — likely mid-edit
+    if (f.stat.mtime > cutoff) {
+      // Quiet period — likely mid-edit. Counted, not silent (issue #41).
+      skippedQuiet++;
+      continue;
+    }
     const content = await app.vault.read(f);
     if (precheckNote(content, undefined) !== null) continue; // empty / frontmatter-only
 
@@ -85,7 +94,7 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
   }
 
   const cappedOut = Math.max(0, eligible.length - opts.maxPerRun);
-  return { scanned, eligible: eligible.slice(0, opts.maxPerRun), cappedOut };
+  return { scanned, eligible: eligible.slice(0, opts.maxPerRun), cappedOut, skippedQuiet };
 }
 
 // A generated-but-not-written draft awaiting the human tick.

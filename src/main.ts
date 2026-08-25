@@ -1114,17 +1114,24 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
     this.status('Scanning for new or changed notes…');
     const result = await findIngestCandidates(this.app, {
-      quietHours: this.settings.scanQuietHours,
+      // Manual scan ignores the quiet period (issue #42): clicking "Scan now"
+      // is an explicit ask — skipping the notes you just wrote is the opposite
+      // of the intent. The quiet period only guards background auto-scan,
+      // where a timer could grab a half-written draft mid-edit.
+      quietHours: 0,
       maxPerRun: this.settings.scanMaxPerRun,
       includePrefixes,
       excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
     });
     if (!result.eligible.length) {
+      const quietNote = result.skippedQuiet
+        ? ` (${result.skippedQuiet} skipped — edited within the quiet period)`
+        : '';
       this.statusEnd(
         result.scanned
-          ? `Scanned ${result.scanned} notes — nothing new or changed to ingest.`
+          ? `Scanned ${result.scanned} notes — nothing new or changed to ingest.${quietNote}`
           : 'No notes in scope to scan.',
-        5000
+        6000
       );
       return;
     }
