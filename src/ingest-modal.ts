@@ -1,5 +1,38 @@
 import { App, MarkdownRenderer, Modal, Component } from 'obsidian';
 
+// A small yes/no gate. Resolves true if the user confirms, false otherwise
+// (including closing the modal). Used e.g. when a note is already ingested and
+// unchanged, to let the user re-ingest anyway instead of silently skipping.
+export class ConfirmModal extends Modal {
+  private opts: { title: string; body: string; confirmText: string; onResult: (ok: boolean) => void };
+  private decided = false;
+
+  constructor(app: App, opts: { title: string; body: string; confirmText: string; onResult: (ok: boolean) => void }) {
+    super(app);
+    this.opts = opts;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h3', { text: this.opts.title });
+    contentEl.createEl('p', { text: this.opts.body });
+    const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
+    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    cancel.addEventListener('click', () => this.close());
+    const ok = buttons.createEl('button', { cls: 'mod-cta', text: this.opts.confirmText });
+    ok.addEventListener('click', () => {
+      this.decided = true;
+      this.opts.onResult(true);
+      this.close();
+    });
+  }
+
+  onClose() {
+    if (!this.decided) this.opts.onResult(false);
+    this.contentEl.empty();
+  }
+}
+
 // The review gate. Nothing is written to the vault until the user has
 // seen the exact page that would be created and clicked Approve — the
 // step the reference implementations skipped and their users missed.

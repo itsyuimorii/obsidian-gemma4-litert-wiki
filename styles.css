@@ -1022,6 +1022,18 @@
   font-size: var(--font-ui-smaller);
 }
 
+/* Stack a setting's action buttons vertically instead of in a row, so short,
+   consistent labels sit one above the other on the right. */
+.gemma4-stack-buttons .setting-item-control {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.gemma4-stack-buttons .setting-item-control button {
+  margin: 0;
+  width: 100%;
+}
+
 .gemma4-settings input[type='range'] {
   accent-color: var(--text-normal) !important;
 }

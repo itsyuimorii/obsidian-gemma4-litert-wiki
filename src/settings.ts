@@ -9,10 +9,11 @@ export interface GemmaWikiSettings {
   // Semi-auto ingest scan (manual trigger; no background timer yet).
   scanQuietHours: number;
   scanMaxPerRun: number;
-  scanExclude: string; // comma-separated path prefixes to skip
-  // Custom skills (issue #4): one per line, "Label :: prompt", appended to
-  // the built-in skills menu.
-  customSkills: string;
+  // Allow-list: "Scan now" only looks at notes under these folders (comma-
+  // separated path prefixes). Blank = nothing to scan (opt-in by design), so
+  // scan never sweeps the whole vault. Cmd+P ingest still works on any note.
+  scanInclude: string;
+  scanExclude: string; // comma-separated path prefixes to skip (within the allow-list)
   // Background scan (issue #2): periodically COUNT new/changed notes and
   // show a status-bar chip. Counting is deterministic (no model / no GPU);
   // drafting only runs when the user clicks the chip. Default OFF.
@@ -26,8 +27,8 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   defaultMode: 'note',
   scanQuietHours: 3,
   scanMaxPerRun: 10,
+  scanInclude: '',
   scanExclude: '',
-  customSkills: '',
   autoScanEnabled: false,
   autoScanIntervalHours: 6,
 };
@@ -101,33 +102,32 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     // ---------- Schema ----------
     new Setting(containerEl).setName('Schema').setHeading();
-    containerEl.createEl('p', {
-      cls: 'setting-item-description',
-      text:
-        'The tag vocabulary and naming rules live in the wiki\'s schema.md ("config as a note"), ' +
-        'not here — open it to read or edit the rules. Run the command "Suggest tag vocabulary" to ' +
-        'generate it from the tags already on your wiki; the model proposes it, you review before it is written.',
-    });
+    new Setting(containerEl)
+      .setName('Tag vocabulary & naming rules')
+      .setClass('gemma4-stack-buttons')
+      .setDesc(
+        'Tag rules live in the wiki\'s schema.md ("config as a note"), not here. "Open schema.md" ' +
+          'opens that file (creating it first if it doesn\'t exist yet) so you can read or edit the ' +
+          'rules directly. "Organize tags" has local Gemma read the tags already on your wiki, merge ' +
+          'near-synonyms into one clean list, and write it back for you to review first — it can take ' +
+          'a while on the first run while the local model loads, watch the notice in the corner for progress.'
+      )
+      .addButton((btn) => btn.setButtonText('Open schema.md').onClick(() => void this.plugin.openSchemaFile()))
+      .addButton((btn) =>
+        btn.setButtonText('Organize tags').onClick(() => void this.plugin.suggestTagVocabulary())
+      );
 
     // ---------- Skills ----------
     new Setting(containerEl).setName('Skills').setHeading();
-
     new Setting(containerEl)
       .setName('Custom skills')
-      .setClass('gemma4-textarea-setting')
       .setDesc(
-        'Your own one-shot prompts, added to the ⚡ skills menu. One per line, "Label :: prompt". ' +
-          'Each runs against the current chat context (mode + attachments), same as the built-in skills.'
+        'Your one-shot prompts live as files in the wiki\'s skills/ folder ("config as a note"), ' +
+          'one file per skill — frontmatter for name/icon/mode, the body is the prompt. Each appears ' +
+          'in the ⚡ menu of the chat panel. Create the folder with a README and two examples, then ' +
+          'add or edit files there.'
       )
-      .addTextArea((ta) => {
-        ta.setPlaceholder('ELI5 :: Explain this material like I am five.\nAction items :: List concrete next actions from this material.')
-          .setValue(this.plugin.settings.customSkills)
-          .onChange(async (v) => {
-            this.plugin.settings.customSkills = v;
-            await this.plugin.saveSettings();
-          });
-        ta.inputEl.rows = 4;
-      });
+      .addButton((btn) => btn.setButtonText('Create skills folder').onClick(() => void this.plugin.createSkillsFolder()));
 
     // ---------- Chat ----------
     new Setting(containerEl).setName('Chat').setHeading();
@@ -165,12 +165,49 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     // ---------- Scan ----------
     new Setting(containerEl).setName('Scan for new notes').setHeading();
-    containerEl.createEl('p', {
-      cls: 'setting-item-description',
-      text:
-        'Run the "Scan notes for wiki" command to find new or changed notes, draft a card for each, ' +
-        'and review them all at once before anything is written. Drafts are never saved without your tick.',
-    });
+    new Setting(containerEl)
+      .setName('Scan now')
+      .setDesc(
+        'Sweep the folders below for new or changed notes, draft a card for each, and review them ' +
+          'all at once before anything is written — drafts are never saved without your tick. ' +
+          'To ingest one specific note instead, use the command palette: "Ingest active note into wiki".'
+      )
+      .addButton((btn) => {
+        // The button doubles as the stop control: a scan drafts with the model
+        // for tens of seconds, so while it runs the label flips to "Stop scan"
+        // and a click cancels (keeping the drafts already made).
+        btn.setButtonText(this.plugin.isScanning() ? 'Stop scan' : 'Scan now');
+        btn.onClick(async () => {
+          if (this.plugin.isScanning()) {
+            this.plugin.cancelScan();
+            btn.setButtonText('Scan now');
+            return;
+          }
+          btn.setButtonText('Stop scan');
+          try {
+            await this.plugin.scanAndReviewIngest();
+          } finally {
+            btn.setButtonText('Scan now');
+          }
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Scan these folders')
+      .setDesc(
+        'Scan only looks at notes under these folders (comma-separated, e.g. "走り書き, research"). ' +
+          'Everything else in your vault is left alone. Leave blank and scan has nothing to do — this ' +
+          'is opt-in on purpose, so scanning never pulls in notes you did not mean to file.'
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder('走り書き, research')
+          .setValue(this.plugin.settings.scanInclude)
+          .onChange(async (v) => {
+            this.plugin.settings.scanInclude = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     // Manual-scan knobs — always visible.
     new Setting(containerEl)
@@ -189,7 +226,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Exclude folders')
-      .setDesc('Comma-separated path prefixes to skip when scanning (e.g. templates, attachments). The wiki folder is always excluded.')
+      .setDesc('Optional: within the scanned folders above, skip these sub-paths (comma-separated, e.g. a drafts subfolder). The wiki folder is always excluded.')
       .addText((text) =>
         text
           .setPlaceholder('Templates, 10_リソース')
