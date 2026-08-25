@@ -1329,7 +1329,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // Only accept a mapping into the vocabulary; anything else keeps the tag.
         if (slug && vocabSet.has(slug)) out.set(t, slug);
       }
-      console.debug('[gemma4-litert-wiki] retag mapping', Object.fromEntries(out));
+      console.log('[gemma4-litert-wiki] retag mapping', Object.fromEntries(out));
       return out;
     } finally {
       await conversation?.delete().catch(() => {});
@@ -1525,11 +1525,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       const contradict =
         v === true || (typeof v === 'string' && ['yes', 'true', 'y'].includes(v.trim().toLowerCase()));
       const verdict = { contradict, reason: typeof parsed.reason === 'string' ? parsed.reason : '' };
-      console.debug('[gemma4-litert-wiki] contradiction verdict', {
+      console.log('[gemma4-litert-wiki] contradiction verdict', {
         a: titleA,
         b: titleB,
         raw: v,
         contradict,
+        reason: verdict.reason,
       });
       return verdict;
     } catch (err) {
