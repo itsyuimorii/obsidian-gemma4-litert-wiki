@@ -299,7 +299,11 @@ export function buildSchemaFile(
     `> You do **not** hand-write this list: run **Organize tags** (settings, or the command palette)\n` +
     `> and the model builds it from the tags your ingested notes already produced. You review the\n` +
     `> result before anything is written. One tag per line.\n` +
-    `> Editing it affects **future** ingests only — it never re-runs or edits pages you already have.\n\n` +
+    `> Tags are model-suggested, so expect the occasional odd borrow — a tag coined in one domain\n` +
+    `> reused in another (coffee's \`extraction\` on a data note). When precision matters, curate by\n` +
+    `> hand: promote the tags you want from **Pending** below instead of relying on Organize alone.\n` +
+    `> Editing it affects **future** ingests only. To bring already-written pages in line after the\n` +
+    `> vocabulary changes, run **Retag wiki pages to vocabulary** — it shows every change first.\n\n` +
     `${tagLines}\n\n` +
     `## Naming\n\n` +
     `> [!tip]- What this does\n` +
