@@ -27,6 +27,7 @@ import {
 } from './wiki-store';
 import { LintReportModal, runLint } from './lint';
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
+import { AutoIngestReviewModal, findIngestCandidates, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
@@ -213,6 +214,12 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.statusEnd(undefined, 8000);
         }
       },
+    });
+
+    this.addCommand({
+      id: 'litert-scan-ingest',
+      name: 'Scan notes for wiki (semi-automatic ingest)',
+      callback: () => void this.scanAndReviewIngest(),
     });
 
     this.addCommand({
@@ -629,6 +636,90 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
     }
     return this.wasmLoadPromise;
+  }
+
+  // Semi-automatic ingest: scan (deterministic) → draft each candidate
+  // (one model call apiece, same as manual ingest) → batch review gate.
+  // The scan and the review modal live in auto-ingest.ts; the model calls
+  // stay here because they need the engine. Manual trigger only — no
+  // background timer yet, so nothing runs the GPU while you are away.
+  async scanAndReviewIngest() {
+    this.status('Scanning for new or changed notes…');
+    const result = await findIngestCandidates(this.app, {
+      quietHours: this.settings.scanQuietHours,
+      maxPerRun: this.settings.scanMaxPerRun,
+      excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
+    });
+    if (!result.eligible.length) {
+      this.statusEnd(
+        result.scanned
+          ? `Scanned ${result.scanned} notes — nothing new or changed to ingest.`
+          : 'No notes in scope to scan.',
+        5000
+      );
+      return;
+    }
+
+    // Draft each candidate through the same pipeline as manual ingest.
+    // Failures are collected and skipped, never block the batch.
+    const drafts: IngestDraft[] = [];
+    let failed = 0;
+    const n = result.eligible.length;
+    for (let i = 0; i < n; i++) {
+      const { file, reason } = result.eligible[i];
+      try {
+        const content = await this.app.vault.read(file);
+        const clamped = clampToTokens(cleanClippedMarkdown(content), 2600);
+        const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
+          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`)
+        );
+        const sourceHash = contentHash(content);
+        const pagePath = wikiPagePath(file.basename);
+        const selfLink = pagePath.replace(/\.md$/, '');
+        const candidates = (await readIndexEntries(this.app.vault)).filter((e) => e.linkPath !== selfLink);
+        let related: { title: string; linkPath: string }[] = [];
+        if (candidates.length) {
+          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
+          related = await this.pickRelatedPages(extraction.summary, candidates);
+        }
+        drafts.push({
+          file,
+          reason,
+          pagePath,
+          overwriting: !!this.app.vault.getAbstractFileByPath(pagePath),
+          pageContent: buildWikiPage(file.basename, file.path, extraction, related, sourceHash),
+          summary: extraction.summary,
+          tags: extraction.tags,
+          confidence: extraction.confidence,
+        });
+      } catch (err) {
+        console.error('[gemma4-litert-wiki] draft failed', file.path, err);
+        failed++;
+      }
+    }
+    this.statusEnd();
+
+    if (!drafts.length) {
+      new Notice('Every draft failed to generate — nothing to review.', 6000);
+      return;
+    }
+
+    const capNote = result.cappedOut
+      ? ` (${result.cappedOut} more left for the next scan)`
+      : '';
+    new Notice(`${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}.`, 4000);
+
+    new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
+      if (!approved.length) return;
+      await ensureWikiScaffold(this.app.vault);
+      for (const d of approved) {
+        await writeWikiPage(this.app.vault, d.pagePath, d.pageContent);
+        await upsertIndexEntry(this.app.vault, d.pagePath, d.file.basename, d.summary);
+        await appendLog(this.app.vault, 'ingest', d.file.basename);
+      }
+      this.refreshIngestBadges();
+      new Notice(`Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`, 4000);
+    }).open();
   }
 
   // The one write operation that touches a raw note — and therefore the
