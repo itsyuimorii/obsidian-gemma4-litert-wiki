@@ -99,6 +99,67 @@ export class RelinkPreviewModal extends Modal {
   }
 }
 
+// Issue #6: preview gate for the This-note "suggest tags & links" write
+// action. Lists exactly what will be added to the note — tags merged into
+// frontmatter, wiki links appended as a Related section — before any write.
+export class SuggestTagsLinksModal extends Modal {
+  private notePath: string;
+  private tags: string[];
+  private links: { title: string; linkPath: string }[];
+  private onApprove: () => void;
+
+  constructor(
+    app: App,
+    notePath: string,
+    tags: string[],
+    links: { title: string; linkPath: string }[],
+    onApprove: () => void
+  ) {
+    super(app);
+    this.notePath = notePath;
+    this.tags = tags;
+    this.links = links;
+    this.onApprove = onApprove;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('gemma4-ingest-modal');
+    contentEl.createEl('h3', { text: 'Review tags & links before writing' });
+    contentEl.createDiv({
+      cls: 'gemma4-ingest-path',
+      text: `Will edit: ${this.notePath} — merges tags into frontmatter, appends a Related section. Nothing else changes.`,
+    });
+
+    if (this.tags.length) {
+      contentEl.createEl('div', { cls: 'gemma4-relink-page', text: 'Tags to add' });
+      contentEl.createDiv({ text: this.tags.map((t) => `#${t}`).join('  ') });
+    }
+    if (this.links.length) {
+      contentEl.createEl('div', { cls: 'gemma4-relink-page', text: 'Links to add' });
+      contentEl.createDiv({ text: this.links.map((l) => `[[${l.title}]]`).join('  ') });
+    }
+    if (!this.tags.length && !this.links.length) {
+      contentEl.createDiv({ text: 'Nothing to suggest — no new tags and no related pages found.' });
+    }
+
+    const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
+    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    cancel.addEventListener('click', () => this.close());
+    if (this.tags.length || this.links.length) {
+      const approve = buttons.createEl('button', { cls: 'mod-cta', text: 'Approve and write' });
+      approve.addEventListener('click', () => {
+        this.close();
+        this.onApprove();
+      });
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 // First-run gate before the 2.97 GB download. Explicit consent (no
 // surprise multi-GB pull), stating the real costs: size, disk headroom,
 // one-time, offline after. onConfirm runs the resumable download.

@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { IngestPreviewModal, OnboardingModal, RelinkPreviewModal, type RelinkProposal } from './ingest-modal';
+import { IngestPreviewModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
   appendLog,
@@ -19,6 +19,7 @@ import {
   getIngestedSourcePaths,
   precheckNote,
   readIndexEntries,
+  slugify,
   setWikiDir,
   wikiPagePath,
   writeWikiPage,
@@ -220,6 +221,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-scan-ingest',
       name: 'Scan notes for wiki (semi-automatic ingest)',
       callback: () => void this.scanAndReviewIngest(),
+    });
+
+    this.addCommand({
+      id: 'litert-suggest-tags-links',
+      name: 'Suggest tags & links for active note (local Gemma)',
+      callback: () => void this.suggestTagsAndLinks(),
     });
 
     this.addCommand({
@@ -636,6 +643,72 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
     }
     return this.wasmLoadPromise;
+  }
+
+  // This-note write action (issue #6): suggest tags + wiki links for the
+  // active note. Same generate→preview→confirm shape as ingest, but it edits
+  // the raw note — tags merged into frontmatter via the safe processFrontMatter
+  // API (no hand-rolled YAML), links appended as a Related section only if the
+  // note doesn't already have one. Nothing is written until the user approves.
+  async suggestTagsAndLinks() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new Notice('Open a note first.');
+      return;
+    }
+    const content = await this.app.vault.read(file);
+    if (precheckNote(content, undefined) !== null) {
+      new Notice('Note is empty — nothing to suggest.');
+      return;
+    }
+
+    this.status(`Suggesting tags & links for "${file.basename}"…`);
+    try {
+      const clamped = clampToTokens(cleanClippedMarkdown(content), 2600);
+      const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
+        this.status(`Suggesting for "${file.basename}" — ${t}`)
+      );
+
+      // Dedupe suggested tags against whatever the note already has.
+      const existing = new Set<string>();
+      const rawTags = this.app.metadataCache.getFileCache(file)?.frontmatter?.tags;
+      if (Array.isArray(rawTags)) rawTags.forEach((t) => existing.add(slugify(String(t))));
+      else if (typeof rawTags === 'string') rawTags.split(/[,\s]+/).forEach((t) => t && existing.add(slugify(t)));
+      const newTags = extraction.tags.map((t) => slugify(t)).filter((t) => t && !existing.has(t));
+
+      const selfLink = wikiPagePath(file.basename).replace(/\.md$/, '');
+      const candidates = (await readIndexEntries(this.app.vault)).filter((e) => e.linkPath !== selfLink);
+      const related = candidates.length ? await this.pickRelatedPages(extraction.summary, candidates) : [];
+      this.statusEnd();
+
+      new SuggestTagsLinksModal(this.app, file.path, newTags, related, () => {
+        void (async () => {
+          if (newTags.length) {
+            await this.app.fileManager.processFrontMatter(file, (fm) => {
+              const cur = Array.isArray(fm.tags)
+                ? fm.tags.map(String)
+                : typeof fm.tags === 'string' && fm.tags
+                  ? [fm.tags]
+                  : [];
+              fm.tags = Array.from(new Set([...cur, ...newTags]));
+            });
+          }
+          if (related.length) {
+            const cur = await this.app.vault.read(file);
+            if (!cur.includes('\n## Related')) {
+              const block = `\n## Related\n\n${related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n')}\n`;
+              await this.app.vault.append(file, block);
+            }
+          }
+          new Notice(`Updated "${file.basename}" — tags & links added.`, 3000);
+          this.refreshIngestBadges();
+        })();
+      }).open();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] suggest tags/links failed', err);
+      this.status(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`);
+      this.statusEnd(undefined, 8000);
+    }
   }
 
   // Semi-automatic ingest: scan (deterministic) → draft each candidate
