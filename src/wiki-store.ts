@@ -236,7 +236,7 @@ export function buildSchemaFile(
 ): string {
   const tagLines = tags.length
     ? tags.map((t) => `- ${slugify(t)}`).join('\n')
-    : '_No tags yet. Ingest a few notes, then run "Clean up tags" to build the vocabulary from them._';
+    : '_No tags yet. Ingest a few notes, then run "Organize tags" to build the vocabulary from them._';
   const namingLines = Object.entries(naming)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
@@ -253,12 +253,12 @@ export function buildSchemaFile(
     `- **Tags** — the controlled vocabulary. On ingest the model reuses these exact tags instead of\n` +
     `  inventing synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together\n` +
     `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run\n` +
-    `  **"Clean up tags"** (settings, or the command palette) and the model builds it from the tags\n` +
+    `  **"Organize tags"** (settings, or the command palette) and the model builds it from the tags\n` +
     `  your ingested notes already produced; you review before it is written. One tag per line.\n` +
     `- **Naming** — how pages are named, so names stay consistent.\n` +
     `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n` +
     `- **Pending** — new tags ingest has used that aren't in the vocabulary yet. They wait here for\n` +
-    `  you to promote them (move a line up into Tags), or just re-run "Clean up tags" to\n` +
+    `  you to promote them (move a line up into Tags), or just re-run "Organize tags" to\n` +
     `  fold them in and clear this list. The vocabulary never changes on its own.\n\n` +
     `## Tags\n\n${tagLines}\n\n` +
     `## Naming\n\n${namingLines}\n\n` +
