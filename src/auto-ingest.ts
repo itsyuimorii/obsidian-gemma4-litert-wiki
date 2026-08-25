@@ -1,5 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
-import { getIngestedSourceHashes, precheckNote, wikiDir } from './wiki-store';
+import { contentHash, getIngestedSourceHashes, getIngestedSourcePaths, precheckNote, wikiDir } from './wiki-store';
 
 // Semi-automatic ingest: the plugin does the tedious parts — finding new or
 // changed notes, and drafting a summary card for each — but never writes
@@ -37,10 +37,19 @@ export interface ScanResult {
 }
 
 // Deterministic, no model call. Walk the vault, drop the wiki folder and
-// excluded paths, skip notes still inside their quiet period, then use the
-// same precheck gate the manual ingest uses (empty / frontmatter-only /
-// unchanged-by-hash) to keep only genuinely new or changed notes.
+// excluded paths, skip notes still inside their quiet period, then keep only
+// genuinely new or changed notes.
+//
+// "Already in the wiki" is decided by getIngestedSourcePaths — the SAME
+// signal that draws the "ingested" badge in the file tree — not by the hash
+// map alone. The hash map only holds pages that stored a source_hash, so a
+// page ingested before that field existed (or any page missing it) would
+// otherwise look "new" and get re-offered forever. So: a note that already
+// has a page is re-offered ONLY when a stored hash proves its content
+// changed; with no hash to compare, we trust the badge and skip it. Better
+// to occasionally miss a hash-less edit than to spam already-ingested notes.
 export async function findIngestCandidates(app: App, opts: ScanOptions): Promise<ScanResult> {
+  const ingested = getIngestedSourcePaths(app);
   const hashes = getIngestedSourceHashes(app);
   const wikiPrefix = `${wikiDir()}/`;
   const cutoff = Date.now() - opts.quietHours * 3_600_000;
@@ -53,10 +62,16 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
     if (excludes.some((p) => f.path === p || f.path.startsWith(p.endsWith('/') ? p : `${p}/`))) continue;
     scanned++;
     if (f.stat.mtime > cutoff) continue; // quiet period — likely mid-edit
-    const existingHash = hashes.get(f.path);
     const content = await app.vault.read(f);
-    if (precheckNote(content, existingHash) !== null) continue; // empty / fm-only / unchanged
-    eligible.push({ file: f, reason: existingHash ? 'changed' : 'new' });
+    if (precheckNote(content, undefined) !== null) continue; // empty / frontmatter-only
+
+    if (ingested.has(f.path)) {
+      // Already has a wiki page. Re-offer only if a stored hash proves it changed.
+      const h = hashes.get(f.path);
+      if (h && contentHash(content) !== h) eligible.push({ file: f, reason: 'changed' });
+      continue;
+    }
+    eligible.push({ file: f, reason: 'new' });
   }
 
   const cappedOut = Math.max(0, eligible.length - opts.maxPerRun);
