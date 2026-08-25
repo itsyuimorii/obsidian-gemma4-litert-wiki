@@ -221,7 +221,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           const sourceHash = contentHash(content);
           const pagePath = wikiPagePath(file.basename);
           const selfLink = pagePath.replace(/\.md$/, '');
-          const candidates = (await readIndexEntries(this.app.vault)).filter(
+          const candidates = (await this.liveIndexEntries()).filter(
             (e) => e.linkPath !== selfLink
           );
           let related: { title: string; linkPath: string }[] = [];
@@ -277,7 +277,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // Backfill for pages ingested before the related-links feature
         // existed — they have no cross-links and show up as orphans in
         // lint and as disconnected dots in the graph view.
-        const entries = await readIndexEntries(this.app.vault);
+        const entries = await this.liveIndexEntries();
         if (entries.length < 2) {
           new Notice('Need at least two indexed pages to relink.');
           return;
@@ -730,7 +730,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       const newTags = extraction.tags.map((t) => slugify(t)).filter((t) => t && !existing.has(t));
 
       const selfLink = wikiPagePath(file.basename).replace(/\.md$/, '');
-      const candidates = (await readIndexEntries(this.app.vault)).filter((e) => e.linkPath !== selfLink);
+      const candidates = (await this.liveIndexEntries()).filter((e) => e.linkPath !== selfLink);
       const related = candidates.length ? await this.pickRelatedPages(extraction.summary, candidates) : [];
       this.statusEnd();
 
@@ -857,6 +857,17 @@ export default class LiteRtSpikePlugin extends Plugin {
         this.statusEnd(undefined, 2500);
       })();
     }).open();
+  }
+
+  // Related links must only ever point at pages that still exist. index.md is
+  // NOT auto-pruned when the user deletes a source page, so it can list ghosts;
+  // linking to those produces dead [[links]] that open blank. Filter the index
+  // to live files before offering anything as a related page.
+  private async liveIndexEntries(): Promise<IndexEntry[]> {
+    const entries = await readIndexEntries(this.app.vault);
+    return entries.filter(
+      (e) => this.app.vault.getAbstractFileByPath(`${e.linkPath}.md`) instanceof TFile
+    );
   }
 
   // One strict-JSON call: given the tags currently in use (with counts),
@@ -1078,7 +1089,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         const sourceHash = contentHash(content);
         const pagePath = wikiPagePath(file.basename);
         const selfLink = pagePath.replace(/\.md$/, '');
-        const candidates = (await readIndexEntries(this.app.vault)).filter((e) => e.linkPath !== selfLink);
+        const candidates = (await this.liveIndexEntries()).filter((e) => e.linkPath !== selfLink);
         let related: { title: string; linkPath: string }[] = [];
         if (candidates.length) {
           this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
