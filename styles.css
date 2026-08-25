@@ -915,11 +915,17 @@
    theme accent — override the accent tokens locally so sliders, toggles,
    and buttons here render neutral, without touching the global theme. */
 .gemma4-settings {
+  /* Override every accent token a theme might feed the slider/toggle so
+     the plugin stays monochrome under any theme (the pink came from
+     --color-accent, not --interactive-accent). */
   --interactive-accent: var(--text-normal);
   --interactive-accent-hover: var(--text-normal);
+  --color-accent: var(--text-normal);
+  --color-accent-1: var(--text-normal);
+  --color-accent-2: var(--text-normal);
   --slider-thumb-border-color: var(--text-normal);
 }
 
 .gemma4-settings input[type='range'] {
-  accent-color: var(--text-normal);
+  accent-color: var(--text-normal) !important;
 }
