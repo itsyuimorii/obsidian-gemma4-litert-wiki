@@ -11,11 +11,11 @@
 
 A local-first Obsidian plugin built around a single idea: **run the LLM entirely inside Obsidian itself** — no Ollama, no LM Studio, no API key, no background server, no network access after the one-time model download. The model runs in Obsidian's own Electron renderer via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU.
 
-> **Status: working MVP.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `wiki/` layer with cross-links, an `index.md` catalog and append-only `log.md`, index-first grounded chat with deterministic source attribution, save-answer-back-to-wiki, a model-free lint report, and canned single-task skills. Not yet in the community plugin store; benchmarks below are from real use.
+> **Status: working MVP.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `gemma-wiki/` layer with cross-links, an `gemma-wiki/index.md` catalog and append-only `gemma-wiki/log.md`, index-first grounded chat with deterministic source attribution, save-answer-back-to-wiki, a model-free lint report, and canned single-task skills. Not yet in the community plugin store; benchmarks below are from real use.
 
 ## ✨ Features at a glance
 
-**The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `wiki/` layer:
+**The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
 - **Ingest** — one strict JSON extraction per note (summary, 3 tags, 3-5 key points, a self-rated confidence written to frontmatter), plus a validated multiple-choice pick of up to 3 related pages from the index catalog. Everything previews in a review modal; nothing is written without approval. Ingested notes get a small badge in the file explorer — pure UI decoration, the note file is untouched.
 - **index.md / log.md** — a one-line-per-page catalog the query path reads first, and an append-only, grep-friendly activity log.
@@ -44,7 +44,7 @@ A local-first Obsidian plugin built around a single idea: **run the LLM entirely
 Click the message-circle ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
 
 - **This note** — answers strictly from the currently open note.
-- **Wiki** — the Karpathy Query path: reads the `index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
+- **Wiki** — the Karpathy Query path: reads the `gemma-wiki/index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
 
 Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), honest refusals when the material doesn't contain the answer, and per-message **copy / regenerate / save-to-wiki** actions. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (quiz, flashcards, gap-finding, recent-activity digest) against the current grounding.
 
