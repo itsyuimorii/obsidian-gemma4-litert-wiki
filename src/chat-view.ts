@@ -514,7 +514,8 @@ export class ChatView extends ItemView {
     row: HTMLElement,
     getAnswer: () => string,
     question: string,
-    sources: { title: string; linkPath: string }[]
+    sources: { title: string; linkPath: string }[],
+    allowSave = true
   ) {
     const actions = row.createDiv({ cls: 'gemma4-chat-actions' });
 
@@ -543,7 +544,9 @@ export class ChatView extends ItemView {
 
     // Karpathy's compounding rule: good answers get filed back into the
     // wiki instead of vanishing into chat history. Same review gate as
-    // ingest — preview first, nothing written without approval.
+    // ingest — preview first, nothing written without approval. Skipped for
+    // ungrounded answers (issue #7): model guesses must not enter the wiki.
+    if (!allowSave) return;
     const saveBtn = actions.createEl('button', {
       cls: 'gemma4-chat-action clickable-icon',
       attr: { 'aria-label': 'Save answer to wiki' },
@@ -589,8 +592,29 @@ export class ChatView extends ItemView {
   // honest by design: no matching pages means "not in your wiki", not a
   // guess from the model's own knowledge.
   private async buildContext(
-    question: string
-  ): Promise<{ systemPrompt: string; sourcePath: string; sources: { title: string; linkPath: string }[] } | null> {
+    question: string,
+    ungrounded = false
+  ): Promise<{
+    systemPrompt: string;
+    sourcePath: string;
+    sources: { title: string; linkPath: string }[];
+    ungrounded?: boolean;
+    noPageMatch?: boolean;
+  } | null> {
+    // Escape hatch (issue #7): the user explicitly asked to bypass grounding
+    // and let Gemma answer from its own knowledge. No retrieval, no sources,
+    // and the answer is marked ungrounded so the trust model stays intact.
+    if (ungrounded) {
+      return {
+        systemPrompt:
+          "Answer the user's question from your own general knowledge. You do NOT have access to " +
+          "the user's notes or wiki here — never claim a fact came from them. If you are unsure, " +
+          'say so plainly. Be concise. You may use markdown.',
+        sourcePath: indexPath(),
+        sources: [],
+        ungrounded: true,
+      };
+    }
     if (this.mode === 'wiki') {
       const entries = await readIndexEntries(this.app.vault);
       if (!entries.length) {
@@ -633,6 +657,10 @@ export class ChatView extends ItemView {
             ? selected.map((e) => ({ title: e.title, linkPath: e.linkPath }))
             : [{ title: 'Wiki index', linkPath: indexPath().replace(/\.md$/, '') }]),
         ],
+        // No page matched the question — the answer leans on catalog/log
+        // only (good for meta-questions, thin for everything else). Flag it
+        // so runGeneration can offer the "ask Gemma directly" hatch below.
+        noPageMatch: selected.length === 0,
       };
     }
 
@@ -669,8 +697,8 @@ export class ChatView extends ItemView {
     };
   }
 
-  private async runGeneration(question: string) {
-    const context = await this.buildContext(question);
+  private async runGeneration(question: string, ungrounded = false) {
+    const context = await this.buildContext(question, ungrounded);
     if (!context) return;
 
     this.busy = true;
@@ -733,20 +761,49 @@ export class ChatView extends ItemView {
       const rendered = body.createDiv({ cls: 'gemma4-chat-markdown' });
       await MarkdownRenderer.render(this.app, answer, rendered, context.sourcePath, this);
 
-      // Deterministic source attribution: list exactly the notes/pages the
-      // answer was grounded in, as clickable links — not left to the model.
-      const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
-      sourcesRow.createSpan({ cls: 'gemma4-chat-sources-label', text: 'Sources' });
-      for (const src of context.sources) {
-        const link = sourcesRow.createEl('a', { cls: 'gemma4-chat-source-link', text: src.title });
-        link.addEventListener('click', (evt) => {
-          evt.preventDefault();
-          void this.app.workspace.openLinkText(src.linkPath, '', false);
+      if (context.ungrounded) {
+        // Ungrounded answer: no sources, an explicit warning label so it is
+        // never mistaken for a grounded, citable answer.
+        const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
+        warnRow.createSpan({
+          cls: 'gemma4-chat-sources-label',
+          text: '⚠ Gemma general knowledge — not from your notes',
+        });
+      } else {
+        // Deterministic source attribution: list exactly the notes/pages the
+        // answer was grounded in, as clickable links — not left to the model.
+        const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
+        sourcesRow.createSpan({ cls: 'gemma4-chat-sources-label', text: 'Sources' });
+        for (const src of context.sources) {
+          const link = sourcesRow.createEl('a', { cls: 'gemma4-chat-source-link', text: src.title });
+          link.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            void this.app.workspace.openLinkText(src.linkPath, '', false);
+          });
+        }
+      }
+
+      this.turns.push({ role: 'assistant', content: answer, sources: context.ungrounded ? [] : context.sources });
+      // Ungrounded answers can't be saved to the wiki — filing model guesses
+      // as sourced pages is exactly the pollution the grounding model avoids.
+      this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded);
+
+      // Issue #7 routing: a grounded wiki answer with no matching page often
+      // means "not in your wiki". Offer a per-answer, opt-in hatch to ask
+      // Gemma directly — default stays grounded, the escalation is explicit.
+      if (context.noPageMatch && !context.ungrounded) {
+        const hatch = body.createDiv({ cls: 'gemma4-chat-hatch' });
+        const btn = hatch.createEl('button', {
+          cls: 'gemma4-chat-hatch-btn',
+          text: 'Not in your wiki? Ask Gemma directly (no sources)',
+        });
+        btn.addEventListener('click', () => {
+          if (this.busy) return;
+          btn.disabled = true;
+          void this.runGeneration(question, true);
         });
       }
 
-      this.turns.push({ role: 'assistant', content: answer, sources: context.sources });
-      this.addAssistantActions(row, () => answer, question, context.sources);
       this.scrollToBottom();
     } catch (err) {
       console.error('[gemma4-litert-wiki] chat failed', err);
