@@ -911,6 +911,57 @@
   flex-shrink: 0;
 }
 
+/* Semi-auto ingest: batch review rows (checkbox + draft preview). Own class
+   so the space-between layout of .gemma4-review-row doesn't apply. */
+.gemma4-draft-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.gemma4-draft-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-draft-row > input[type='checkbox'] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.gemma4-review-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gemma4-review-titlerow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gemma4-review-summary {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+}
+
+.gemma4-review-tags {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.gemma4-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 /* Settings: keep the plugin monochrome (shadcn) regardless of the user's
    theme accent — override the accent tokens locally so sliders, toggles,
    and buttons here render neutral, without touching the global theme. */
