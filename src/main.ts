@@ -1,4 +1,4 @@
-import { addIcon, FileSystemAdapter, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
@@ -9,7 +9,9 @@ import { IngestPreviewModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLin
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
   appendLog,
+  buildConceptPage,
   buildWikiPage,
+  conceptPagePath,
   ensureWikiScaffold,
   upsertIndexEntry,
   clampToTokens,
@@ -21,6 +23,7 @@ import {
   readIndexEntries,
   slugify,
   setWikiDir,
+  wikiDir,
   wikiPagePath,
   writeWikiPage,
   type IndexEntry,
@@ -75,6 +78,34 @@ async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
 }
 
 // Model download/caching moved to src/model-store.ts (resumable, on-disk).
+
+// Tag picker for concept-page building (issue #19): only tags shared by two
+// or more pages are offered, since a concept page over a single page is
+// pointless.
+interface TagCluster {
+  tag: string;
+  members: IndexEntry[];
+}
+class ConceptTagModal extends FuzzySuggestModal<TagCluster> {
+  private clusters: TagCluster[];
+  private onPick: (c: TagCluster) => void;
+
+  constructor(app: App, clusters: TagCluster[], onPick: (c: TagCluster) => void) {
+    super(app);
+    this.clusters = clusters;
+    this.onPick = onPick;
+    this.setPlaceholder('Pick a tag to build a concept page for…');
+  }
+  getItems(): TagCluster[] {
+    return this.clusters;
+  }
+  getItemText(c: TagCluster): string {
+    return `${c.tag}  (${c.members.length} pages)`;
+  }
+  onChooseItem(c: TagCluster): void {
+    this.onPick(c);
+  }
+}
 
 export default class LiteRtSpikePlugin extends Plugin {
   private server: Server | null = null;
@@ -300,6 +331,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       callback: async () => {
         new LintReportModal(this.app, await runLint(this.app)).open();
       },
+    });
+
+    this.addCommand({
+      id: 'litert-concept-page',
+      name: 'Build a concept page from a tag (local Gemma)',
+      callback: () => void this.createConceptPage(),
     });
 
     this.addCommand({
@@ -708,6 +745,112 @@ export default class LiteRtSpikePlugin extends Plugin {
       console.error('[gemma4-litert-wiki] suggest tags/links failed', err);
       this.status(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`);
       this.statusEnd(undefined, 8000);
+    }
+  }
+
+  // Concept pages (issue #19): cluster pages by shared tag, write a short
+  // overview of the cluster in one structured call, link to the members, and
+  // gate it behind the same preview as everything else. Convergent (given a
+  // fixed member list, write one overview) rather than open multi-step
+  // generation.
+  async createConceptPage() {
+    // Gather tag -> member pages (from page frontmatter tags + index summaries).
+    const entries = await readIndexEntries(this.app.vault);
+    const byLinkPath = new Map(entries.map((e) => [e.linkPath, e]));
+    const clusters = new Map<string, IndexEntry[]>();
+    const SKIP = new Set(['concept', 'answer', 'chat']);
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      const entry = byLinkPath.get(f.path.replace(/\.md$/, ''));
+      if (!entry) continue;
+      const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+      const tags = Array.isArray(raw)
+        ? raw.map((t) => String(t))
+        : typeof raw === 'string'
+          ? raw.split(/[,\s]+/).filter(Boolean)
+          : [];
+      for (const t of tags) {
+        if (SKIP.has(t)) continue;
+        const list = clusters.get(t) ?? [];
+        list.push(entry);
+        clusters.set(t, list);
+      }
+    }
+    const candidates = [...clusters.entries()]
+      .filter(([, members]) => members.length >= 2)
+      .map(([tag, members]) => ({ tag, members }))
+      .sort((a, b) => b.members.length - a.members.length);
+
+    if (!candidates.length) {
+      new Notice('No tag is shared by two or more pages yet — ingest more notes first.', 6000);
+      return;
+    }
+
+    new ConceptTagModal(this.app, candidates, (cluster) => {
+      void (async () => {
+        this.status(`Writing a concept overview for "${cluster.tag}"…`);
+        let overview: string;
+        try {
+          overview = await this.summarizeConcept(cluster.tag, cluster.members);
+          this.statusEnd();
+        } catch (err) {
+          console.error('[gemma4-litert-wiki] concept overview failed', err);
+          this.statusEnd(`Concept page FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+          return;
+        }
+        const members = cluster.members.map((e) => ({ title: e.title, linkPath: e.linkPath }));
+        const pagePath = conceptPagePath(cluster.tag);
+        const pageContent = buildConceptPage(cluster.tag, overview, members);
+        const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
+        new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
+          void (async () => {
+            await ensureWikiScaffold(this.app.vault);
+            await writeWikiPage(this.app.vault, pagePath, pageContent);
+            await upsertIndexEntry(this.app.vault, pagePath, `${cluster.tag} (concept)`, overview.slice(0, 140));
+            await appendLog(this.app.vault, 'concept', cluster.tag);
+            this.status(`Concept page written: ${pagePath}`);
+            this.statusEnd(undefined, 2500);
+            this.refreshIngestBadges();
+          })();
+        }).open();
+      })();
+    }).open();
+  }
+
+  // One structured call: given a tag and its member page summaries, write a
+  // short overview of what ties them together. Plain text out, not JSON —
+  // it's prose, and the member list is fixed by the caller.
+  async summarizeConcept(tag: string, members: IndexEntry[]): Promise<string> {
+    const engine = await this.ensureEngine((t) => this.status(t));
+    const { SamplerType } = await import('@litert-lm/core');
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You write a short concept overview for a personal wiki. Given a concept tag and ' +
+                'one-line summaries of the pages tagged with it, write 2 to 4 sentences on what ties ' +
+                'them together and what the concept is about. Respond with ONLY the overview prose — ' +
+                'no title, no headings, no bullet list, no preamble.',
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 400 },
+      });
+      const list = members.map((m) => `- ${m.title}: ${m.summary}`).join('\n');
+      const message = await conversation.sendMessage(`Concept: ${tag}\n\nPages:\n${list}`);
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const text = raw.trim().replace(/^#+\s.*$/gm, '').trim();
+      if (!text) throw new Error('Model returned an empty overview.');
+      return text;
+    } finally {
+      await conversation?.delete().catch(() => {});
     }
   }
 

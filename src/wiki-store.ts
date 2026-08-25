@@ -29,6 +29,9 @@ export function wikiAnswersDir(): string {
 export function wikiChatsDir(): string {
   return `${_wikiDir}/chats`;
 }
+export function wikiConceptsDir(): string {
+  return `${_wikiDir}/concepts`;
+}
 export function indexPath(): string {
   return `${_wikiDir}/index.md`;
 }
@@ -62,6 +65,33 @@ export function slugify(name: string): string {
 
 export function wikiPagePath(sourceBasename: string): string {
   return normalizePath(`${wikiSourcesDir()}/${slugify(sourceBasename)}.md`);
+}
+
+export function conceptPagePath(tag: string): string {
+  return normalizePath(`${wikiConceptsDir()}/${slugify(tag)}.md`);
+}
+
+// A concept page (issue #19): a model-written overview of a tag cluster that
+// links to its member pages. Frontmatter marks it as a concept so it never
+// gets mistaken for an ingested source page.
+export function buildConceptPage(
+  tag: string,
+  overview: string,
+  members: { title: string; linkPath: string }[]
+): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const memberLines = members.map((m) => `- [[${m.linkPath}|${m.title}]]`).join('\n');
+  return (
+    `---\n` +
+    `tags:\n  - concept\n  - ${slugify(tag)}\n` +
+    `kind: concept\n` +
+    `created: ${date}\n` +
+    `---\n\n` +
+    `# ${tag} (concept)\n\n` +
+    `${overview.trim()}\n\n` +
+    `## Pages\n\n` +
+    `${memberLines}\n`
+  );
 }
 
 export function buildWikiPage(
@@ -110,7 +140,7 @@ async function writeFile(vault: Vault, path: string, content: string): Promise<v
 }
 
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [wikiDir(), wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir()]) {
+  for (const dir of [wikiDir(), wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir()]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
