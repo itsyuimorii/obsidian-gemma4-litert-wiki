@@ -1396,9 +1396,11 @@ export default class LiteRtSpikePlugin extends Plugin {
                 content:
                   'You link wiki pages. The user gives you a new page summary and a catalog of ' +
                   'existing pages. Respond with ONLY a JSON object, no fences, no explanation: ' +
-                  '{"related": ["Exact Title", ...]}. Pick 0 to 3 titles from the catalog that are ' +
-                  'genuinely related to the new page. Titles must match the catalog EXACTLY. ' +
-                  'If nothing is related, return {"related": []}.',
+                  '{"related": ["Exact Title", ...]}. Pick 0 to 3 titles from the catalog whose ' +
+                  'SUBJECT genuinely overlaps the new page — a reader of one would clearly want the ' +
+                  'other. Titles must match the catalog EXACTLY. Be strict: sharing a broad field ' +
+                  '(e.g. both mention AI) is NOT related. An empty list is a good answer — prefer ' +
+                  '{"related": []} over a weak link.',
               },
             ],
           },
