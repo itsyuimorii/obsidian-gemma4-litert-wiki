@@ -23,6 +23,7 @@ import {
   getIngestedSourceHashes,
   getIngestedSourcePaths,
   precheckNote,
+  queuePendingTags,
   readIndexEntries,
   slugify,
   setWikiDir,
@@ -249,6 +250,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               await ensureWikiScaffold(this.app.vault);
               await writeWikiPage(this.app.vault, pagePath, pageContent);
               await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
+              await queuePendingTags(this.app.vault, extraction.tags);
               await appendLog(this.app.vault, 'ingest', file.basename);
               this.status(`Wiki page written: ${pagePath}`);
               this.statusEnd(undefined, 2500);
@@ -1229,6 +1231,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       for (const d of approved) {
         await writeWikiPage(this.app.vault, d.pagePath, d.pageContent);
         await upsertIndexEntry(this.app.vault, d.pagePath, d.file.basename, d.summary);
+        await queuePendingTags(this.app.vault, d.tags);
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
       this.refreshIngestBadges();
