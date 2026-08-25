@@ -276,7 +276,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-review-board',
       name: 'Review board (low-confidence and stale pages)',
       callback: () => {
-        new ReviewBoardModal(this.app, buildReviewBoard(this.app)).open();
+        new ReviewBoardModal(this.app, buildReviewBoard(this.app, this.settings.staleDays), this.settings.staleDays).open();
       },
     });
 
@@ -963,6 +963,37 @@ export default class LiteRtSpikePlugin extends Plugin {
       console.error('[gemma4-litert-wiki] rename wiki dir failed', err);
       notice.setMessage(`Rename failed — ${err instanceof Error ? err.message : String(err)}`);
       setTimeout(() => notice.hide(), 8000);
+    }
+  }
+
+  // Model status for the settings page: downloaded?, on-disk size, or the
+  // size of a resumable partial.
+  modelStatus(): { downloaded: boolean; sizeGB: string; partialGB: string } {
+    try {
+      const dir = this.pluginAbsDir();
+      if (isModelDownloaded(dir)) {
+        const bytes = fs.statSync(`${dir}/gemma-4-E4B-it-web.litertlm`).size;
+        return { downloaded: true, sizeGB: (bytes / 1e9).toFixed(2), partialGB: '' };
+      }
+      const partial = partialBytes(dir);
+      return { downloaded: false, sizeGB: '', partialGB: partial ? (partial / 1e9).toFixed(2) : '' };
+    } catch {
+      return { downloaded: false, sizeGB: '', partialGB: '' };
+    }
+  }
+
+  // Trigger the (resumable) download from the settings page — same gated
+  // path used on first use, so re-download and resume both work here.
+  async downloadModelFromSettings() {
+    const notice = new Notice('Preparing model download…', 0);
+    try {
+      const blob = await this.ensureModelBlob((t) => notice.setMessage(t));
+      notice.setMessage(`Model ready. Size: ${(blob.size / 1e9).toFixed(2)} GB`);
+      setTimeout(() => notice.hide(), 5000);
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] settings download failed', err);
+      notice.setMessage(`Download: ${err instanceof Error ? err.message : String(err)}`);
+      setTimeout(() => notice.hide(), 10000);
     }
   }
 

@@ -4,10 +4,16 @@ import { DEFAULT_WIKI_DIR } from './wiki-store';
 
 export interface GemmaWikiSettings {
   wikiDir: string;
+  staleDays: number;
+  defaultMode: 'note' | 'wiki';
+  contextTokenBudget: number;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   wikiDir: DEFAULT_WIKI_DIR,
+  staleDays: 30,
+  defaultMode: 'note',
+  contextTokenBudget: 2400,
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -22,9 +28,28 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
+    // ---------- Model ----------
+    new Setting(containerEl).setName('Model').setHeading();
+
+    const status = this.plugin.modelStatus();
+    const modelSetting = new Setting(containerEl)
+      .setName('Local model')
+      .setDesc(
+        status.downloaded
+          ? `Downloaded (${status.sizeGB} GB on disk). Runs fully offline on your GPU.`
+          : status.partialGB
+            ? `Partial download on disk (${status.partialGB} GB). Resume to finish.`
+            : 'Not downloaded yet (~2.97 GB, one time). Downloads on first use, or start it here.'
+      );
+    modelSetting.addButton((btn) => {
+      btn.setButtonText(status.downloaded ? 'Re-download' : status.partialGB ? 'Resume download' : 'Download model');
+      btn.onClick(() => void this.plugin.downloadModelFromSettings());
+    });
+
+    // ---------- Wiki ----------
     new Setting(containerEl).setName('Wiki').setHeading();
 
-    let pending = this.plugin.settings.wikiDir;
+    let pendingDir = this.plugin.settings.wikiDir;
     new Setting(containerEl)
       .setName('Knowledge folder name')
       .setDesc(
@@ -36,30 +61,78 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           .setPlaceholder(DEFAULT_WIKI_DIR)
           .setValue(this.plugin.settings.wikiDir)
           .onChange((v) => {
-            pending = v;
+            pendingDir = v;
           })
       )
       .addButton((btn) =>
-        btn
-          .setButtonText('Apply')
-          .setCta()
-          .onClick(async () => {
-            const next = (pending || DEFAULT_WIKI_DIR).trim().replace(/^\/+|\/+$/g, '');
-            const prev = this.plugin.settings.wikiDir;
-            if (!next || next === prev) {
-              new Notice('No change.');
-              return;
-            }
-            // Guard against colliding with an unrelated existing folder that
-            // isn't ours (has no index we'd recognize) — but allow it if it
-            // doesn't exist yet.
-            const existing = this.app.vault.getAbstractFileByPath(next);
-            if (existing && !(existing instanceof TFolder)) {
-              new Notice(`"${next}" already exists and is not a folder.`);
-              return;
-            }
-            await this.plugin.renameWikiDir(prev, next);
-            this.display();
+        btn.setButtonText('Apply').onClick(async () => {
+          const next = (pendingDir || DEFAULT_WIKI_DIR).trim().replace(/^\/+|\/+$/g, '');
+          const prev = this.plugin.settings.wikiDir;
+          if (!next || next === prev) {
+            new Notice('No change.');
+            return;
+          }
+          const existing = this.app.vault.getAbstractFileByPath(next);
+          if (existing && !(existing instanceof TFolder)) {
+            new Notice(`"${next}" already exists and is not a folder.`);
+            return;
+          }
+          await this.plugin.renameWikiDir(prev, next);
+          this.display();
+        })
+      );
+
+    // ---------- Chat ----------
+    new Setting(containerEl).setName('Chat').setHeading();
+
+    new Setting(containerEl)
+      .setName('Default mode')
+      .setDesc('Which grounding mode a new chat panel opens in.')
+      .addDropdown((dd) =>
+        dd
+          .addOption('note', 'This note')
+          .addOption('wiki', 'Wiki')
+          .setValue(this.plugin.settings.defaultMode)
+          .onChange(async (v) => {
+            this.plugin.settings.defaultMode = v === 'wiki' ? 'wiki' : 'note';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // ---------- Review ----------
+    new Setting(containerEl).setName('Review').setHeading();
+
+    new Setting(containerEl)
+      .setName('Stale after (days)')
+      .setDesc('The review board flags pages untouched for this many days.')
+      .addSlider((sl) =>
+        sl
+          .setLimits(7, 120, 1)
+          .setValue(this.plugin.settings.staleDays)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.staleDays = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // ---------- Advanced ----------
+    new Setting(containerEl).setName('Advanced').setHeading();
+
+    new Setting(containerEl)
+      .setName('Context token budget')
+      .setDesc(
+        'How many tokens of note/wiki content to feed the model per answer. The engine caps at 4096 total; ' +
+          'leave room for the question and reply. Only change if you know what you are doing.'
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(800, 3200, 100)
+          .setValue(this.plugin.settings.contextTokenBudget)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.contextTokenBudget = v;
+            await this.plugin.saveSettings();
           })
       );
   }
