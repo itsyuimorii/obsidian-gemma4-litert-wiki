@@ -13,9 +13,6 @@ export interface GemmaWikiSettings {
   // Custom skills (issue #4): one per line, "Label :: prompt", appended to
   // the built-in skills menu.
   customSkills: string;
-  // Schema (issue #3): controlled tag vocabulary ingest prefers. Empty = the
-  // model tags freely.
-  tagVocabulary: string;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -26,7 +23,6 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanMaxPerRun: 10,
   scanExclude: '',
   customSkills: '',
-  tagVocabulary: '',
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -98,23 +94,13 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     // ---------- Schema ----------
     new Setting(containerEl).setName('Schema').setHeading();
-
-    new Setting(containerEl)
-      .setName('Tag vocabulary')
-      .setClass('gemma4-textarea-setting')
-      .setDesc(
-        'Optional controlled list of tags (comma or newline separated). When set, ingest reuses ' +
-          'these exact tags instead of inventing synonyms ("llm-eval" vs "llm-evaluation"). Leave blank to let the model tag freely.'
-      )
-      .addTextArea((ta) => {
-        ta.setPlaceholder('machine-learning, personal-finance, product-design')
-          .setValue(this.plugin.settings.tagVocabulary)
-          .onChange(async (v) => {
-            this.plugin.settings.tagVocabulary = v;
-            await this.plugin.saveSettings();
-          });
-        ta.inputEl.rows = 4;
-      });
+    containerEl.createEl('p', {
+      cls: 'setting-item-description',
+      text:
+        'The tag vocabulary and naming rules live in the wiki\'s schema.md ("config as a note"), ' +
+        'not here — open it to read or edit the rules. Run the command "Suggest tag vocabulary" to ' +
+        'generate it from the tags already on your wiki; the model proposes it, you review before it is written.',
+    });
 
     // ---------- Skills ----------
     new Setting(containerEl).setName('Skills').setHeading();
