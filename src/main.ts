@@ -1375,6 +1375,19 @@ export default class LiteRtSpikePlugin extends Plugin {
   // model can only answer with titles from the provided list, and anything
   // else is dropped in validation. Failure returns [] and never blocks
   // ingest; related links are an enhancement, not a requirement.
+  //
+  // Prompt design (deliberate, after weak-link complaints):
+  // - The model's only evidence is the summaries, so the criterion is
+  //   anchored there: a SPECIFIC subject (concept / entity / method /
+  //   question) that appears in BOTH summaries — not "feels related",
+  //   which a one-line summary cannot support, and not a shared broad
+  //   field, which over-links everything in a small single-topic wiki.
+  // - Each pick must NAME that shared subject ("shared" field). This is a
+  //   structural self-check: a weak pick has nothing to write there, so it
+  //   tends not to be emitted. Still ONE strict-JSON fill-in — no loop.
+  // - The empty case is stated neutrally ("when no page qualifies"), not
+  //   praised — praising it makes a small model lazily return [] and
+  //   starves the wiki of the real cross-links it exists for.
   async pickRelatedPages(
     summary: string,
     candidates: IndexEntry[]
@@ -1394,19 +1407,20 @@ export default class LiteRtSpikePlugin extends Plugin {
               {
                 role: 'system',
                 content:
-                  'You link wiki pages. The user gives you a new page summary and a catalog of ' +
-                  'existing pages. Respond with ONLY a JSON object, no fences, no explanation: ' +
-                  '{"related": ["Exact Title", ...]}. Pick 0 to 3 titles from the catalog whose ' +
-                  'SUBJECT genuinely overlaps the new page — a reader of one would clearly want the ' +
-                  'other. Titles must match the catalog EXACTLY. Be strict: sharing a broad field ' +
-                  '(e.g. both mention AI) is NOT related. An empty list is a good answer — prefer ' +
-                  '{"related": []} over a weak link.',
+                  'You cross-link pages in a personal wiki. The user gives you a new page summary ' +
+                  'and a catalog of existing pages (title: summary). Respond with ONLY a JSON ' +
+                  'object, no fences, no explanation: ' +
+                  '{"related": [{"title": "Exact Title", "shared": "the specific subject both pages share"}, ...]}. ' +
+                  'Include a page only if a SPECIFIC concept, entity, method, or question appears ' +
+                  'in BOTH its summary and the new page summary — name it in "shared". Belonging ' +
+                  'to the same general field is not enough. At most 3, strongest first; titles ' +
+                  'must match the catalog EXACTLY. Return {"related": []} when no page qualifies.',
               },
             ],
           },
           sessionConfig: {
             samplerParams: { type: SamplerType.GREEDY },
-            maxOutputTokens: 256,
+            maxOutputTokens: 320,
           },
         });
         const message = await conversation.sendMessage(
@@ -1428,8 +1442,21 @@ export default class LiteRtSpikePlugin extends Plugin {
         const parsed = JSON.parse(cleaned) as { related?: unknown };
         if (!Array.isArray(parsed.related)) return [];
         const byTitle = new Map(candidates.map((e) => [e.title, e]));
-        return parsed.related
-          .filter((t): t is string => typeof t === 'string')
+        // Expected entries are {title, shared}; an object with no named
+        // shared subject failed its own justification and is dropped. Plain
+        // strings (the model regressing to the old shape) are tolerated —
+        // losing the self-check beats losing every link to a shape drift.
+        const titles = parsed.related
+          .map((r) => {
+            if (typeof r === 'string') return r;
+            if (r && typeof r === 'object' && typeof (r as { title?: unknown }).title === 'string') {
+              const shared = (r as { shared?: unknown }).shared;
+              return typeof shared === 'string' && shared.trim() ? (r as { title: string }).title : null;
+            }
+            return null;
+          })
+          .filter((t): t is string => !!t);
+        return titles
           .map((t) => byTitle.get(t))
           .filter((e): e is IndexEntry => !!e)
           .slice(0, 3)
