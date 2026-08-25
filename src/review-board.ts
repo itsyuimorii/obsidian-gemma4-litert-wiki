@@ -1,5 +1,5 @@
 import { App, Modal } from 'obsidian';
-import { WIKI_DIR, INDEX_PATH, LOG_PATH } from './wiki-store';
+import { indexPath, logPath, wikiDir } from './wiki-store';
 
 // Review board: turns "you should periodically review the wiki" from a
 // vague chore into a concrete list. Two model-free signals from page
@@ -34,7 +34,7 @@ function ageInDays(created: unknown): number | null {
 export function buildReviewBoard(app: App): ReviewBoard {
   const files = app.vault
     .getMarkdownFiles()
-    .filter((f) => f.path.startsWith(`${WIKI_DIR}/`) && f.path !== INDEX_PATH && f.path !== LOG_PATH);
+    .filter((f) => f.path.startsWith(`${wikiDir()}/`) && f.path !== indexPath() && f.path !== logPath());
 
   const items: ReviewItem[] = [];
   for (const f of files) {

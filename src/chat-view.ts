@@ -21,7 +21,7 @@ import {
   clampToTokens,
   ensureWikiScaffold,
   getIngestedSourcePaths,
-  INDEX_PATH,
+  indexPath,
   loadPages,
   readIndexEntries,
   readLogTail,
@@ -623,12 +623,12 @@ export class ChatView extends ItemView {
           `## Catalog\n${catalog}\n\n` +
           (logTail ? `## Recent activity log\n${logTail}\n\n` : '') +
           clampedWiki.text,
-        sourcePath: INDEX_PATH,
+        sourcePath: indexPath(),
         sources: [
           ...attachments.sources,
           ...(selected.length
             ? selected.map((e) => ({ title: e.title, linkPath: e.linkPath }))
-            : [{ title: 'Wiki index', linkPath: INDEX_PATH.replace(/\.md$/, '') }]),
+            : [{ title: 'Wiki index', linkPath: indexPath().replace(/\.md$/, '') }]),
         ],
       };
     }
