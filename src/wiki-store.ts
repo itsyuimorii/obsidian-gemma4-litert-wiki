@@ -52,6 +52,9 @@ export interface NoteExtraction {
   // Model's own confidence that the extraction faithfully represents the
   // note — surfaces low-trust pages for review (Dataview-queryable).
   confidence: 'high' | 'med' | 'low';
+  // Salient named entities / concepts the note refers to (issue #18). Stored
+  // in frontmatter so later features can cluster pages by shared mention.
+  mentions: string[];
 }
 
 export interface IndexEntry {
@@ -110,6 +113,10 @@ export function buildWikiPage(
   const date = new Date().toISOString().slice(0, 10);
   const tagsYaml = extraction.tags.map((t) => `  - ${slugify(t)}`).join('\n');
   const points = extraction.key_points.map((p) => `- ${p}`).join('\n');
+  const mentions = extraction.mentions ?? [];
+  const mentionsYaml = mentions.length
+    ? `mentions:\n${mentions.map((m) => `  - "${m.replace(/"/g, '')}"`).join('\n')}\n`
+    : '';
   const relatedSection = related.length
     ? `\n## Related\n\n${related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n')}\n`
     : '';
@@ -118,6 +125,7 @@ export function buildWikiPage(
     `tags:\n${tagsYaml}\n` +
     `source: "${sourcePath}"\n` +
     (sourceHash ? `source_hash: ${sourceHash}\n` : '') +
+    mentionsYaml +
     `created: ${date}\n` +
     `confidence: ${extraction.confidence}\n` +
     `---\n\n` +
@@ -217,6 +225,10 @@ export interface WikiSchema {
   tags: string[];
   naming: Record<string, string>;
   conceptThreshold: number;
+  // New tags ingest has seen that aren't in the vocabulary yet, waiting for
+  // you to promote them (issue #3). The vocabulary stays curated; nothing
+  // enters it silently.
+  pending: string[];
 }
 
 const DEFAULT_NAMING: Record<string, string> = {
@@ -230,7 +242,8 @@ const DEFAULT_CONCEPT_THRESHOLD = 4;
 export function buildSchemaFile(
   tags: string[],
   naming: Record<string, string> = DEFAULT_NAMING,
-  conceptThreshold = DEFAULT_CONCEPT_THRESHOLD
+  conceptThreshold = DEFAULT_CONCEPT_THRESHOLD,
+  pending: string[] = []
 ): string {
   const tagLines = tags.length
     ? tags.map((t) => `- ${slugify(t)}`).join('\n')
@@ -238,23 +251,42 @@ export function buildSchemaFile(
   const namingLines = Object.entries(naming)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
+  const pendingLines = pending.length
+    ? pending.map((t) => `- ${slugify(t)}`).join('\n')
+    : '(none)';
   return (
     `# Wiki Schema\n\n` +
     `This file is the wiki's own configuration — what Andrej Karpathy calls "config as a note".\n` +
     `It is plain markdown you can read and edit by hand, and the plugin parses it before every\n` +
     `ingest. Keeping the rules as a note (not a hidden setting) means they version with your wiki,\n` +
     `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
-    `wiki. Three sections:\n\n` +
+    `wiki. Four sections:\n\n` +
     `- **Tags** — the controlled vocabulary. On ingest the model reuses these exact tags instead of\n` +
     `  inventing synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together\n` +
     `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run\n` +
     `  **"Organize tags"** (settings, or the command palette) and the model builds it from the tags\n` +
     `  your ingested notes already produced; you review before it is written. One tag per line.\n` +
     `- **Naming** — how pages are named, so names stay consistent.\n` +
-    `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n\n` +
+    `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n` +
+    `- **Pending** — new tags ingest has used that aren't in the vocabulary yet. They wait here for\n` +
+    `  you to promote them (move a line up into Tags), or just re-run "Organize tags" to\n` +
+    `  fold them in and clear this list. The vocabulary never changes on its own.\n\n` +
     `## Tags\n\n${tagLines}\n\n` +
     `## Naming\n\n${namingLines}\n\n` +
-    `## Concept threshold\n\n${conceptThreshold}\n`
+    `## Concept threshold\n\n${conceptThreshold}\n\n` +
+    `## Pending\n\n` +
+    // Collapsed how-to callout (issue #43): the guidance lives right where the
+    // user is looking, and MUST be emitted here — queuePendingTags and
+    // Organize tags regenerate the whole file, wiping hand-added notes.
+    // Parser-safe: parseSchema only reads "- " lines; these start with "> ".
+    `> [!tip]- How to clear these\n` +
+    `> New tags ingest used that aren't in your vocabulary yet.\n` +
+    `> - **Keep one** — cut its line and paste it under \`## Tags\` above; later ingests reuse it.\n` +
+    `> - **Drop one** — delete its line; it won't enter the vocabulary (the tag still stays on the note it came from).\n` +
+    `> - **Fold them all in** — run **Organize tags**: it rebuilds the vocabulary from every tag in use and clears this list (the model may merge or rename).\n` +
+    `> The vocabulary never changes on its own. Moving a tag up takes effect immediately for\n` +
+    `> **future** ingests — it never re-runs or edits notes you already have.\n\n` +
+    `${pendingLines}\n`
   );
 }
 
@@ -281,17 +313,39 @@ export function parseSchema(content: string): WikiSchema {
     if (m) naming[m[1].toLowerCase()] = m[2].trim();
   }
   const tm = schemaSection(content, 'Concept threshold').match(/\d+/);
+  const pending = schemaSection(content, 'Pending')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('- '))
+    .map((l) => l.slice(2).trim())
+    .filter((t) => t && t.toLowerCase() !== '(none)');
   return {
     tags,
     naming: Object.keys(naming).length ? naming : DEFAULT_NAMING,
     conceptThreshold: tm ? parseInt(tm[0], 10) : DEFAULT_CONCEPT_THRESHOLD,
+    pending,
   };
 }
 
 export async function readSchema(vault: Vault): Promise<WikiSchema> {
   const content = await readIfExists(vault, schemaPath());
-  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD };
+  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD, pending: [] };
   return parseSchema(content);
+}
+
+// After an approved ingest, queue any tags that aren't in the vocabulary into
+// the schema's Pending section — so the vocabulary stays curated and new tags
+// wait for your approval instead of entering it silently. No-op if there is no
+// schema.md yet (nothing to govern against).
+export async function queuePendingTags(vault: Vault, tags: string[]): Promise<void> {
+  const content = await readIfExists(vault, schemaPath());
+  if (!content) return;
+  const schema = parseSchema(content);
+  const known = new Set([...schema.tags, ...schema.pending].map((t) => slugify(t)));
+  const fresh = tags.map((t) => slugify(t)).filter((t) => t && !known.has(t));
+  if (!fresh.length) return;
+  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, [...schema.pending, ...fresh]);
+  await writeFile(vault, schemaPath(), next);
 }
 
 // ---------------------------------------------------------------------------
@@ -416,11 +470,23 @@ const STOPWORDS = new Set([
   'talking', 'say', 'says', 'tell', 'show',
 ]);
 
+// Kanji/kana/fullwidth ranges — CJK has no spaces, so a whitespace/ASCII
+// tokenizer drops it entirely and a Chinese or Japanese question matched
+// zero pages (issue #23).
+const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
+
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
-  const terms = question
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  const q = question.toLowerCase();
+  const ascii = q.split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  // CJK: no word boundaries, so use sliding 2-char windows (bigrams) as
+  // terms — specific enough to avoid single-char particle noise (的/は/て),
+  // and they substring-match the equally-CJK haystack.
+  const cjk: string[] = [];
+  for (const run of q.match(CJK_RUN) ?? []) {
+    if (run.length === 1) cjk.push(run);
+    else for (let i = 0; i < run.length - 1; i++) cjk.push(run.slice(i, i + 2));
+  }
+  const terms = [...new Set([...ascii, ...cjk])];
   if (!terms.length) return [];
   const scored = entries
     .map((e) => {
@@ -443,6 +509,45 @@ export async function loadPages(vault: Vault, entries: IndexEntry[], maxTotalCha
     out += block;
   }
   return out;
+}
+
+// One-hop link expansion (issue #14): given the seed pages the lexical
+// scorer picked, pull in the wiki pages they link to and the pages that link
+// to them. A wiki-link neighbour is often the page that actually holds the
+// answer even when its own summary didn't share the question's words —
+// lexical retrieval alone can't see that, the link graph can.
+export function expandByLinks(
+  app: App,
+  seeds: IndexEntry[],
+  allEntries: IndexEntry[],
+  maxExtra: number
+): IndexEntry[] {
+  if (!seeds.length || maxExtra <= 0) return [];
+  const byPath = new Map(allEntries.map((e) => [`${e.linkPath}.md`, e]));
+  const seedPaths = new Set(seeds.map((e) => `${e.linkPath}.md`));
+  const prefix = `${wikiDir()}/`;
+  const resolved = app.metadataCache.resolvedLinks;
+  const neighbours = new Set<string>();
+
+  // Outbound: seed -> targets.
+  for (const seedPath of seedPaths) {
+    for (const tgt of Object.keys(resolved[seedPath] ?? {})) {
+      if (byPath.has(tgt) && !seedPaths.has(tgt)) neighbours.add(tgt);
+    }
+  }
+  // Inbound: any wiki page -> a seed (backlinks).
+  for (const [src, targets] of Object.entries(resolved)) {
+    if (!src.startsWith(prefix) || !byPath.has(src) || seedPaths.has(src)) continue;
+    if (Object.keys(targets).some((t) => seedPaths.has(t))) neighbours.add(src);
+  }
+
+  const extra: IndexEntry[] = [];
+  for (const p of neighbours) {
+    const e = byPath.get(p);
+    if (e) extra.push(e);
+    if (extra.length >= maxExtra) break;
+  }
+  return extra;
 }
 
 export function answerPagePath(question: string): string {

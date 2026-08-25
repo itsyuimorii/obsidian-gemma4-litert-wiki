@@ -25,6 +25,7 @@ import {
   getIngestedSourceHashes,
   getIngestedSourcePaths,
   precheckNote,
+  queuePendingTags,
   readIndexEntries,
   slugify,
   setWikiDir,
@@ -35,6 +36,18 @@ import {
   type NoteExtraction,
 } from './wiki-store';
 import { LintReportModal, runLint } from './lint';
+import {
+  collectWikiPages,
+  ContradictionReportModal,
+  pairsSharingTag,
+  type ContradictionFlag,
+  type WikiPageMeta,
+} from './contradiction';
+import {
+  ProvenanceReportModal,
+  sampleWikiPages,
+  type ProvenanceFlag,
+} from './provenance';
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
@@ -118,6 +131,8 @@ export default class LiteRtSpikePlugin extends Plugin {
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
   private statusNotice: Notice | null = null;
+  private scanStatusEl: HTMLElement | null = null;
+  private autoScanIntervalId: number | null = null;
   settings: GemmaWikiSettings = { ...DEFAULT_SETTINGS };
 
   // One shared status Notice for the whole plugin: later messages update
@@ -162,6 +177,14 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.addRibbonIcon('gemma-wiki-logo', 'Chat with note (Gemma, local)', () => {
       void this.activateChatView();
     });
+
+    // Status-bar "N to review" chip (issue #2). Clicking runs the full
+    // scan+draft+review flow; the chip's count itself is model-free.
+    this.scanStatusEl = this.addStatusBarItem();
+    this.scanStatusEl.addClass('mod-clickable');
+    this.scanStatusEl.hide();
+    this.scanStatusEl.addEventListener('click', () => void this.scanAndReviewIngest());
+    this.app.workspace.onLayoutReady(() => this.rescheduleAutoScan());
 
     this.addCommand({
       id: 'litert-open-chat',
@@ -251,6 +274,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               await ensureWikiScaffold(this.app.vault);
               await writeWikiPage(this.app.vault, pagePath, pageContent);
               await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
+              await queuePendingTags(this.app.vault, extraction.tags);
               await this.pruneIndex();
               await appendLog(this.app.vault, 'ingest', file.basename);
               this.status(`Wiki page written: ${pagePath}`);
@@ -337,9 +361,10 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-review-board',
-      name: 'Review board (low-confidence and stale pages)',
-      callback: () => {
-        new ReviewBoardModal(this.app, buildReviewBoard(this.app, this.settings.staleDays), this.settings.staleDays).open();
+      name: 'Review board (low-confidence, drifted, and stale pages)',
+      callback: async () => {
+        const board = await buildReviewBoard(this.app, this.settings.staleDays);
+        new ReviewBoardModal(this.app, board, this.settings.staleDays).open();
       },
     });
 
@@ -377,6 +402,18 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-suggest-vocab',
       name: 'Organize tags (schema.md, local Gemma)',
       callback: () => void this.suggestTagVocabulary(),
+    });
+
+    this.addCommand({
+      id: 'litert-find-contradictions',
+      name: 'Find contradictions in wiki (local Gemma)',
+      callback: () => void this.findContradictions(),
+    });
+
+    this.addCommand({
+      id: 'litert-provenance-check',
+      name: 'Provenance spot-check (local Gemma)',
+      callback: () => void this.spotCheckProvenance(),
     });
 
     this.addCommand({
@@ -926,6 +963,74 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (kept.length !== lines.length) await this.app.vault.modify(file, kept.join('\n'));
   }
 
+  // Lint v2 (issue #5): flag contradiction candidates. Bounded — only pages
+  // sharing a tag are paired, capped at 12 pairs — so the O(n^2) model sweep
+  // can't run away. Flag-only: it never edits anything.
+  async findContradictions() {
+    const MAX_PAIRS = 12;
+    this.status('Collecting wiki pages…');
+    const pages: WikiPageMeta[] = await collectWikiPages(this.app);
+    const pairs = pairsSharingTag(pages, MAX_PAIRS);
+    if (!pairs.length) {
+      this.statusEnd(
+        pages.length < 2
+          ? 'Need at least two wiki pages to compare.'
+          : 'No tag-sharing page pairs to check — nothing can contradict.',
+        5000
+      );
+      return;
+    }
+
+    const flags: ContradictionFlag[] = [];
+    try {
+      for (let i = 0; i < pairs.length; i++) {
+        const { a, b } = pairs[i];
+        this.status(`Checking ${i + 1}/${pairs.length} — ${a.title} vs ${b.title}…`);
+        const verdict = await this.judgeContradiction(a.title, a.summary, b.title, b.summary);
+        if (verdict?.contradict) flags.push({ a, b, reason: verdict.reason });
+      }
+      this.statusEnd();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] contradiction scan failed', err);
+      this.statusEnd(`Contradiction scan FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return;
+    }
+    new ContradictionReportModal(this.app, flags, pairs.length).open();
+  }
+
+  // Provenance spot-check (issue #21): sample a few wiki pages and, per page,
+  // ask the model which of its key points the SOURCE note does not support.
+  // Bounded (a handful of pages, one call each) and flag-only.
+  async spotCheckProvenance() {
+    const LIMIT = 8;
+    this.status('Sampling wiki pages…');
+    const samples = await sampleWikiPages(this.app, LIMIT);
+    if (!samples.length) {
+      this.statusEnd('No ingested pages with key points to check.', 5000);
+      return;
+    }
+    const flags: ProvenanceFlag[] = [];
+    try {
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        this.status(`Checking ${i + 1}/${samples.length} — ${s.title}…`);
+        const srcFile = this.app.vault.getAbstractFileByPath(s.sourcePath);
+        if (!(srcFile instanceof TFile)) continue; // source note gone
+        const srcText = clampToTokens(cleanClippedMarkdown(await this.app.vault.read(srcFile)), 2200).text;
+        const unsupported = await this.checkProvenance(srcText, s.keyPoints);
+        if (unsupported.length) {
+          flags.push({ linkPath: s.linkPath, title: s.title, sourcePath: s.sourcePath, unsupported });
+        }
+      }
+      this.statusEnd();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] provenance check failed', err);
+      this.statusEnd(`Provenance check FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return;
+    }
+    new ProvenanceReportModal(this.app, flags, samples.length).open();
+  }
+
   // One strict-JSON call: given the tags currently in use (with counts),
   // return a SMALL merged vocabulary. A controlled vocabulary is meant to
   // converge — the model merges synonyms AND collapses narrow subtopics into
@@ -1094,11 +1199,151 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
   }
 
+  // One strict-JSON judgment per page pair (single fill-in, not a tool loop).
+  // Compares one-line summaries — cheap, and enough for a candidate flag the
+  // human then verifies against the full pages.
+  async judgeContradiction(
+    titleA: string,
+    summaryA: string,
+    titleB: string,
+    summaryB: string
+  ): Promise<{ contradict: boolean; reason: string } | null> {
+    const engine = await this.ensureEngine((t) => this.status(t));
+    const { SamplerType } = await import('@litert-lm/core');
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You compare two knowledge-base entries and decide if they FACTUALLY CONTRADICT — ' +
+                'state opposite or incompatible facts. Respond with ONLY a JSON object, no fences: ' +
+                '{"contradict": "yes" or "no", "reason": "one short sentence"}. Entries on different ' +
+                'topics do NOT contradict — answer "no". Only answer "yes" for a genuine factual ' +
+                'conflict, not merely different emphasis or overlap.',
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 128 },
+      });
+      const message = await conversation.sendMessage(
+        `Entry A — ${titleA}: ${summaryA}\n\nEntry B — ${titleB}: ${summaryB}`
+      );
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return null;
+      const parsed = JSON.parse(match[0]) as { contradict?: string; reason?: string };
+      return {
+        contradict: String(parsed.contradict).toLowerCase() === 'yes',
+        reason: parsed.reason ?? '',
+      };
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] judgeContradiction parse/gen failed', err);
+      return null; // a bad judgment just drops the pair; never blocks the sweep
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
+  // One strict-JSON judgment per page: which claims does the source not
+  // support? Validated against the actual key-point list (the model can only
+  // flag points that were really there); a bad parse drops the page.
+  async checkProvenance(sourceText: string, keyPoints: string[]): Promise<string[]> {
+    const engine = await this.ensureEngine((t) => this.status(t));
+    const { SamplerType } = await import('@litert-lm/core');
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You verify provenance. Given a SOURCE note and CLAIMS said to come from it, respond ' +
+                'with ONLY a JSON object, no fences: {"unsupported": ["<claim>", ...]} listing the ' +
+                'claims the source does NOT state or clearly imply. Copy unsupported claims verbatim. ' +
+                'If every claim is supported, return {"unsupported": []}. Be fair — a claim the note ' +
+                'clearly implies counts as supported.',
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 256 },
+      });
+      const claimsBlock = keyPoints.map((p) => `- ${p}`).join('\n');
+      const message = await conversation.sendMessage(`Source:\n${sourceText}\n\nClaims:\n${claimsBlock}`);
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return [];
+      const parsed = JSON.parse(match[0]) as { unsupported?: unknown };
+      if (!Array.isArray(parsed.unsupported)) return [];
+      const valid = new Set(keyPoints);
+      return parsed.unsupported.filter((u): u is string => typeof u === 'string' && valid.has(u));
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] checkProvenance parse/gen failed', err);
+      return [];
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
+  // Background "to review" count (issue #2). Turns the setting on/off and
+  // (re)arms the interval. Called on layout-ready and whenever the setting
+  // changes. Counting is model-free, so it's safe to run unattended; only a
+  // click on the chip spends GPU (via scanAndReviewIngest).
+  rescheduleAutoScan() {
+    if (this.autoScanIntervalId !== null) {
+      window.clearInterval(this.autoScanIntervalId);
+      this.autoScanIntervalId = null;
+    }
+    if (!this.settings.autoScanEnabled) {
+      this.scanStatusEl?.hide();
+      return;
+    }
+    void this.refreshScanBadge();
+    const ms = Math.max(1, this.settings.autoScanIntervalHours) * 3_600_000;
+    this.autoScanIntervalId = window.setInterval(() => void this.refreshScanBadge(), ms);
+    this.registerInterval(this.autoScanIntervalId);
+  }
+
+  // Deterministic count only — no engine, no GPU. Updates the status-bar
+  // chip with how many notes are new or changed and worth reviewing.
+  async refreshScanBadge() {
+    if (!this.scanStatusEl || !this.settings.autoScanEnabled) return;
+    try {
+      const result = await findIngestCandidates(this.app, {
+        quietHours: this.settings.scanQuietHours,
+        maxPerRun: this.settings.scanMaxPerRun,
+        excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
+      });
+      const total = result.eligible.length + result.cappedOut;
+      if (total > 0) {
+        this.scanStatusEl.setText(`📥 ${total} to review`);
+        this.scanStatusEl.setAttr('aria-label', 'New or changed notes — click to scan and review');
+        this.scanStatusEl.show();
+      } else {
+        this.scanStatusEl.hide();
+      }
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] scan badge refresh failed', err);
+      this.scanStatusEl.hide();
+    }
+  }
+
   // Semi-automatic ingest: scan (deterministic) → draft each candidate
   // (one model call apiece, same as manual ingest) → batch review gate.
   // The scan and the review modal live in auto-ingest.ts; the model calls
-  // stay here because they need the engine. Manual trigger only — no
-  // background timer yet, so nothing runs the GPU while you are away.
+  // stay here because they need the engine. Drafting is only ever triggered
+  // by the user (command or status-bar chip) — the background timer only
+  // ever counts, never runs the model.
+  //
   // Scan run-state: a scan drafts with the model for tens of seconds, so the
   // UI needs to know it is running (button shows "Stop scan") and be able to
   // cancel it. Cancel keeps the drafts already made — the GPU time is spent,
@@ -1231,10 +1476,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       for (const d of approved) {
         await writeWikiPage(this.app.vault, d.pagePath, d.pageContent);
         await upsertIndexEntry(this.app.vault, d.pagePath, d.file.basename, d.summary);
-        await this.pruneIndex();
+        await queuePendingTags(this.app.vault, d.tags);
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
+      await this.pruneIndex();
       this.refreshIngestBadges();
+      void this.refreshScanBadge();
       new Notice(`Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`, 4000);
     }).open();
   }
@@ -1395,10 +1642,26 @@ export default class LiteRtSpikePlugin extends Plugin {
     try {
       const engine = await this.ensureEngine(() => {});
       const { SamplerType } = await import('@litert-lm/core');
-      const catalog = candidates
-        .slice(0, 30)
-        .map((e) => `- ${e.title}: ${e.summary}`)
-        .join('\n');
+      // Only ~30 pages fit in the catalog prompt (4B context). Taking the
+      // FIRST 30 by index order meant pages 31+ could never be linked
+      // (issue #15). Instead rank by lexical overlap with the new summary so
+      // the 30 shown are the most relevant, falling back to index order to
+      // fill any remaining slots (keeps CJK/low-overlap pages reachable).
+      const RELATED_POOL = 30;
+      let pool = candidates;
+      if (candidates.length > RELATED_POOL) {
+        const terms = summary.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+        pool = candidates
+          .map((e, i) => {
+            const hay = `${e.title} ${e.summary}`.toLowerCase();
+            const score = terms.reduce((a, t) => a + (hay.includes(t) ? 1 : 0), 0);
+            return { e, score, i };
+          })
+          .sort((a, b) => b.score - a.score || a.i - b.i)
+          .slice(0, RELATED_POOL)
+          .map((s) => s.e);
+      }
+      const catalog = pool.map((e) => `- ${e.title}: ${e.summary}`).join('\n');
       let conversation: import('@litert-lm/core').Conversation | undefined;
       try {
         conversation = await engine.createConversation({
@@ -1516,12 +1779,14 @@ export default class LiteRtSpikePlugin extends Plugin {
                   'You extract structured metadata from a note. Respond with ONLY a single JSON object, ' +
                   'no markdown fences, no explanation: ' +
                   '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."], ' +
-                  '"confidence": "high"}. ' +
+                  '"confidence": "high", "mentions": ["Name or Concept", "..."]}. ' +
                   'Exactly 3 tags (short lowercase noun phrases). 3 to 5 key_points, each ONE short ' +
                   'self-contained sentence stating concrete content from the note. confidence is ' +
                   '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
                   'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
-                  'misread).' +
+                  'misread). mentions: 0 to 6 salient named entities or concepts the note actually ' +
+                  "refers to (proper nouns, technologies, specific concepts), in the note's own " +
+                  'language; [] if none stand out.' +
                   vocabLine +
                   namingLine,
               },
@@ -1560,6 +1825,12 @@ export default class LiteRtSpikePlugin extends Plugin {
           // Tolerate a missing/invalid confidence rather than failing the
           // whole extraction — default to 'med'.
           if (!['high', 'med', 'low'].includes(parsed.confidence)) parsed.confidence = 'med';
+          // mentions is optional (issue #18) — default to [] and cap at 6 so
+          // a model that omits or over-produces it never fails the extraction.
+          parsed.mentions =
+            Array.isArray(parsed.mentions)
+              ? parsed.mentions.filter((m) => typeof m === 'string' && m.trim()).slice(0, 6)
+              : [];
           // Force the summary to a single line: index.md is one-entry-per-line,
           // so a multi-line summary would break across lines and pollute the
           // index with non-entry junk.

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 main.js
 main.js.map
 wasm/
