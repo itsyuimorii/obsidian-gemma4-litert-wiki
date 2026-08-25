@@ -938,10 +938,26 @@ export default class LiteRtSpikePlugin extends Plugin {
     try {
       const engine = await this.ensureEngine(() => {});
       const { SamplerType } = await import('@litert-lm/core');
-      const catalog = candidates
-        .slice(0, 30)
-        .map((e) => `- ${e.title}: ${e.summary}`)
-        .join('\n');
+      // Only ~30 pages fit in the catalog prompt (4B context). Taking the
+      // FIRST 30 by index order meant pages 31+ could never be linked
+      // (issue #15). Instead rank by lexical overlap with the new summary so
+      // the 30 shown are the most relevant, falling back to index order to
+      // fill any remaining slots (keeps CJK/low-overlap pages reachable).
+      const RELATED_POOL = 30;
+      let pool = candidates;
+      if (candidates.length > RELATED_POOL) {
+        const terms = summary.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+        pool = candidates
+          .map((e, i) => {
+            const hay = `${e.title} ${e.summary}`.toLowerCase();
+            const score = terms.reduce((a, t) => a + (hay.includes(t) ? 1 : 0), 0);
+            return { e, score, i };
+          })
+          .sort((a, b) => b.score - a.score || a.i - b.i)
+          .slice(0, RELATED_POOL)
+          .map((s) => s.e);
+      }
+      const catalog = pool.map((e) => `- ${e.title}: ${e.summary}`).join('\n');
       let conversation: import('@litert-lm/core').Conversation | undefined;
       try {
         conversation = await engine.createConversation({
