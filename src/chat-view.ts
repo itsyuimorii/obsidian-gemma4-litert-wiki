@@ -78,7 +78,10 @@ export const VIEW_TYPE_CHAT = 'gemma4-litert-wiki-chat-view';
 // The engine context is a hard 4096 tokens; with ~1024 reserved for the
 // answer and ~200 for instructions and the question, grounding material
 // gets this budget. Token-estimated (CJK-aware), not char-counted.
-// Context budget is user-configurable (Settings → Advanced); read live.
+// How much grounding content to feed per answer. The engine caps at
+// 4096 total; oversize input is auto-clamped, so this is a fixed budget,
+// not a user setting.
+const CONTEXT_TOKEN_BUDGET = 2400;
 
 export class ChatView extends ItemView {
   private plugin: LiteRtSpikePlugin;
@@ -598,7 +601,7 @@ export class ChatView extends ItemView {
       }
       const selected = scoreEntries(question, entries);
       const pages = selected.length
-        ? await loadPages(this.app.vault, selected, this.plugin.settings.contextTokenBudget * 3)
+        ? await loadPages(this.app.vault, selected, CONTEXT_TOKEN_BUDGET * 3)
         : '';
       // Catalog + recent log always ride along: they are small, and they
       // make meta-questions answerable ("what is in my wiki?", "what did
@@ -608,7 +611,7 @@ export class ChatView extends ItemView {
       const attachments = await this.readAttachments();
       const clampedWiki = clampToTokens(
         (pages ? `## Relevant pages\n${pages}\n\n` : '') + attachments.blocks,
-        this.plugin.settings.contextTokenBudget
+        CONTEXT_TOKEN_BUDGET
       );
       if (clampedWiki.truncated) {
         this.appendInfoMessage('Context was longer than the local model can hold — answering from the first part only.');
@@ -649,7 +652,7 @@ export class ChatView extends ItemView {
       sources.push({ title: file.basename, linkPath: file.path.replace(/\.md$/, '') });
     }
     sources.push(...attachments.sources);
-    const clamped = clampToTokens(noteBlock + attachments.blocks, this.plugin.settings.contextTokenBudget);
+    const clamped = clampToTokens(noteBlock + attachments.blocks, CONTEXT_TOKEN_BUDGET);
     if (clamped.truncated) {
       this.appendInfoMessage(
         'This note is longer than the local model can hold — answering from the first part only.'

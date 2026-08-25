@@ -6,14 +6,12 @@ export interface GemmaWikiSettings {
   wikiDir: string;
   staleDays: number;
   defaultMode: 'note' | 'wiki';
-  contextTokenBudget: number;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   wikiDir: DEFAULT_WIKI_DIR,
   staleDays: 30,
   defaultMode: 'note',
-  contextTokenBudget: 2400,
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -113,26 +111,6 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (v) => {
             this.plugin.settings.staleDays = v;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    // ---------- Advanced ----------
-    new Setting(containerEl).setName('Advanced').setHeading();
-
-    new Setting(containerEl)
-      .setName('Context token budget')
-      .setDesc(
-        'How many tokens of note/wiki content to feed the model per answer. The engine caps at 4096 total; ' +
-          'leave room for the question and reply. Only change if you know what you are doing.'
-      )
-      .addSlider((sl) =>
-        sl
-          .setLimits(800, 3200, 100)
-          .setValue(this.plugin.settings.contextTokenBudget)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            this.plugin.settings.contextTokenBudget = v;
             await this.plugin.saveSettings();
           })
       );
