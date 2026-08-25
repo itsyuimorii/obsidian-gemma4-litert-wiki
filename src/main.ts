@@ -288,9 +288,10 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-review-board',
-      name: 'Review board (low-confidence and stale pages)',
-      callback: () => {
-        new ReviewBoardModal(this.app, buildReviewBoard(this.app, this.settings.staleDays), this.settings.staleDays).open();
+      name: 'Review board (low-confidence, drifted, and stale pages)',
+      callback: async () => {
+        const board = await buildReviewBoard(this.app, this.settings.staleDays);
+        new ReviewBoardModal(this.app, board, this.settings.staleDays).open();
       },
     });
 
