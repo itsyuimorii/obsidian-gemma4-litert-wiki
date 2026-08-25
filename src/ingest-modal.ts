@@ -122,7 +122,7 @@ export class OnboardingModal extends Modal {
     contentEl.createEl('p', {
       text: resuming
         ? `A partial download of ${(this.resumeBytes / 1e9).toFixed(2)} GB is on disk — this will resume from there.`
-        : 'Gemma Wiki runs its model entirely on your machine — no API key, no per-token cost, no monthly bill. Ingest and chat as much as you want. It downloads once, then works fully offline.',
+        : 'Gemma Wiki is completely free — no API key, no subscription, no usage fees, ever. The model runs entirely on your machine, so ingest and chat as much as you want. It downloads once, then works fully offline.',
     });
 
     const list = contentEl.createEl('ul', { cls: 'gemma4-onboarding-list' });
