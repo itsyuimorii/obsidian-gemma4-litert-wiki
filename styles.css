@@ -42,6 +42,13 @@
   color: var(--text-normal);
 }
 
+.gemma4-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
 .gemma4-chat-title-badge {
   font-size: 10px;
   font-weight: 500;
