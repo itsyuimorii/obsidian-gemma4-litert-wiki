@@ -13,6 +13,11 @@ export interface GemmaWikiSettings {
   // Custom skills (issue #4): one per line, "Label :: prompt", appended to
   // the built-in skills menu.
   customSkills: string;
+  // Background scan (issue #2): periodically COUNT new/changed notes and
+  // show a status-bar chip. Counting is deterministic (no model / no GPU);
+  // drafting only runs when the user clicks the chip. Default OFF.
+  autoScanEnabled: boolean;
+  autoScanIntervalHours: number;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -23,6 +28,8 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanMaxPerRun: 10,
   scanExclude: '',
   customSkills: '',
+  autoScanEnabled: false,
+  autoScanIntervalHours: 6,
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -165,20 +172,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         'and review them all at once before anything is written. Drafts are never saved without your tick.',
     });
 
-    new Setting(containerEl)
-      .setName('Quiet period (hours)')
-      .setDesc('Skip notes edited within this many hours — you are probably still working on them.')
-      .addSlider((sl) =>
-        sl
-          .setLimits(0, 24, 1)
-          .setValue(this.plugin.settings.scanQuietHours)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            this.plugin.settings.scanQuietHours = v;
-            await this.plugin.saveSettings();
-          })
-      );
-
+    // Manual-scan knobs — always visible.
     new Setting(containerEl)
       .setName('Max notes per scan')
       .setDesc('Cap each scan so a large backlog does not run the GPU through dozens of notes at once.')
@@ -205,5 +199,62 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // Background auto-scan — its tuning knobs (quiet period, refresh interval)
+    // only appear when the toggle is on, so a user who only ever clicks
+    // "Scan now" is not confronted with background-mode concepts (issue #42).
+    new Setting(containerEl)
+      .setName('Show a background "to review" count')
+      .setDesc(
+        'Periodically COUNT new/changed notes and show them in the status bar. ' +
+          'Counting is instant and never runs the model — drafting only happens when you click the chip. Default off.'
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.autoScanEnabled).onChange(async (v) => {
+          this.plugin.settings.autoScanEnabled = v;
+          await this.plugin.saveSettings();
+          this.plugin.rescheduleAutoScan();
+          // Re-render to reveal/hide the background-only knobs below —
+          // preserving the scroll position, since display() rebuilds the pane
+          // and would otherwise snap the view back to the top.
+          const scrollTop = this.containerEl.scrollTop;
+          this.display();
+          this.containerEl.scrollTop = scrollTop;
+        })
+      );
+
+    if (this.plugin.settings.autoScanEnabled) {
+      new Setting(containerEl)
+        .setName('Quiet period (hours)')
+        .setDesc(
+          'Background auto-scan skips notes edited within this many hours — you may still be ' +
+            'writing them. Manual "Scan now" always includes them.'
+        )
+        .addSlider((sl) =>
+          sl
+            .setLimits(0, 24, 1)
+            .setValue(this.plugin.settings.scanQuietHours)
+            .setDynamicTooltip()
+            .onChange(async (v) => {
+              this.plugin.settings.scanQuietHours = v;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName('Re-count every (hours)')
+        .setDesc('How often the background count refreshes while Obsidian is open.')
+        .addSlider((sl) =>
+          sl
+            .setLimits(1, 24, 1)
+            .setValue(this.plugin.settings.autoScanIntervalHours)
+            .setDynamicTooltip()
+            .onChange(async (v) => {
+              this.plugin.settings.autoScanIntervalHours = v;
+              await this.plugin.saveSettings();
+              this.plugin.rescheduleAutoScan();
+            })
+        );
+    }
   }
 }
