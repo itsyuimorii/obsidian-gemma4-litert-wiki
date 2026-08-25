@@ -339,3 +339,52 @@ export function buildChatTranscript(turns: ChatTurnRecord[], mode: string, date:
   }
   return body.trimEnd() + '\n';
 }
+
+// Strip boilerplate from web-clipped notes before ingest. Local models
+// have only 4096 tokens of context, and a clipped article carries a lot
+// of navigation/footer noise that crowds out the real content. This is a
+// conservative, markdown-only cleaner — it removes structural chrome, not
+// prose, so a hand-written note passes through essentially untouched.
+export function cleanClippedMarkdown(md: string): string {
+  const lines = md.split('\n');
+  const kept: string[] = [];
+  // Phrases that mark a boilerplate line outright (case-insensitive).
+  const junkLine =
+    /^(subscribe|sign up|sign in|log in|share this|follow us|advertisement|cookie|accept all|related posts?|read more|newsletter|©|all rights reserved|privacy policy|terms of service)\b/i;
+  let consecutiveLinkOnly = 0;
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const trimmed = line.trim();
+
+    if (junkLine.test(trimmed)) continue;
+
+    // A line that is nothing but a markdown link (nav/menu item), possibly
+    // a bullet of one. Drop runs of these (menus, link lists) but keep a
+    // lone inline link inside prose.
+    const linkOnly = /^[-*]?\s*\[[^\]]*\]\([^)]*\)\s*$/.test(trimmed);
+    if (linkOnly) {
+      consecutiveLinkOnly++;
+      // Only start dropping once several stack up — that's a menu, not a
+      // meaningful single reference.
+      if (consecutiveLinkOnly >= 2) continue;
+      // Hold the first one back until we know if a run follows.
+      kept.push(line);
+      continue;
+    }
+    if (consecutiveLinkOnly === 1 && kept.length && /^[-*]?\s*\[[^\]]*\]\([^)]*\)\s*$/.test(kept[kept.length - 1].trim())) {
+      // The single held link was standalone in prose — fine, leave it.
+    }
+    consecutiveLinkOnly = 0;
+
+    // Image-only lines: keep the alt text as a caption, drop the URL noise.
+    const imgOnly = trimmed.match(/^!\[([^\]]*)\]\([^)]*\)\s*$/);
+    if (imgOnly) {
+      if (imgOnly[1]) kept.push(`[image: ${imgOnly[1]}]`);
+      continue;
+    }
+
+    kept.push(line);
+  }
+  // Collapse 3+ blank lines to a single blank.
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
