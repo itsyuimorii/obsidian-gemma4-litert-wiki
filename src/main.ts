@@ -10,9 +10,12 @@ import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } 
 import {
   appendLog,
   buildConceptPage,
+  buildSchemaFile,
   buildWikiPage,
   conceptPagePath,
   ensureWikiScaffold,
+  readSchema,
+  schemaPath,
   upsertIndexEntry,
   clampToTokens,
   cleanClippedMarkdown,
@@ -337,6 +340,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-concept-page',
       name: 'Build a concept page from a tag (local Gemma)',
       callback: () => void this.createConceptPage(),
+    });
+
+    this.addCommand({
+      id: 'litert-suggest-vocab',
+      name: 'Suggest tag vocabulary (schema.md, local Gemma)',
+      callback: () => void this.suggestTagVocabulary(),
     });
 
     this.addCommand({
@@ -748,6 +757,107 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
   }
 
+  // Schema layer (issue #3): generate the controlled tag vocabulary instead
+  // of making the user hand-write it. Tally the tags already on wiki pages,
+  // ask the model to merge near-synonyms into a clean canonical list, and
+  // write it into schema.md (config-as-note) behind the preview gate. The
+  // Naming and Concept-threshold sections are preserved if the file exists.
+  async suggestTagVocabulary() {
+    // Tally existing wiki-page tags (frontmatter), skipping the plugin's own
+    // structural tags.
+    const SKIP = new Set(['concept', 'answer', 'chat']);
+    const counts = new Map<string, number>();
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+      const tags = Array.isArray(raw)
+        ? raw.map((t) => String(t))
+        : typeof raw === 'string'
+          ? raw.split(/[,\s]+/).filter(Boolean)
+          : [];
+      for (const t of tags) {
+        const tag = slugify(t);
+        if (!tag || SKIP.has(tag)) continue;
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    if (!counts.size) {
+      new Notice('No tags on your wiki yet — ingest a few notes first, then run this.', 6000);
+      return;
+    }
+
+    this.status('Cleaning up the tag vocabulary…');
+    let vocab: string[];
+    try {
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      vocab = await this.cleanTagVocabulary(sorted);
+      this.statusEnd();
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] vocab suggest failed', err);
+      this.statusEnd(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return;
+    }
+    if (!vocab.length) {
+      new Notice('The model returned an empty vocabulary — nothing to write.', 5000);
+      return;
+    }
+
+    // Preserve any Naming / Concept-threshold the user has set.
+    const existing = await readSchema(this.app.vault);
+    const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold);
+    const path = schemaPath();
+    const overwriting = !!this.app.vault.getAbstractFileByPath(path);
+    new IngestPreviewModal(this.app, path, content, overwriting, () => {
+      void (async () => {
+        await ensureWikiScaffold(this.app.vault);
+        await writeWikiPage(this.app.vault, path, content);
+        await appendLog(this.app.vault, 'schema', `tag vocabulary (${vocab.length} tags)`);
+        this.status(`Schema written: ${path}`);
+        this.statusEnd(undefined, 2500);
+      })();
+    }).open();
+  }
+
+  // One strict-JSON call: given the tags currently in use (with counts),
+  // return a merged canonical vocabulary. The model only reshapes tags that
+  // already exist — it merges synonyms and drops noise, it does not invent.
+  async cleanTagVocabulary(tagsWithCounts: [string, number][]): Promise<string[]> {
+    const engine = await this.ensureEngine((t) => this.status(t));
+    const { SamplerType } = await import('@litert-lm/core');
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You clean up a tag vocabulary. Given the tags currently in use (with how many pages ' +
+                'use each), respond with ONLY a JSON object, no fences: {"vocabulary": ["tag", ...]}. ' +
+                'Merge near-synonyms into ONE canonical spelling (e.g. llm-eval / llm-evaluation / ' +
+                'evals -> llm-evaluation), drop one-off noise, keep the useful ones. Use lowercase ' +
+                'kebab-case. Only reshape tags from the input — do NOT invent new topics.',
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 512 },
+      });
+      const list = tagsWithCounts.map(([t, n]) => `- ${t} (${n})`).join('\n');
+      const message = await conversation.sendMessage(`Tags in use:\n${list}`);
+      let raw = '';
+      const c = message.content;
+      if (typeof c === 'string') raw = c;
+      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return [];
+      const parsed = JSON.parse(match[0]) as { vocabulary?: unknown };
+      if (!Array.isArray(parsed.vocabulary)) return [];
+      return [...new Set(parsed.vocabulary.filter((t): t is string => typeof t === 'string').map((t) => slugify(t)).filter(Boolean))];
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
   // Concept pages (issue #19): cluster pages by shared tag, write a short
   // overview of the cluster in one structured call, link to the members, and
   // gate it behind the same preview as everything else. Convergent (given a
@@ -1151,16 +1261,12 @@ export default class LiteRtSpikePlugin extends Plugin {
     const engine = await this.ensureEngine(onProgress);
     const { SamplerType } = await import('@litert-lm/core');
 
-    // Schema layer (issue #3): a user-maintained tag vocabulary. When set, it
-    // is injected here so ingest REUSES existing tags instead of inventing a
-    // fresh synonym every time ("llm-eval" vs "llm-evaluation" vs "evals").
-    // Naming rules aren't part of the schema because page names are already
-    // deterministic (slugified basenames) — the tag vocabulary is the only
-    // lever that actually needs governing.
-    const vocab = this.settings.tagVocabulary
-      .split(/[,\n]/)
-      .map((t) => t.trim())
-      .filter(Boolean);
+    // Schema layer (issue #3): the controlled tag vocabulary lives in the
+    // wiki's schema.md ("config as a note"), generated by "Suggest tag
+    // vocabulary". When present it is injected here so ingest REUSES existing
+    // tags instead of inventing a fresh synonym every time ("llm-eval" vs
+    // "llm-evaluation" vs "evals").
+    const vocab = (await readSchema(this.app.vault)).tags;
     const vocabLine = vocab.length
       ? ` Prefer tags from this controlled vocabulary when one fits, reusing the exact spelling: ${vocab.join(', ')}. Only coin a new tag if none of these apply.`
       : '';

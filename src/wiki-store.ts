@@ -38,6 +38,9 @@ export function indexPath(): string {
 export function logPath(): string {
   return `${_wikiDir}/log.md`;
 }
+export function schemaPath(): string {
+  return `${_wikiDir}/schema.md`;
+}
 
 export interface NoteExtraction {
   summary: string;
@@ -196,6 +199,93 @@ export async function readIndexEntries(vault: Vault): Promise<IndexEntry[]> {
     if (m) entries.push({ linkPath: m[1], title: m[2], summary: m[3] });
   }
   return entries;
+}
+
+// ---------------------------------------------------------------------------
+// Schema layer (issue #3), Karpathy's third layer — kept as a NOTE, not a
+// hidden setting ("config as a note"): plain markdown the plugin parses before
+// every ingest. Living as a note means it versions with the wiki, is visible
+// and hand-editable, and shares the same "everything is a file you can read"
+// philosophy as the rest of the wiki. Three parsed sections: Tags (controlled
+// vocabulary), Naming (page-name rules), Concept threshold.
+// ---------------------------------------------------------------------------
+
+export interface WikiSchema {
+  tags: string[];
+  naming: Record<string, string>;
+  conceptThreshold: number;
+}
+
+const DEFAULT_NAMING: Record<string, string> = {
+  concept: 'kebab-case singular noun',
+  source: "follows the source note's filename",
+};
+const DEFAULT_CONCEPT_THRESHOLD = 4;
+
+// The self-documenting schema file. The prose header explains what this file
+// is and how to use it, so opening it is enough to understand the config.
+export function buildSchemaFile(
+  tags: string[],
+  naming: Record<string, string> = DEFAULT_NAMING,
+  conceptThreshold = DEFAULT_CONCEPT_THRESHOLD
+): string {
+  const tagLines = tags.length ? tags.map((t) => `- ${slugify(t)}`).join('\n') : '- (run "Suggest tag vocabulary" to fill this)';
+  const namingLines = Object.entries(naming)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+  return (
+    `# Wiki Schema\n\n` +
+    `This file is the wiki's own configuration — what Andrej Karpathy calls "config as a note".\n` +
+    `It is plain markdown you can read and edit by hand, and the plugin parses it before every\n` +
+    `ingest. Keeping the rules as a note (not a hidden setting) means they version with your wiki,\n` +
+    `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
+    `wiki. Three sections:\n\n` +
+    `- **Tags** — the controlled vocabulary. On ingest the model reuses these exact tags instead of\n` +
+    `  inventing synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together\n` +
+    `  share one tag and can later cluster into a concept page. You do NOT hand-write this — run the\n` +
+    `  command **"Suggest tag vocabulary"** and the model proposes it from the tags already on your\n` +
+    `  wiki; you review before it is written. One tag per line.\n` +
+    `- **Naming** — how pages are named, so names stay consistent.\n` +
+    `- **Concept threshold** — when this many pages share a tag, "Build a concept page" suggests it.\n\n` +
+    `## Tags\n\n${tagLines}\n\n` +
+    `## Naming\n\n${namingLines}\n\n` +
+    `## Concept threshold\n\n${conceptThreshold}\n`
+  );
+}
+
+function schemaSection(content: string, heading: string): string {
+  const re = new RegExp(`^##\\s+${heading}\\s*$`, 'im');
+  const m = content.match(re);
+  if (!m || m.index === undefined) return '';
+  const after = content.slice(m.index + m[0].length);
+  const next = after.search(/^##\s+/m);
+  return next === -1 ? after : after.slice(0, next);
+}
+
+export function parseSchema(content: string): WikiSchema {
+  const tags = schemaSection(content, 'Tags')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('- ') && !l.includes('(run "Suggest'))
+    .map((l) => l.slice(2).trim())
+    .filter(Boolean);
+  const naming: Record<string, string> = {};
+  for (const l of schemaSection(content, 'Naming').split('\n')) {
+    const m = l.match(/^([a-z][a-z0-9-]*)\s*:\s*(.+)$/i);
+    if (m) naming[m[1].toLowerCase()] = m[2].trim();
+  }
+  const tm = schemaSection(content, 'Concept threshold').match(/\d+/);
+  return {
+    tags,
+    naming: Object.keys(naming).length ? naming : DEFAULT_NAMING,
+    conceptThreshold: tm ? parseInt(tm[0], 10) : DEFAULT_CONCEPT_THRESHOLD,
+  };
+}
+
+export async function readSchema(vault: Vault): Promise<WikiSchema> {
+  const content = await readIfExists(vault, schemaPath());
+  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD };
+  return parseSchema(content);
 }
 
 // Lexical retrieval over the index, per the "read the index, then read the
