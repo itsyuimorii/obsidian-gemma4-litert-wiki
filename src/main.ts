@@ -1051,7 +1051,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const MAX_PAIRS = 12;
     this.status('Collecting wiki pages…');
     const pages: WikiPageMeta[] = await collectWikiPages(this.app);
-    const pairs = pairsSharingTag(pages, MAX_PAIRS);
+    const { pairs, total: uncappedPairs } = pairsSharingTag(pages, MAX_PAIRS);
     if (!pairs.length) {
       this.statusEnd(
         pages.length < 2
@@ -1063,18 +1063,37 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
 
     const flags: ContradictionFlag[] = [];
+    // Count the pairs the model failed to judge. Without this, twelve failed
+    // calls and twelve clean verdicts both report "0 flagged" — the same
+    // silent-failure pattern that hid the related-picker regression.
+    let unjudged = 0;
     try {
       for (let i = 0; i < pairs.length; i++) {
         const { a, b } = pairs[i];
         this.status(`Checking ${i + 1}/${pairs.length} — ${a.title} vs ${b.title}…`);
         const verdict = await this.judgeContradiction(a.title, a.summary, b.title, b.summary);
-        if (verdict?.contradict) flags.push({ a, b, reason: verdict.reason });
+        if (!verdict) unjudged++;
+        else if (verdict.contradict) flags.push({ a, b, reason: verdict.reason });
       }
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] contradiction scan failed', err);
       this.statusEnd(`Contradiction scan FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
       return;
+    }
+    // The pair cap is also silent otherwise: "0 flagged" reads as "your wiki is
+    // consistent" when pairs were never looked at.
+    const notChecked = uncappedPairs - pairs.length;
+    if (unjudged || notChecked) {
+      new Notice(
+        [
+          unjudged ? `${unjudged} of ${pairs.length} pairs could not be judged (see console)` : '',
+          notChecked ? `${notChecked} more pair${notChecked === 1 ? '' : 's'} not checked this run (cap ${MAX_PAIRS})` : '',
+        ]
+          .filter(Boolean)
+          .join('; ') + '.',
+        8000
+      );
     }
     new ContradictionReportModal(this.app, flags, pairs.length).open();
   }
@@ -1320,11 +1339,15 @@ export default class LiteRtSpikePlugin extends Plugin {
             {
               role: 'system',
               content:
-                'You compare two knowledge-base entries and decide if they FACTUALLY CONTRADICT — ' +
-                'state opposite or incompatible facts. Respond with ONLY a JSON object, no fences: ' +
-                '{"contradict": "yes" or "no", "reason": "one short sentence"}. Entries on different ' +
-                'topics do NOT contradict — answer "no". Only answer "yes" for a genuine factual ' +
-                'conflict, not merely different emphasis or overlap.',
+                'You compare two knowledge-base entries and decide whether they CONTRADICT each ' +
+                'other. Respond with ONLY a JSON object, no fences: ' +
+                '{"contradict": "yes" or "no", "reason": "one short sentence"}. ' +
+                'They contradict when they make OPPOSING claims about the same thing — one says a ' +
+                'method works and the other says it does not, one says a quantity is enough and the ' +
+                'other says it is not, one recommends an approach the other warns against. Both ' +
+                'cannot be true at once. ' +
+                'They do not contradict when they are simply about different topics, or cover the ' +
+                'same topic without disagreeing. Judge the claims as written.',
             },
           ],
         },
@@ -1339,11 +1362,23 @@ export default class LiteRtSpikePlugin extends Plugin {
       else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) return null;
-      const parsed = JSON.parse(match[0]) as { contradict?: string; reason?: string };
-      return {
-        contradict: String(parsed.contradict).toLowerCase() === 'yes',
-        reason: parsed.reason ?? '',
-      };
+      const parsed = JSON.parse(match[0]) as { contradict?: unknown; reason?: unknown };
+      // Accept every reasonable spelling of yes. The field is named
+      // "contradict", which reads boolean, so a model very naturally answers
+      // `true` — and matching only the exact string "yes" turned that into a
+      // silent NO. Same brittleness that made the related picker drop every
+      // pick when the model tidied a title.
+      const v = parsed.contradict;
+      const contradict =
+        v === true || (typeof v === 'string' && ['yes', 'true', 'y'].includes(v.trim().toLowerCase()));
+      const verdict = { contradict, reason: typeof parsed.reason === 'string' ? parsed.reason : '' };
+      console.debug('[gemma4-litert-wiki] contradiction verdict', {
+        a: titleA,
+        b: titleB,
+        raw: v,
+        contradict,
+      });
+      return verdict;
     } catch (err) {
       console.error('[gemma4-litert-wiki] judgeContradiction parse/gen failed', err);
       return null; // a bad judgment just drops the pair; never blocks the sweep
