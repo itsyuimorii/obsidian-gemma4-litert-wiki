@@ -31,7 +31,8 @@ export interface ScanOptions {
 
 export interface ScanCandidate {
   file: TFile;
-  reason: 'new' | 'changed';
+  // 'refresh' = already ingested and unchanged, re-offered on explicit request.
+  reason: 'new' | 'changed' | 'refresh';
 }
 
 export interface ScanResult {
@@ -43,6 +44,10 @@ export interface ScanResult {
   // Tracked so the caller can SAY so — a silent skip reads as "scan is
   // broken" to a user who just added notes (issue #41).
   skippedQuiet: number;
+  // Notes in scope that are already ingested AND unchanged. Skipped by
+  // default, but the caller can offer to re-ingest them — e.g. to regenerate
+  // pages after the vocabulary or prompts changed.
+  unchanged: TFile[];
 }
 
 // Deterministic, no model call. Walk the vault, drop the wiki folder and
@@ -70,6 +75,7 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
   let scanned = 0;
   let skippedQuiet = 0;
   const eligible: ScanCandidate[] = [];
+  const unchanged: TFile[] = [];
   for (const f of app.vault.getMarkdownFiles()) {
     if (f.path.startsWith(wikiPrefix)) continue;
     // Allow-list (opt-in scope): if set, only notes under an allowed folder.
@@ -88,19 +94,20 @@ export async function findIngestCandidates(app: App, opts: ScanOptions): Promise
       // Already has a wiki page. Re-offer only if a stored hash proves it changed.
       const h = hashes.get(f.path);
       if (h && contentHash(content) !== h) eligible.push({ file: f, reason: 'changed' });
+      else unchanged.push(f);
       continue;
     }
     eligible.push({ file: f, reason: 'new' });
   }
 
   const cappedOut = Math.max(0, eligible.length - opts.maxPerRun);
-  return { scanned, eligible: eligible.slice(0, opts.maxPerRun), cappedOut, skippedQuiet };
+  return { scanned, eligible: eligible.slice(0, opts.maxPerRun), cappedOut, skippedQuiet, unchanged };
 }
 
 // A generated-but-not-written draft awaiting the human tick.
 export interface IngestDraft {
   file: TFile;
-  reason: 'new' | 'changed';
+  reason: 'new' | 'changed' | 'refresh';
   pagePath: string;
   overwriting: boolean;
   pageContent: string; // the full markdown that will be written on approval
@@ -166,7 +173,7 @@ export class AutoIngestReviewModal extends Modal {
       });
       titleRow.createSpan({
         cls: 'gemma4-review-reasons',
-        text: [d.reason === 'changed' ? 'changed' : 'new', d.confidence ? `${d.confidence} confidence` : '', d.overwriting ? 'overwrites existing page' : ''].filter(Boolean).join(' · '),
+        text: [d.reason === 'refresh' ? 're-ingest' : d.reason, d.confidence ? `${d.confidence} confidence` : '', d.overwriting ? 'overwrites existing page' : ''].filter(Boolean).join(' · '),
       });
       main.createDiv({ cls: 'gemma4-review-summary', text: d.summary });
       if (d.tags.length) {
