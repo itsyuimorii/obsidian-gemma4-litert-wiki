@@ -263,7 +263,18 @@ export function buildSchemaFile(
     `## Tags\n\n${tagLines}\n\n` +
     `## Naming\n\n${namingLines}\n\n` +
     `## Concept threshold\n\n${conceptThreshold}\n\n` +
-    `## Pending\n\n${pendingLines}\n`
+    `## Pending\n\n` +
+    // Collapsed how-to callout (issue #43): the guidance lives right where the
+    // user is looking, and MUST be emitted here — queuePendingTags and
+    // Organize tags regenerate the whole file, wiping hand-added notes.
+    // Parser-safe: parseSchema only reads "- " lines; these start with "> ".
+    `> [!tip]- How to clear these\n` +
+    `> New tags ingest used that aren't in your vocabulary yet.\n` +
+    `> - **Keep one** — cut its line and paste it under \`## Tags\` above; later ingests reuse it.\n` +
+    `> - **Drop one** — delete its line; it won't enter the vocabulary (the tag still stays on the note it came from).\n` +
+    `> - **Fold them all in** — run **Organize tags**: it rebuilds the vocabulary from every tag in use and clears this list (the model may merge or rename).\n` +
+    `> The vocabulary never changes on its own.\n\n` +
+    `${pendingLines}\n`
   );
 }
 
