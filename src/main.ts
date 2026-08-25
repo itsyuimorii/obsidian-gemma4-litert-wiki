@@ -942,9 +942,18 @@ export default class LiteRtSpikePlugin extends Plugin {
       return;
     }
 
-    // Preserve any Naming / Concept-threshold the user has set.
+    // Preserve any Naming / Concept-threshold the user has set, and enforce
+    // the Rejected list: a banned tag never re-enters the vocabulary, no
+    // matter how many pages still carry it — the ban is the user's veto and
+    // outranks usage (mechanical filter, not a prompt hope).
     const existing = await readSchema(this.app.vault);
-    const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold);
+    const rejectedSet = new Set(existing.rejected.map((t) => slugify(t)));
+    vocab = vocab.filter((t) => !rejectedSet.has(t));
+    if (!vocab.length) {
+      new Notice('Every proposed tag is on the Rejected list — nothing to write.', 6000);
+      return;
+    }
+    const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold, [], existing.rejected);
     const path = schemaPath();
     const overwriting = !!this.app.vault.getAbstractFileByPath(path);
     new IngestPreviewModal(this.app, path, content, overwriting, () => {
@@ -1202,7 +1211,9 @@ export default class LiteRtSpikePlugin extends Plugin {
   // notes are never touched.
   async retagPagesToVocabulary() {
     const schema = await readSchema(this.app.vault);
-    const vocab = [...new Set(schema.tags.map((t) => slugify(t)).filter(Boolean))];
+    const rejected = new Set(schema.rejected.map((t) => slugify(t)));
+    // Never map INTO a banned tag, even if a stale hand-edit left it in both lists.
+    const vocab = [...new Set(schema.tags.map((t) => slugify(t)).filter((t) => t && !rejected.has(t)))];
     if (!vocab.length) {
       new Notice('No vocabulary in schema.md yet — run "Organize tags" first.', 6000);
       return;
@@ -2149,11 +2160,12 @@ export default class LiteRtSpikePlugin extends Plugin {
     // concept-page threshold. Capped so the list never crowds the context.
     const VOCAB_CAP = 40;
     const schema = await readSchema(this.app.vault);
+    const rejectedTags = new Set(schema.rejected.map((t) => slugify(t)));
     const vocab: string[] = [];
     const seenTag = new Set<string>();
     for (const t of [...schema.tags, ...schema.pending, ...this.wikiTagCounts().map(([tag]) => tag)]) {
       const tag = slugify(t);
-      if (!tag || seenTag.has(tag)) continue;
+      if (!tag || seenTag.has(tag) || rejectedTags.has(tag)) continue;
       seenTag.add(tag);
       vocab.push(tag);
       if (vocab.length >= VOCAB_CAP) break;
@@ -2252,6 +2264,8 @@ export default class LiteRtSpikePlugin extends Plugin {
                 })
                 .slice(0, 6)
             : [];
+          // A banned tag never lands on a page, no matter what the model says.
+          parsed.tags = parsed.tags.filter((t) => !rejectedTags.has(slugify(t)));
           // Force the summary to a single line: index.md is one-entry-per-line,
           // so a multi-line summary would break across lines and pollute the
           // index with non-entry junk.
