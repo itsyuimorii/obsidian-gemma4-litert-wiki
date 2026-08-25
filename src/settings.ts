@@ -13,6 +13,11 @@ export interface GemmaWikiSettings {
   // Custom skills (issue #4): one per line, "Label :: prompt", appended to
   // the built-in skills menu.
   customSkills: string;
+  // Background scan (issue #2): periodically COUNT new/changed notes and
+  // show a status-bar chip. Counting is deterministic (no model / no GPU);
+  // drafting only runs when the user clicks the chip. Default OFF.
+  autoScanEnabled: boolean;
+  autoScanIntervalHours: number;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -23,6 +28,8 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanMaxPerRun: 10,
   scanExclude: '',
   customSkills: '',
+  autoScanEnabled: false,
+  autoScanIntervalHours: 6,
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -203,6 +210,35 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.scanExclude = v;
             await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Show a background "to review" count')
+      .setDesc(
+        'Periodically COUNT new/changed notes and show them in the status bar. ' +
+          'Counting is instant and never runs the model — drafting only happens when you click the chip. Default off.'
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.autoScanEnabled).onChange(async (v) => {
+          this.plugin.settings.autoScanEnabled = v;
+          await this.plugin.saveSettings();
+          this.plugin.rescheduleAutoScan();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Re-count every (hours)')
+      .setDesc('How often the background count refreshes while Obsidian is open.')
+      .addSlider((sl) =>
+        sl
+          .setLimits(1, 24, 1)
+          .setValue(this.plugin.settings.autoScanIntervalHours)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.autoScanIntervalHours = v;
+            await this.plugin.saveSettings();
+            this.plugin.rescheduleAutoScan();
           })
       );
   }
