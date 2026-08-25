@@ -407,7 +407,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-concept-page',
-      name: 'Build a concept page from a tag (local Gemma)',
+      name: 'Build a concept page from a tag or mention (local Gemma)',
       callback: () => void this.createConceptPage(),
     });
 
@@ -1176,16 +1176,30 @@ export default class LiteRtSpikePlugin extends Plugin {
     // threshold there actually changes what is offered.
     const { conceptThreshold } = await readSchema(this.app.vault);
     const minMembers = Math.max(2, conceptThreshold);
-    // Gather tag -> member pages (from page frontmatter tags + index summaries).
+    // Cluster pages by shared tag AND by shared mention (#48). Mentions are
+    // the entities ingest already extracts — "the things several pages talk
+    // about" is exactly what a concept page is for, so they are a second,
+    // finer-grained source of candidates. It also gives the mentions field a
+    // real consumer instead of being write-only. Grouped case-insensitively;
+    // the first spelling seen names the cluster.
     const entries = await readIndexEntries(this.app.vault);
     const byLinkPath = new Map(entries.map((e) => [e.linkPath, e]));
     const clusters = new Map<string, IndexEntry[]>();
+    const clusterLabel = new Map<string, string>();
     const SKIP = new Set(['concept', 'answer', 'chat']);
+    const addTo = (key: string, label: string, entry: IndexEntry) => {
+      if (!clusterLabel.has(key)) clusterLabel.set(key, label);
+      const list = clusters.get(key) ?? [];
+      // A page can carry the same subject as both a tag and a mention.
+      if (!list.some((e) => e.linkPath === entry.linkPath)) list.push(entry);
+      clusters.set(key, list);
+    };
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!f.path.startsWith(`${wikiDir()}/`)) continue;
       const entry = byLinkPath.get(f.path.replace(/\.md$/, ''));
       if (!entry) continue;
-      const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      const raw = fm?.tags;
       const tags = Array.isArray(raw)
         ? raw.map((t) => String(t))
         : typeof raw === 'string'
@@ -1193,19 +1207,26 @@ export default class LiteRtSpikePlugin extends Plugin {
           : [];
       for (const t of tags) {
         if (SKIP.has(t)) continue;
-        const list = clusters.get(t) ?? [];
-        list.push(entry);
-        clusters.set(t, list);
+        addTo(slugify(t), t, entry);
+      }
+      const rawMentions = fm?.mentions;
+      const mentions = Array.isArray(rawMentions)
+        ? rawMentions.map((m) => String(m)).filter((m) => m.trim())
+        : [];
+      for (const m of mentions) {
+        const key = slugify(m);
+        if (!key || SKIP.has(key)) continue;
+        addTo(key, m.trim(), entry);
       }
     }
     const candidates = [...clusters.entries()]
       .filter(([, members]) => members.length >= minMembers)
-      .map(([tag, members]) => ({ tag, members }))
+      .map(([key, members]) => ({ tag: clusterLabel.get(key) ?? key, members }))
       .sort((a, b) => b.members.length - a.members.length);
 
     if (!candidates.length) {
       new Notice(
-        `No tag is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
+        `No tag or mention is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
           'Ingest more notes, or lower the threshold in schema.md.',
         7000
       );
@@ -1991,10 +2012,24 @@ export default class LiteRtSpikePlugin extends Plugin {
           if (!['high', 'med', 'low'].includes(parsed.confidence)) parsed.confidence = 'med';
           // mentions is optional (issue #18) — default to [] and cap at 6 so
           // a model that omits or over-produces it never fails the extraction.
-          parsed.mentions =
-            Array.isArray(parsed.mentions)
-              ? parsed.mentions.filter((m) => typeof m === 'string' && m.trim()).slice(0, 6)
-              : [];
+          // Trimmed and de-duped case-insensitively (#48): the model emits
+          // "Espresso" on one page and "espresso" on the next, which would
+          // otherwise read as two different entities everywhere mentions are
+          // grouped. First spelling seen wins, so the display keeps the
+          // model's own capitalisation for proper nouns.
+          const seenMention = new Set<string>();
+          parsed.mentions = Array.isArray(parsed.mentions)
+            ? parsed.mentions
+                .filter((m): m is string => typeof m === 'string' && !!m.trim())
+                .map((m) => m.trim())
+                .filter((m) => {
+                  const key = m.toLowerCase();
+                  if (seenMention.has(key)) return false;
+                  seenMention.add(key);
+                  return true;
+                })
+                .slice(0, 6)
+            : [];
           // Force the summary to a single line: index.md is one-entry-per-line,
           // so a multi-line summary would break across lines and pollute the
           // index with non-entry junk.
