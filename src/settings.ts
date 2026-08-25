@@ -9,7 +9,11 @@ export interface GemmaWikiSettings {
   // Semi-auto ingest scan (manual trigger; no background timer yet).
   scanQuietHours: number;
   scanMaxPerRun: number;
-  scanExclude: string; // comma-separated path prefixes to skip
+  // Allow-list: "Scan now" only looks at notes under these folders (comma-
+  // separated path prefixes). Blank = nothing to scan (opt-in by design), so
+  // scan never sweeps the whole vault. Cmd+P ingest still works on any note.
+  scanInclude: string;
+  scanExclude: string; // comma-separated path prefixes to skip (within the allow-list)
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -18,6 +22,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   defaultMode: 'note',
   scanQuietHours: 3,
   scanMaxPerRun: 10,
+  scanInclude: '',
   scanExclude: '',
 };
 
@@ -156,11 +161,28 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Scan now')
       .setDesc(
-        'Find new or changed notes, draft a card for each, and review them all at once before ' +
-          'anything is written. Drafts are never saved without your tick. (Also available from the ' +
-          'command palette as "Scan notes for wiki".)'
+        'Sweep the folders below for new or changed notes, draft a card for each, and review them ' +
+          'all at once before anything is written — drafts are never saved without your tick. ' +
+          'To ingest one specific note instead, use the command palette: "Ingest active note into wiki".'
       )
       .addButton((btn) => btn.setButtonText('Scan now').onClick(() => void this.plugin.scanAndReviewIngest()));
+
+    new Setting(containerEl)
+      .setName('Scan these folders')
+      .setDesc(
+        'Scan only looks at notes under these folders (comma-separated, e.g. "走り書き, research"). ' +
+          'Everything else in your vault is left alone. Leave blank and scan has nothing to do — this ' +
+          'is opt-in on purpose, so scanning never pulls in notes you did not mean to file.'
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder('走り書き, research')
+          .setValue(this.plugin.settings.scanInclude)
+          .onChange(async (v) => {
+            this.plugin.settings.scanInclude = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName('Quiet period (hours)')
@@ -192,7 +214,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Exclude folders')
-      .setDesc('Comma-separated path prefixes to skip when scanning (e.g. templates, attachments). The wiki folder is always excluded.')
+      .setDesc('Optional: within the scanned folders above, skip these sub-paths (comma-separated, e.g. a drafts subfolder). The wiki folder is always excluded.')
       .addText((text) =>
         text
           .setPlaceholder('Templates, 10_リソース')

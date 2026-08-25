@@ -1012,10 +1012,23 @@ export default class LiteRtSpikePlugin extends Plugin {
   // stay here because they need the engine. Manual trigger only — no
   // background timer yet, so nothing runs the GPU while you are away.
   async scanAndReviewIngest() {
+    // Allow-list scope (opt-in): scan only looks at the folders the user named.
+    // Blank means nothing to scan — guide them to set it (or ingest one note
+    // by hand) rather than silently sweeping the whole vault.
+    const includePrefixes = this.settings.scanInclude.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!includePrefixes.length) {
+      new Notice(
+        'No scan folders set. In Settings → "Scan these folders", name the folder(s) to scan ' +
+          '(e.g. your inbox). To file one specific note instead, use "Ingest active note into wiki".',
+        9000
+      );
+      return;
+    }
     this.status('Scanning for new or changed notes…');
     const result = await findIngestCandidates(this.app, {
       quietHours: this.settings.scanQuietHours,
       maxPerRun: this.settings.scanMaxPerRun,
+      includePrefixes,
       excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
     });
     if (!result.eligible.length) {
