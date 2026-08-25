@@ -6,12 +6,19 @@ export interface GemmaWikiSettings {
   wikiDir: string;
   staleDays: number;
   defaultMode: 'note' | 'wiki';
+  // Semi-auto ingest scan (manual trigger; no background timer yet).
+  scanQuietHours: number;
+  scanMaxPerRun: number;
+  scanExclude: string; // comma-separated path prefixes to skip
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   wikiDir: DEFAULT_WIKI_DIR,
   staleDays: 30,
   defaultMode: 'note',
+  scanQuietHours: 3,
+  scanMaxPerRun: 10,
+  scanExclude: '',
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -111,6 +118,56 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (v) => {
             this.plugin.settings.staleDays = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // ---------- Scan ----------
+    new Setting(containerEl).setName('Scan for new notes').setHeading();
+    containerEl.createEl('p', {
+      cls: 'setting-item-description',
+      text:
+        'Run the "Scan notes for wiki" command to find new or changed notes, draft a card for each, ' +
+        'and review them all at once before anything is written. Drafts are never saved without your tick.',
+    });
+
+    new Setting(containerEl)
+      .setName('Quiet period (hours)')
+      .setDesc('Skip notes edited within this many hours — you are probably still working on them.')
+      .addSlider((sl) =>
+        sl
+          .setLimits(0, 24, 1)
+          .setValue(this.plugin.settings.scanQuietHours)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.scanQuietHours = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Max notes per scan')
+      .setDesc('Cap each scan so a large backlog does not run the GPU through dozens of notes at once.')
+      .addSlider((sl) =>
+        sl
+          .setLimits(1, 30, 1)
+          .setValue(this.plugin.settings.scanMaxPerRun)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.scanMaxPerRun = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Exclude folders')
+      .setDesc('Comma-separated path prefixes to skip when scanning (e.g. templates, attachments). The wiki folder is always excluded.')
+      .addText((text) =>
+        text
+          .setPlaceholder('Templates, 10_リソース')
+          .setValue(this.plugin.settings.scanExclude)
+          .onChange(async (v) => {
+            this.plugin.settings.scanExclude = v;
             await this.plugin.saveSettings();
           })
       );
