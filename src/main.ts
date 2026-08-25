@@ -917,6 +917,12 @@ export default class LiteRtSpikePlugin extends Plugin {
   // fixed member list, write one overview) rather than open multi-step
   // generation.
   async createConceptPage() {
+    // Concept threshold (issue #39): a tag only becomes a concept-page
+    // candidate once at least this many pages share it. Read from schema.md
+    // ("config as a note") instead of a hardcoded number, so editing the
+    // threshold there actually changes what is offered.
+    const { conceptThreshold } = await readSchema(this.app.vault);
+    const minMembers = Math.max(2, conceptThreshold);
     // Gather tag -> member pages (from page frontmatter tags + index summaries).
     const entries = await readIndexEntries(this.app.vault);
     const byLinkPath = new Map(entries.map((e) => [e.linkPath, e]));
@@ -940,12 +946,16 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     const candidates = [...clusters.entries()]
-      .filter(([, members]) => members.length >= 2)
+      .filter(([, members]) => members.length >= minMembers)
       .map(([tag, members]) => ({ tag, members }))
       .sort((a, b) => b.members.length - a.members.length);
 
     if (!candidates.length) {
-      new Notice('No tag is shared by two or more pages yet — ingest more notes first.', 6000);
+      new Notice(
+        `No tag is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
+          'Ingest more notes, or lower the threshold in schema.md.',
+        7000
+      );
       return;
     }
 
@@ -1334,10 +1344,19 @@ export default class LiteRtSpikePlugin extends Plugin {
     // in use on the wiki (frequency-ranked). Either way capped so the list
     // never crowds the 4096-token context.
     const VOCAB_CAP = 40;
-    const schemaTags = (await readSchema(this.app.vault)).tags;
+    const schema = await readSchema(this.app.vault);
+    const schemaTags = schema.tags;
     const vocab = (schemaTags.length ? schemaTags : this.wikiTagCounts().map(([t]) => t)).slice(0, VOCAB_CAP);
     const vocabLine = vocab.length
       ? ` Prefer tags from this list when one fits, reusing the exact spelling: ${vocab.join(', ')}. Only coin a new tag if none of these apply.`
+      : '';
+    // Naming rule (issue #40): the schema.md "Naming" section's `concept:` rule
+    // actually shapes new tag names by guiding the model — so editing that line
+    // changes output, instead of being a dead descriptive note. (kebab-case is
+    // still enforced mechanically by slugify; this covers the rest, e.g.
+    // "singular noun", and works for any language the model handles.)
+    const namingLine = schema.naming.concept
+      ? ` When you must coin a new tag, name it following this convention: ${schema.naming.concept}.`
       : '';
 
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -1359,7 +1378,8 @@ export default class LiteRtSpikePlugin extends Plugin {
                   '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
                   'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
                   'misread).' +
-                  vocabLine,
+                  vocabLine +
+                  namingLine,
               },
             ],
           },
