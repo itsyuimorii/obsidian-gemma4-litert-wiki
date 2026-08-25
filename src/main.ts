@@ -129,6 +129,8 @@ export default class LiteRtSpikePlugin extends Plugin {
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
   private statusNotice: Notice | null = null;
+  private scanStatusEl: HTMLElement | null = null;
+  private autoScanIntervalId: number | null = null;
   settings: GemmaWikiSettings = { ...DEFAULT_SETTINGS };
 
   // One shared status Notice for the whole plugin: later messages update
@@ -173,6 +175,14 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.addRibbonIcon('gemma-wiki-logo', 'Chat with note (Gemma, local)', () => {
       void this.activateChatView();
     });
+
+    // Status-bar "N to review" chip (issue #2). Clicking runs the full
+    // scan+draft+review flow; the chip's count itself is model-free.
+    this.scanStatusEl = this.addStatusBarItem();
+    this.scanStatusEl.addClass('mod-clickable');
+    this.scanStatusEl.hide();
+    this.scanStatusEl.addEventListener('click', () => void this.scanAndReviewIngest());
+    this.app.workspace.onLayoutReady(() => this.rescheduleAutoScan());
 
     this.addCommand({
       id: 'litert-open-chat',
@@ -1154,11 +1164,55 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
   }
 
+  // Background "to review" count (issue #2). Turns the setting on/off and
+  // (re)arms the interval. Called on layout-ready and whenever the setting
+  // changes. Counting is model-free, so it's safe to run unattended; only a
+  // click on the chip spends GPU (via scanAndReviewIngest).
+  rescheduleAutoScan() {
+    if (this.autoScanIntervalId !== null) {
+      window.clearInterval(this.autoScanIntervalId);
+      this.autoScanIntervalId = null;
+    }
+    if (!this.settings.autoScanEnabled) {
+      this.scanStatusEl?.hide();
+      return;
+    }
+    void this.refreshScanBadge();
+    const ms = Math.max(1, this.settings.autoScanIntervalHours) * 3_600_000;
+    this.autoScanIntervalId = window.setInterval(() => void this.refreshScanBadge(), ms);
+    this.registerInterval(this.autoScanIntervalId);
+  }
+
+  // Deterministic count only — no engine, no GPU. Updates the status-bar
+  // chip with how many notes are new or changed and worth reviewing.
+  async refreshScanBadge() {
+    if (!this.scanStatusEl || !this.settings.autoScanEnabled) return;
+    try {
+      const result = await findIngestCandidates(this.app, {
+        quietHours: this.settings.scanQuietHours,
+        maxPerRun: this.settings.scanMaxPerRun,
+        excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
+      });
+      const total = result.eligible.length + result.cappedOut;
+      if (total > 0) {
+        this.scanStatusEl.setText(`📥 ${total} to review`);
+        this.scanStatusEl.setAttr('aria-label', 'New or changed notes — click to scan and review');
+        this.scanStatusEl.show();
+      } else {
+        this.scanStatusEl.hide();
+      }
+    } catch (err) {
+      console.error('[gemma4-litert-wiki] scan badge refresh failed', err);
+      this.scanStatusEl.hide();
+    }
+  }
+
   // Semi-automatic ingest: scan (deterministic) → draft each candidate
   // (one model call apiece, same as manual ingest) → batch review gate.
   // The scan and the review modal live in auto-ingest.ts; the model calls
-  // stay here because they need the engine. Manual trigger only — no
-  // background timer yet, so nothing runs the GPU while you are away.
+  // stay here because they need the engine. Drafting is only ever triggered
+  // by the user (command or status-bar chip) — the background timer only
+  // ever counts, never runs the model.
   async scanAndReviewIngest() {
     this.status('Scanning for new or changed notes…');
     const result = await findIngestCandidates(this.app, {
@@ -1235,6 +1289,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
       this.refreshIngestBadges();
+      void this.refreshScanBadge();
       new Notice(`Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`, 4000);
     }).open();
   }
