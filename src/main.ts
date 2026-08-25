@@ -345,7 +345,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-suggest-vocab',
-      name: 'Clean up tags (schema.md, local Gemma)',
+      name: 'Organize tags (schema.md, local Gemma)',
       callback: () => void this.suggestTagVocabulary(),
     });
 
@@ -795,7 +795,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   // Tally the tags in use across wiki pages (frontmatter), skipping the
   // plugin's own structural tags, sorted most-frequent first. Shared by
-  // "Clean up tags" (which cleans this list) and ingest (which, before any
+  // "Organize tags" (which cleans this list) and ingest (which, before any
   // vocabulary exists, prefers these so tags converge from day one — issue #38).
   private wikiTagCounts(): [string, number][] {
     const SKIP = new Set(['concept', 'answer', 'chat']);
@@ -822,13 +822,13 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (!counts.length) {
       new Notice(
         'No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
-          'Ingest a few notes first, then run "Clean up tags".',
+          'Ingest a few notes first, then run "Organize tags".',
         7000
       );
       return;
     }
 
-    this.status('Cleaning up the tag vocabulary…');
+    this.status('Organizing the tag vocabulary…');
     let vocab: string[];
     try {
       vocab = await this.cleanTagVocabulary(counts);
@@ -860,9 +860,16 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   // One strict-JSON call: given the tags currently in use (with counts),
-  // return a merged canonical vocabulary. The model only reshapes tags that
-  // already exist — it merges synonyms and drops noise, it does not invent.
+  // return a SMALL merged vocabulary. A controlled vocabulary is meant to
+  // converge — the model merges synonyms AND collapses narrow subtopics into
+  // broader parents, aiming for roughly one tag per 2-3 pages; it only reshapes
+  // tags that already exist, it does not invent.
   async cleanTagVocabulary(tagsWithCounts: [string, number][]): Promise<string[]> {
+    // Target size from how many pages there are (≈ total tag-uses / 3 tags per
+    // page): ~1 tag per 2.5 pages, clamped so tiny and huge wikis stay sane.
+    const totalUses = tagsWithCounts.reduce((s, [, n]) => s + n, 0);
+    const approxPages = Math.max(1, Math.round(totalUses / 3));
+    const target = Math.min(25, Math.max(6, Math.round(approxPages / 2.5)));
     const engine = await this.ensureEngine((t) => this.status(t));
     const { SamplerType } = await import('@litert-lm/core');
     let conversation: import('@litert-lm/core').Conversation | undefined;
@@ -873,18 +880,22 @@ export default class LiteRtSpikePlugin extends Plugin {
             {
               role: 'system',
               content:
-                'You clean up a tag vocabulary. Given the tags currently in use (with how many pages ' +
-                'use each), respond with ONLY a JSON object, no fences: {"vocabulary": ["tag", ...]}. ' +
-                'Merge near-synonyms into ONE canonical spelling (e.g. llm-eval / llm-evaluation / ' +
-                'evals -> llm-evaluation), drop one-off noise, keep the useful ones. Use lowercase ' +
-                'kebab-case. Only reshape tags from the input — do NOT invent new topics.',
+                "You organize a personal wiki's tag vocabulary into a SMALL controlled list. Given " +
+                'the tags currently in use (with how many pages use each), respond with ONLY a JSON ' +
+                'object, no fences: {"vocabulary": ["tag", ...]}. ' +
+                `Aim for about ${target} tags — a controlled vocabulary is meant to CONVERGE, not ` +
+                'label every nuance. Merge aggressively: collapse near-synonyms AND narrow subtopics ' +
+                'into their broader parent (e.g. llm-eval / llm-evaluation / evals -> llm-evaluation; ' +
+                'index-funds / etf-basics / active-management -> investing; gpu-serving / llm-inference ' +
+                '-> llm-optimization). Drop one-off noise. Prefer broad, reusable tags over fine ones. ' +
+                'Use lowercase kebab-case. Only reshape tags from the input — do NOT invent new topics.',
             },
           ],
         },
         sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 512 },
       });
       const list = tagsWithCounts.map(([t, n]) => `- ${t} (${n})`).join('\n');
-      this.status('Asking Gemma to clean up the vocabulary…');
+      this.status('Asking Gemma to organize the vocabulary…');
       const message = await conversation.sendMessage(`Tags in use:\n${list}`);
       let raw = '';
       const c = message.content;
