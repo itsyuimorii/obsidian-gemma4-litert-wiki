@@ -183,9 +183,9 @@ export class ChatView extends ItemView {
               run: () => ask('What did I add to the wiki recently, based on the activity log?'),
             },
             {
-              label: 'Quiz me',
+              label: 'Find connections',
               run: () =>
-                ask('Create 5 practice questions from my wiki material. Put the answer in bold below each question.'),
+                ask('What connections or common themes link the pages in my wiki? Cite the pages.'),
             },
           ];
     for (const item of items) {
@@ -280,7 +280,10 @@ export class ChatView extends ItemView {
     setIcon(titleIcon, 'gemma-wiki-logo');
     titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma Wiki' });
     titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: 'local' });
-    const saveConvBtn = titleRow.createEl('button', {
+    // Grouped at the right so the two icons sit together, not pushed to
+    // opposite ends by the title's auto margin.
+    const headerActions = titleRow.createDiv({ cls: 'gemma4-chat-header-actions' });
+    const saveConvBtn = headerActions.createEl('button', {
       cls: 'gemma4-chat-clear',
       attr: { 'aria-label': 'Save conversation to wiki' },
     });
@@ -288,11 +291,11 @@ export class ChatView extends ItemView {
     setTooltip(saveConvBtn, 'Save conversation to wiki');
     saveConvBtn.addEventListener('click', () => void this.saveConversation());
 
-    const clearBtn = titleRow.createEl('button', {
+    const clearBtn = headerActions.createEl('button', {
       cls: 'gemma4-chat-clear',
       attr: { 'aria-label': 'Clear chat' },
     });
-    setIcon(clearBtn, 'rotate-ccw');
+    setIcon(clearBtn, 'trash-2');
     setTooltip(clearBtn, 'Clear chat');
     clearBtn.addEventListener('click', () => this.clearChat());
 
