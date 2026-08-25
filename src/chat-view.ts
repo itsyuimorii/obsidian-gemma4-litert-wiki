@@ -20,6 +20,7 @@ import {
   chatTranscriptPath,
   clampToTokens,
   ensureWikiScaffold,
+  expandByLinks,
   getIngestedSourcePaths,
   indexPath,
   loadPages,
@@ -639,8 +640,13 @@ export class ChatView extends ItemView {
         return null;
       }
       const selected = scoreEntries(question, entries);
-      const pages = selected.length
-        ? await loadPages(this.app.vault, selected, CONTEXT_TOKEN_BUDGET * 3)
+      // Expand one hop through the link graph (issue #14): a page linked to
+      // or from a lexical hit often holds the answer even when its own summary
+      // didn't share the question's words. Seeds still decide noPageMatch.
+      const expanded = selected.length ? expandByLinks(this.app, selected, entries, 2) : [];
+      const retrieved = [...selected, ...expanded];
+      const pages = retrieved.length
+        ? await loadPages(this.app.vault, retrieved, CONTEXT_TOKEN_BUDGET * 3)
         : '';
       // Catalog + recent log always ride along: they are small, and they
       // make meta-questions answerable ("what is in my wiki?", "what did
@@ -668,8 +674,8 @@ export class ChatView extends ItemView {
         sourcePath: indexPath(),
         sources: [
           ...attachments.sources,
-          ...(selected.length
-            ? selected.map((e) => ({ title: e.title, linkPath: e.linkPath }))
+          ...(retrieved.length
+            ? retrieved.map((e) => ({ title: e.title, linkPath: e.linkPath }))
             : [{ title: 'Wiki index', linkPath: indexPath().replace(/\.md$/, '') }]),
         ],
         // No page matched the question — the answer leans on catalog/log
