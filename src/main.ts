@@ -242,7 +242,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // than rejecting on a char count — a summary card of the first
         // part beats nothing, and the marker tells the model the tail is
         // missing.
-        const clamped = clampToTokens(cleaned, 2600);
+        const clamped = clampToTokens(cleaned, this.budget('ingest'));
         if (clamped.truncated) {
           new Notice('Note is long — ingesting a truncated version that fits the local model context.', 6000);
         }
@@ -816,7 +816,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.status(`Suggesting tags & links for "${file.basename}"…`);
     try {
-      const clamped = clampToTokens(cleanClippedMarkdown(content), 2600);
+      const clamped = clampToTokens(cleanClippedMarkdown(content), this.budget('ingest'));
       const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
         this.status(`Suggesting for "${file.basename}" — ${t}`)
       );
@@ -1131,7 +1131,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         this.status(`Checking ${i + 1}/${samples.length} — ${s.title}…`);
         const srcFile = this.app.vault.getAbstractFileByPath(s.sourcePath);
         if (!(srcFile instanceof TFile)) continue; // source note gone
-        const srcText = clampToTokens(cleanClippedMarkdown(await this.app.vault.read(srcFile)), 2200).text;
+        const srcText = clampToTokens(cleanClippedMarkdown(await this.app.vault.read(srcFile)), this.budget('provenance')).text;
         const unsupported = await this.checkProvenance(srcText, s.keyPoints);
         if (unsupported.length) {
           flags.push({ linkPath: s.linkPath, title: s.title, sourcePath: s.sourcePath, unsupported });
@@ -1782,7 +1782,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       const { file, reason } = eligible[i];
       try {
         const content = await this.app.vault.read(file);
-        const clamped = clampToTokens(cleanClippedMarkdown(content), 2600);
+        const clamped = clampToTokens(cleanClippedMarkdown(content), this.budget('ingest'));
         const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
           this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`)
         );
@@ -1895,11 +1895,11 @@ export default class LiteRtSpikePlugin extends Plugin {
       /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g
     ) ?? []).length;
     const estTokens = Math.ceil(cjkChars * 1.5 + (content.length - cjkChars) / 4);
-    const MAX_INPUT_TOKENS = 1750;
+    const MAX_INPUT_TOKENS = this.budget('improve');
     if (estTokens > MAX_INPUT_TOKENS) {
       new Notice(
         `${usingSelection ? 'Selection' : `"${file.basename}"`} is ~${estTokens} tokens — over the ` +
-          `${MAX_INPUT_TOKENS} limit (input plus a same-sized rewrite must fit the model's 4096-token context; ` +
+          `${MAX_INPUT_TOKENS} limit (input plus a same-sized rewrite must fit the model's context window; ` +
           'CJK text costs ~1.5 tokens per character, so the char budget is smaller for Chinese/Japanese notes). ' +
           (usingSelection
             ? 'Select a smaller passage.'
@@ -2405,6 +2405,29 @@ export default class LiteRtSpikePlugin extends Plugin {
     return getModelBlob(dir, MODEL_URL, report);
   }
 
+  // Per-feature input budgets derived from the configured context window.
+  // Floors are the old 4096-context values, so a small window behaves exactly
+  // as before; ceilings keep prefill latency sane even at 64k — feeding the
+  // model 60k tokens per call would take minutes, not seconds.
+  budget(kind: 'chat' | 'ingest' | 'improve' | 'provenance'): number {
+    const ctx = this.settings.contextTokens || 4096;
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    switch (kind) {
+      case 'chat':
+        // Grounding for one answer: context minus output + instructions.
+        return clamp(ctx - 2000, 2400, 24000);
+      case 'ingest':
+        // One note being summarized into a card.
+        return clamp(Math.floor(ctx / 3), 2600, 16000);
+      case 'improve':
+        // Input cap where input PLUS a same-sized rewrite must fit.
+        return clamp(Math.floor((ctx - 1000) / 2.2), 1750, 24000);
+      case 'provenance':
+        // Source note fed to the claims check.
+        return clamp(Math.floor(ctx / 5), 2200, 12000);
+    }
+  }
+
   // Not private: ChatView (a separate class, same session) reuses the
   // single warm Engine instance rather than loading its own.
   ensureEngine(onProgress: (text: string) => void): Promise<Engine> {
@@ -2417,7 +2440,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         // benchmarkEnabled surfaces real prefill/decode tok/s + time-to-
         // first-token via conversation.getBenchmarkInfo() after generation,
         // instead of a chunk-count proxy.
-        const engine = await Engine.create({ model: modelBlob, benchmarkEnabled: true });
+        // Context window from settings (mainExecutorSettings.maxNumTokens is
+        // the documented knob; the official example uses 8192, community
+        // reports run Gemma E4B at 64k). Applied only here, at creation — a
+        // changed setting needs a plugin reload.
+        const engine = await Engine.create({
+          model: modelBlob,
+          benchmarkEnabled: true,
+          mainExecutorSettings: { maxNumTokens: this.settings.contextTokens || 4096 },
+        });
         onProgress('Ready.');
         return engine;
       })().catch((err) => {
