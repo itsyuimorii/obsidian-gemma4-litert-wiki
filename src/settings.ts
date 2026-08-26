@@ -4,6 +4,10 @@ import { DEFAULT_WIKI_DIR } from './wiki-store';
 
 export interface GemmaWikiSettings {
   wikiDir: string;
+  // Engine context window (maxNumTokens). Bigger = longer notes fit and more
+  // grounding per answer, at the cost of GPU memory and first-token latency.
+  // Applied at engine creation, so changes need a plugin reload.
+  contextTokens: number;
   staleDays: number;
   defaultMode: 'note' | 'wiki';
   // Semi-auto ingest scan (manual trigger; no background timer yet).
@@ -23,6 +27,7 @@ export interface GemmaWikiSettings {
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   wikiDir: DEFAULT_WIKI_DIR,
+  contextTokens: 64000,
   staleDays: 30,
   defaultMode: 'note',
   scanQuietHours: 3,
@@ -69,6 +74,28 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       btn.setButtonText(status.downloaded ? 'Re-download' : status.partialGB ? 'Resume download' : 'Download model');
       btn.onClick(() => void this.plugin.downloadModelFromSettings());
     });
+
+    new Setting(containerEl)
+      .setName('Context window (tokens)')
+      .setDesc(
+        'How much the model can hold at once — longer notes fit whole, and answers can ground on ' +
+          'more material. Costs GPU memory and first-token latency. Takes effect after the plugin ' +
+          'reloads. If the model fails to load or answers degrade after raising this, set it lower.'
+      )
+      .addDropdown((dd) =>
+        dd
+          .addOption('4096', '4,096 (small / safest)')
+          .addOption('8192', '8,192')
+          .addOption('16384', '16,384')
+          .addOption('32768', '32,768')
+          .addOption('64000', '64,000 (max)')
+          .setValue(String(this.plugin.settings.contextTokens))
+          .onChange(async (v) => {
+            this.plugin.settings.contextTokens = parseInt(v, 10) || 64000;
+            await this.plugin.saveSettings();
+            new Notice('Context window saved — reload the plugin (toggle it off/on) to apply.', 6000);
+          })
+      );
 
     // ---------- Wiki ----------
     new Setting(containerEl).setName('Wiki').setHeading();
