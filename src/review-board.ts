@@ -16,6 +16,7 @@ export interface ReviewItem {
   confidence: string;
   ageDays: number | null;
   drifted: boolean;
+  staleConcept: boolean;
   reasons: string[];
 }
 
@@ -62,15 +63,27 @@ export async function buildReviewBoard(app: App, staleDays: number): Promise<Rev
       }
     }
 
+    // Stale concept overview (issue #60 ripple): membership changed after the
+    // overview was written — ingest added a page or the pruner removed one —
+    // so the prose no longer reflects ## Pages. Rebuilding the concept page
+    // clears the flag.
+    // Guarded on kind: the community frontmatter convention also puts
+    // `stale` on ordinary wiki pages, and "rebuild this concept page" would
+    // be the wrong instruction for one of those.
+    const staleConcept = fm?.kind === 'concept' && fm?.stale === true;
+    if (staleConcept) reasons.push('members changed — rebuild this concept page');
+
     if (ageDays !== null && ageDays >= staleDays) reasons.push(`${ageDays}d since ingest`);
     if (reasons.length) {
-      items.push({ path: f.path, title: f.basename, confidence, ageDays, drifted, reasons });
+      items.push({ path: f.path, title: f.basename, confidence, ageDays, drifted, staleConcept, reasons });
     }
   }
 
-  // Order by urgency: source drift first (actionable — re-ingest), then low
-  // confidence, then medium, then by age.
-  const rank = (i: ReviewItem) => (i.drifted ? -1 : i.confidence === 'low' ? 0 : i.confidence === 'med' ? 1 : 2);
+  // Order by urgency: source drift and stale concept overviews first (both
+  // actionable — re-ingest / rebuild), then low confidence, then medium,
+  // then by age.
+  const rank = (i: ReviewItem) =>
+    i.drifted || i.staleConcept ? -1 : i.confidence === 'low' ? 0 : i.confidence === 'med' ? 1 : 2;
   items.sort((a, b) => rank(a) - rank(b) || (b.ageDays ?? 0) - (a.ageDays ?? 0));
 
   return { scanned: files.length, items };
@@ -92,7 +105,9 @@ export class ReviewBoardModal extends Modal {
     contentEl.createEl('h3', { text: 'Wiki review board' });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
-      text: `${this.board.items.length} of ${this.board.scanned} pages worth a look — low-confidence extractions and pages untouched for ${this.staleDays}+ days.`,
+      text:
+        `${this.board.items.length} of ${this.board.scanned} pages worth a look — low-confidence extractions, ` +
+        `changed sources, concept overviews whose members changed, and pages untouched for ${this.staleDays}+ days.`,
     });
 
     if (!this.board.items.length) {
@@ -115,6 +130,12 @@ export class ReviewBoardModal extends Modal {
       cls: 'gemma4-lint-hint',
       text: 'Tip: open a flagged page, check its claims against the source note it links to, and re-ingest the source if the summary drifted.',
     });
+    if (this.board.items.some((i) => i.staleConcept)) {
+      contentEl.createDiv({
+        cls: 'gemma4-lint-hint',
+        text: 'Stale concept overviews: run "Build a concept page from a tag" on the same tag to rewrite the overview — that clears the flag.',
+      });
+    }
   }
 
   onClose() {
