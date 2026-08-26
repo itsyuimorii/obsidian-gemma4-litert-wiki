@@ -67,7 +67,10 @@ export async function buildReviewBoard(app: App, staleDays: number): Promise<Rev
     // overview was written — ingest added a page or the pruner removed one —
     // so the prose no longer reflects ## Pages. Rebuilding the concept page
     // clears the flag.
-    const staleConcept = fm?.stale === true;
+    // Guarded on kind: the community frontmatter convention also puts
+    // `stale` on ordinary wiki pages, and "rebuild this concept page" would
+    // be the wrong instruction for one of those.
+    const staleConcept = fm?.kind === 'concept' && fm?.stale === true;
     if (staleConcept) reasons.push('members changed — rebuild this concept page');
 
     if (ageDays !== null && ageDays >= staleDays) reasons.push(`${ageDays}d since ingest`);
