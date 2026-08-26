@@ -276,6 +276,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
               const pending = await queuePendingTags(this.app.vault, extraction.tags);
               this.notePendingGrowth(pending.before, pending.after);
+              await this.rippleConceptPages(pagePath, [...extraction.tags, ...(extraction.mentions ?? [])]);
               await this.pruneIndex();
               await appendLog(this.app.vault, 'ingest', file.basename);
               this.status(`Wiki page written: ${pagePath}`);
@@ -1011,6 +1012,45 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
   }
 
+  // Karpathy's ingest "touches 15 files in one pass" — a new source updates
+  // the pages it relates to, not just its own. Our cheap, gate-consistent
+  // slice of that: after a page is written, DETERMINISTICALLY add it to the
+  // member list of every concept page sharing one of its tags or mentions,
+  // and mark that concept page stale (its prose overview no longer reflects
+  // the membership). No model call, no content generation — bookkeeping,
+  // same standing as pruneIndex. Rebuilding the overview stays a human
+  // action via "Build a concept page", which clears the flag by rewriting.
+  private async rippleConceptPages(newPagePath: string, subjects: string[]): Promise<void> {
+    const subjectSet = new Set(subjects.map((s) => slugify(s)).filter(Boolean));
+    if (!subjectSet.size) return;
+    const newLink = newPagePath.replace(/\.md$/, '');
+    const newTitle = newLink.split('/').pop() ?? newLink;
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      if (fm?.kind !== 'concept') continue;
+      const raw = fm?.tags;
+      const conceptTags = Array.isArray(raw) ? raw.map((t) => slugify(String(t))) : [];
+      if (!conceptTags.some((t) => t !== 'concept' && subjectSet.has(t))) continue;
+      const content = await this.app.vault.read(f);
+      if (content.includes(`[[${newLink}|`) || content.includes(`[[${newLink}]]`)) continue;
+      const idx = content.indexOf('\n## Pages');
+      if (idx === -1) continue;
+      // Append to the member list: after the heading, past existing bullets.
+      const head = content.slice(0, idx);
+      const tail = content.slice(idx);
+      const lines = tail.split('\n');
+      let last = 0;
+      for (let i = 0; i < lines.length; i++) if (lines[i].startsWith('- [[')) last = i;
+      lines.splice(last + 1, 0, `- [[${newLink}|${newTitle}]]`);
+      await this.app.vault.modify(f, head + lines.join('\n'));
+      await this.app.fileManager.processFrontMatter(f, (cfm) => {
+        cfm.stale = true;
+      });
+      await appendLog(this.app.vault, 'ripple', `${newTitle} -> ${f.basename} (concept)`);
+    }
+  }
+
   // A page's Related section is "healthy" when it exists, lists at least one
   // link, and every link still resolves. Anything else — no section, an empty
   // one, or one holding a dead link — is a candidate for re-syncing (#44).
@@ -1038,24 +1078,40 @@ export default class LiteRtSpikePlugin extends Plugin {
   // page's own content. Same standing as pruneIndex, which already repairs
   // index.md on delete. Raw notes are never touched — wiki pages only.
   private async pruneDeadRelatedLinks(): Promise<void> {
-    const RELATED_LINK = /^- \[\[([^\]|]+)\|/;
+    const LINK = /^- \[\[([^\]|]+)\|/;
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!f.path.startsWith(`${wikiDir()}/`)) continue;
       const content = await this.app.vault.read(f);
-      const idx = content.indexOf('\n## Related');
-      if (idx === -1) continue;
-      const head = content.slice(0, idx);
-      const tail = content.slice(idx);
-      const kept = tail.split('\n').filter((l) => {
-        const m = l.match(RELATED_LINK);
-        return !m || this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile;
-      });
-      if (kept.length === tail.split('\n').length) continue;
-      // If every link is gone, drop the empty heading too rather than leaving
-      // a bare "## Related" with nothing under it.
-      const rebuilt = kept.join('\n');
-      const hasLink = kept.some((l) => RELATED_LINK.test(l));
-      await this.app.vault.modify(f, hasLink ? head + rebuilt : `${head}\n`);
+      // Same repair for both generated link lists: a source page's
+      // "## Related" and a concept page's "## Pages" member list.
+      let updated = content;
+      let touchedConceptMembers = false;
+      for (const heading of ['\n## Related', '\n## Pages']) {
+        const idx = updated.indexOf(heading);
+        if (idx === -1) continue;
+        const head = updated.slice(0, idx);
+        const tail = updated.slice(idx);
+        const lines = tail.split('\n');
+        const kept = lines.filter((l) => {
+          const m = l.match(LINK);
+          return !m || this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile;
+        });
+        if (kept.length === lines.length) continue;
+        if (heading === '\n## Pages') touchedConceptMembers = true;
+        // If every link is gone, drop the empty heading too rather than
+        // leaving a bare section with nothing under it.
+        const hasLink = kept.some((l) => LINK.test(l));
+        updated = hasLink ? head + kept.join('\n') : `${head}\n`;
+      }
+      if (updated === content) continue;
+      await this.app.vault.modify(f, updated);
+      // A concept page that lost a member has an overview describing pages
+      // that are gone — flag it for a rebuild, same as when one is added.
+      if (touchedConceptMembers && this.app.metadataCache.getFileCache(f)?.frontmatter?.kind === 'concept') {
+        await this.app.fileManager.processFrontMatter(f, (cfm) => {
+          cfm.stale = true;
+        });
+      }
     }
   }
 
@@ -1843,6 +1899,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         const pending = await queuePendingTags(this.app.vault, d.tags);
         if (pendingBefore === null) pendingBefore = pending.before;
         pendingAfter = pending.after;
+        await this.rippleConceptPages(d.pagePath, d.tags);
         await appendLog(this.app.vault, 'ingest', d.file.basename);
       }
       if (pendingBefore !== null) this.notePendingGrowth(pendingBefore, pendingAfter);
