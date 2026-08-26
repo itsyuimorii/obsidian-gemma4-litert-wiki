@@ -93,7 +93,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.contextTokens = parseInt(v, 10) || 64000;
             await this.plugin.saveSettings();
-            new Notice('Context window saved — reload the plugin (toggle it off/on) to apply.', 6000);
+            new Notice('✅ Context window saved — reload the plugin (toggle it off/on) to apply.', 6000);
           })
       );
 
@@ -120,12 +120,12 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           const next = (pendingDir || DEFAULT_WIKI_DIR).trim().replace(/^\/+|\/+$/g, '');
           const prev = this.plugin.settings.wikiDir;
           if (!next || next === prev) {
-            new Notice('No change.');
+            new Notice('ℹ️ No change.');
             return;
           }
           const existing = this.app.vault.getAbstractFileByPath(next);
           if (existing && !(existing instanceof TFolder)) {
-            new Notice(`"${next}" already exists and is not a folder.`);
+            new Notice(`⚠️ "${next}" already exists and is not a folder.`);
             return;
           }
           await this.plugin.renameWikiDir(prev, next);
