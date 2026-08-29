@@ -1,5 +1,5 @@
 import { App, Modal } from 'obsidian';
-import { indexPath, logPath, wikiDir, readIndexEntries } from './wiki-store';
+import { indexPath, isWikiPage, logPath, wikiDir, readIndexEntries } from './wiki-store';
 
 // Lint v1, deliberately model-free: orphans and index health are graph
 // facts the metadata cache already knows. LLM-driven lint phases
@@ -18,7 +18,7 @@ export async function runLint(app: App): Promise<LintReport> {
   const entries = await readIndexEntries(app.vault);
   const wikiFiles = app.vault
     .getMarkdownFiles()
-    .filter((f) => f.path.startsWith(`${wikiDir()}/`) && f.path !== indexPath() && f.path !== logPath());
+    .filter(isWikiPage);
   const wikiPaths = new Set(wikiFiles.map((f) => f.path));
 
   // Inbound wiki-to-wiki links only. The index links to every page by
