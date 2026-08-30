@@ -512,14 +512,18 @@ export class ChatView extends ItemView {
     setTooltip(skillsBtn, 'Run a skill');
     const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki' }[] = [
       {
-        label: 'Quiz me',
+        // Nouns, because every one of these hands you a thing: a quiz, a set of
+        // cards, a checklist. The menu was three imperatives and two nouns,
+        // and the two nouns were the seed files — the ones a user writes.
+        // "Find gaps" keeps its verb: "Gaps" alone does not say gaps in what.
+        label: 'Quiz',
         icon: 'graduation-cap',
         prompt:
           'Create 5 practice questions that test understanding of this material. Number each ' +
           'question and put its answer in bold directly below it.',
       },
       {
-        label: 'Make flashcards',
+        label: 'Flashcards',
         icon: 'layers',
         prompt:
           'Create 8 flashcards from this material. Format each as **Q:** question then **A:** ' +
