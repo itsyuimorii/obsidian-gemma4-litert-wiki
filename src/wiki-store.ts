@@ -356,8 +356,8 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
       `## While something is running` + `\n\n` +
       `Ingesting a note is half a minute. Scanning a folder, or reformatting a long note, is minutes. You are not meant to sit and watch.` + `\n\n` +
-      `> [!info] Progress lives in the status bar, not in a popup` + `\n` +
-      `> Bottom-right corner of the window. It is always visible, it never covers what you are reading, and **you cannot dismiss it by accident** — click it and it repeats the current step instead of disappearing.` + `\n` +
+      `> [!info] It pops once, then moves to the status bar` + `\n` +
+      `> Starting is a moment, so it pops in the corner like anything else. **Staying started is not a moment**, so the running detail moves to the status bar along the bottom edge — always visible, never covering what you are reading, and **impossible to dismiss by accident**. Click it and it repeats the current step instead of disappearing. It pops again when it finishes.` + `\n` +
       `>` + `\n` +
       `> The same one line shows three things, whichever is true:` + `\n` +
       `>` + `\n` +

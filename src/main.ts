@@ -323,9 +323,24 @@ export default class LiteRtSpikePlugin extends Plugin {
   // moment. The run itself is not.
   // ---------------------------------------------------------------------
 
-  private status(text: string) {
+  private status(text: string, announce = true) {
+    // A run STARTING is a moment, and moments are toasts. Only the ongoing
+    // detail belongs in the status bar.
+    //
+    // The first version of this moved all of it to the status bar and the
+    // top-right went silent for the whole operation — which is the opposite
+    // failure to the one it was fixing: you pressed a command and nothing
+    // acknowledged it. The status bar sits at the edge of the window and is
+    // easy to miss, and a user can turn it off entirely.
+    //
+    // So: pop once when the run begins, then go quiet and let the status bar
+    // carry it. Subsequent updates never open another toast.
+    const starting = this.runningText === null;
     this.runningText = text;
     this.renderStatusBar();
+    if (starting && announce) {
+      notify('progress', `${text} — progress in the status bar.`, DURATION.SHORT);
+    }
   }
 
   /**
@@ -2191,7 +2206,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   private async runScanAndReview(includePrefixes: string[]) {
-    this.status('Scanning for new or changed notes…');
+    this.status('Scanning for new or changed notes…', false);
     const result = await findIngestCandidates(this.app, {
       // Manual scan ignores the quiet period (issue #42): clicking "Scan now"
       // is an explicit ask — skipping the notes you just wrote is the opposite
