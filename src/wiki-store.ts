@@ -186,46 +186,22 @@ const ICON_ZAP = ICON_SVG(
 // and "> [!info]-" hides its own contents behind a click nobody knows to make —
 // the explanation was there and invisible. Entries are appended to the end of
 // the file, so everything here has to sit above "## Pages".
+// index.md is an index. The layout tables and the how-it-works notes used to
+// live here and pushed the entries — the reason anyone opens the file — three
+// screens down. They now live in the folder's README, where explanation is the
+// point rather than the obstacle.
 const INDEX_HEADER =
   `# Wiki Index\n\n` +
-  // Each paragraph is emitted as ONE line. Wrapping the source at 95 characters
-  // read as deliberate line breaks in Obsidian and the intro came out ragged,
-  // broken mid-sentence.
-  `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified — they stay wherever you keep them. *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
-  `> [!info] Where things go\n` +
-  `> | Folder | What lands here |\n` +
-  `> |---|---|\n` +
-  `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |\n` +
-  `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. |\n` +
-  `> | \`chats/\` | Whole conversations, saved from the panel header. |\n` +
-  `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |\n` +
-  `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |\n` +
-  `>\n` +
-  `> Every folder also has a **README** describing what belongs in it.\n\n` +
-  `> [!info] How this file is used\n` +
-  `> One line per page: a link, then a one-sentence summary. **Wiki-mode chat reads this file first** to decide which pages to open — which is why the summaries live here and not only on the pages themselves.\n` +
-  `>\n` +
-  `> It repairs itself: entries for pages you delete are dropped automatically, and **Reconcile wiki** forces a pass. Safe to read; you should not need to hand-edit it.\n\n` +
-  `> [!info] The other two files\n` +
-  `> | File | What it is |\n` +
-  `> |---|---|\n` +
-  `> | \`log.md\` | Append-only record of every operation, greppable by action. |\n` +
-  `> | \`schema.md\` | Your tag vocabulary, the naming rules, and the tags you rejected. |\n\n` +
+  `One line per page: a link, then a one-sentence summary. **Wiki-mode chat reads this file first** to decide which pages to open. It repairs itself — entries for deleted pages are dropped automatically — so you should not need to hand-edit it.\n\n` +
+  `> [!info]- What this folder is\n` +
+  `> Everything the plugin writes lives here; your own notes are never modified. Full layout and rules: [[README]].\n\n` +
   `## Pages\n\n`;
 
 const LOG_HEADER =
   `# Wiki Log\n\n` +
-  `**An append-only timeline of what the plugin did.** Nothing here is ever read back — it exists so you can check what happened and when.\n\n` +
-  `> [!info] How to read it\n` +
-  `> One \`- [date] action | title\` line per operation, so it greps cleanly by action.\n` +
-  `>\n` +
-  `> | Action | Written when |\n` +
-  `> |---|---|\n` +
-  `> | \`ingest\` | A note became a page in \`sources/\`. |\n` +
-  `> | \`improve\` | A raw note was reformatted, after you approved it. |\n` +
-  `> | \`concept\` | A concept page was built from a tag or mention. |\n` +
-  `> | \`relink\` | Related sections were backfilled or re-synced. |\n` +
-  `> | \`schema\` | The tag vocabulary was rewritten. |\n`;
+  `**Append-only record of what the plugin did**, one \`- [date] action | title\` line per operation, so it greps cleanly by action. Nothing here is ever read back.\n\n` +
+  `> [!info]- Actions you will see\n` +
+  `> \`ingest\` a note became a page · \`improve\` a raw note was reformatted after you approved it · \`concept\` a concept page was built · \`relink\` Related sections were re-synced · \`schema\` the tag vocabulary was rewritten\n`;
 
 // Every folder and file the plugin owns, in display order. Exported so the
 // settings page can show the layout and the repair button can report what was
@@ -244,6 +220,7 @@ export function isWikiPage(file: { path: string; basename: string }): boolean {
 
 export function wikiScaffoldPaths(): { path: string; what: string }[] {
   return [
+    { path: `${_wikiDir}/README.md`, what: 'What this folder is, and the rules' },
     { path: `${wikiSourcesDir()}/`, what: 'One page per ingested note' },
     { path: `${wikiAnswersDir()}/`, what: 'Chat answers you saved' },
     { path: `${wikiChatsDir()}/`, what: 'Saved conversations' },
@@ -266,6 +243,31 @@ export function wikiScaffoldPaths(): { path: string; what: string }[] {
 // Excluded from every page enumeration by isWikiPage(), so documenting a folder
 // never costs you a phantom wiki page in lint or the review board.
 const FOLDER_READMES: Array<[() => string, string]> = [
+  [
+    () => `${_wikiDir}/README.md`,
+    `# ${_wikiDir}\n\n` +
+      `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified — they stay wherever you keep them. *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
+      `> [!info] Where things go\n` +
+      `> | Folder | What lands here |\n` +
+      `> |---|---|\n` +
+      `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |\n` +
+      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. They become grounding for later questions. |\n` +
+      `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |\n` +
+      `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |\n` +
+      `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |\n` +
+      `>\n` +
+      `> Every folder has a README of its own describing what belongs in it.\n\n` +
+      `> [!info] The three files\n` +
+      `> | File | What it is |\n` +
+      `> |---|---|\n` +
+      `> | \`index.md\` | The catalog: one line per page. **Wiki-mode chat reads it first** to decide which pages to open — which is why the summaries live there and not only on the pages. **Reconcile wiki** forces a repair pass. |\n` +
+      `> | \`log.md\` | Append-only record of every operation, greppable by action. |\n` +
+      `> | \`schema.md\` | Your tag vocabulary, the naming rules, and the tags you rejected. Edit it by hand and the plugin obeys. |\n\n` +
+      `> [!info] Deleting things\n` +
+      `> Delete any page freely — its index entry is dropped automatically.\n` +
+      `>\n` +
+      `> Delete a **folder** and it is recreated empty the next time Obsidian starts, or from **Settings → Repair folders**. **The pages that were inside it are not restored** — the plugin maintains this scaffolding, it does not back it up. Run **Reconcile wiki** afterwards to clear the index entries they left behind.\n`,
+  ],
   [
     () => `${wikiSourcesDir()}/README.md`,
     `# sources\n\n` +
