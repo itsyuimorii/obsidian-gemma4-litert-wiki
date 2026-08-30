@@ -88,6 +88,17 @@ export interface SuggestionSpec {
   ask?: string;
   /** A non-question action: scan, file a note, reformat one. Styled as a write. */
   action?: 'scan' | 'ingest' | 'improve';
+  /**
+   * Ground in every page rather than the ones that lexically match.
+   *
+   * There are two kinds of wiki question and only one of them is served by
+   * retrieval. "What did I conclude about X" wants the pages about X. "What
+   * connects my pages" wants breadth, and scoring it against page summaries
+   * finds nothing at all — the words in the question (connections, themes,
+   * gaps, pages) appear in no summary, so zero pages come back and the model
+   * correctly reports that it was given none.
+   */
+  wholeWiki?: boolean;
 }
 
 /**
@@ -135,6 +146,7 @@ export function suggestionsFor(mode: 'note' | 'wiki'): SuggestionSpec[] {
     {
       label: 'Find connections',
       ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
+      wholeWiki: true,
     },
     {
       label: "What's still open?",
@@ -144,6 +156,7 @@ export function suggestionsFor(mode: 'note' | 'wiki'): SuggestionSpec[] {
       ask:
         'What questions do my pages raise but never answer? List the gaps and why each ' +
         'matters. Cite the pages.',
+      wholeWiki: true,
     },
   ];
 }
@@ -292,7 +305,7 @@ export class ChatView extends ItemView {
   private runSuggestion(spec: SuggestionSpec) {
     if (spec.ask) {
       this.inputEl.value = spec.ask;
-      void this.handleSend();
+      void this.handleSend(spec.wholeWiki);
       return;
     }
     if (spec.action === 'scan') return void this.plugin.scanAndReviewIngest();
@@ -736,7 +749,7 @@ export class ChatView extends ItemView {
     this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight });
   }
 
-  private async handleSend() {
+  private async handleSend(wholeWiki = false) {
     if (this.busy) return;
     const question = this.inputEl.value.trim();
     if (!question) return;
@@ -745,7 +758,7 @@ export class ChatView extends ItemView {
     this.lastQuestion = question;
     this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
-    await this.runGeneration(question);
+    await this.runGeneration(question, false, wholeWiki);
   }
 
   // Builds the grounding context for one question, or returns null with a
@@ -754,7 +767,8 @@ export class ChatView extends ItemView {
   // guess from the model's own knowledge.
   private async buildContext(
     question: string,
-    ungrounded = false
+    ungrounded = false,
+    wholeWiki = false
   ): Promise<{
     systemPrompt: string;
     sourcePath: string;
@@ -789,11 +803,17 @@ export class ChatView extends ItemView {
         );
         return null;
       }
-      const selected = scoreEntries(question, entries);
+      // A whole-wiki question is not a retrieval problem. Scoring "what
+      // connects my pages" against page summaries matches nothing, because the
+      // question is about the shape of the collection and not about anything
+      // in it — so every page is the right answer to "which pages", and
+      // loadPages fills up to the budget and stops.
+      const selected = wholeWiki ? entries : scoreEntries(question, entries);
       // Expand one hop through the link graph (issue #14): a page linked to
       // or from a lexical hit often holds the answer even when its own summary
       // didn't share the question's words. Seeds still decide noPageMatch.
-      const expanded = selected.length ? expandByLinks(this.app, selected, entries, 2) : [];
+      const expanded =
+        !wholeWiki && selected.length ? expandByLinks(this.app, selected, entries, 2) : [];
       const retrieved = [...selected, ...expanded];
       const pages = retrieved.length
         ? await loadPages(this.app.vault, retrieved, this.plugin.budget('chat') * 3)
@@ -818,9 +838,13 @@ export class ChatView extends ItemView {
         systemPrompt:
           "You answer questions about the user's personal wiki. Use ONLY the material below: " +
           'the catalog (every wiki page with a one-line summary), the recent activity log ' +
-          '(dated ingest/answer entries), and the full text of the most relevant pages. If the ' +
-          'answer is not in this material, say so plainly instead of guessing. Be concise. You ' +
-          'may use markdown formatting.\n\n' +
+          '(dated ingest/answer entries), and ' +
+          (wholeWiki
+            ? 'the full text of the wiki pages, as many as fit. Work across all of them — this ' +
+              'is a question about the collection, not about one page. '
+            : 'the full text of the most relevant pages. ') +
+          'If the answer is not in this material, say so plainly instead of guessing. Be ' +
+          'concise. You may use markdown formatting.\n\n' +
           `## Catalog\n${catalog}\n\n` +
           (logTail ? `## Recent activity log\n${logTail}\n\n` : '') +
           clampedWiki.text,
@@ -834,7 +858,9 @@ export class ChatView extends ItemView {
         // No page matched the question — the answer leans on catalog/log
         // only (good for meta-questions, thin for everything else). Flag it
         // so runGeneration can offer the "ask Gemma directly" hatch below.
-        noPageMatch: selected.length === 0,
+        // Only meaningful for a retrieval question. A whole-wiki question that
+        // came back thin was not a miss — it had everything there was.
+        noPageMatch: !wholeWiki && selected.length === 0,
       };
     }
 
@@ -876,8 +902,8 @@ export class ChatView extends ItemView {
     };
   }
 
-  private async runGeneration(question: string, ungrounded = false) {
-    const context = await this.buildContext(question, ungrounded);
+  private async runGeneration(question: string, ungrounded = false, wholeWiki = false) {
+    const context = await this.buildContext(question, ungrounded, wholeWiki);
     if (!context) return;
 
     this.busy = true;
