@@ -199,6 +199,25 @@ const ICON_ZAP = ICON_SVG(
     '.78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'
 );
 
+// The rest of the chat panel's controls, so the README can name a button by
+// drawing it. Same Lucide glyphs the panel itself asks Obsidian for.
+const ICON_ATTACH = ICON_SVG('<path d="M5 12h14"/><path d="M12 5v14"/>');
+
+const ICON_COPY = ICON_SVG(
+  '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>' +
+    '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
+);
+
+const ICON_REGEN = ICON_SVG(
+  '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>' +
+    '<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'
+);
+
+const ICON_TRASH = ICON_SVG(
+  '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>' +
+    '<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
+);
+
 // Expanded, not a collapsed toggle. This is the first file a new user opens,
 // and "> [!info]-" hides its own contents behind a click nobody knows to make —
 // the explanation was there and invisible. Entries are appended to the end of
@@ -267,20 +286,74 @@ const FOLDER_READMES: Array<[() => string, string]> = [
     () => `${_wikiDir}/README.md`,
     `# ${_wikiDir}\n\n` +
       `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified — they stay wherever you keep them. *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
-      `> [!info] Where the plugin lives\n` +
-      `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill from the ${ICON_ZAP} menu, and save an answer back here.\n` +
-      `>\n` +
-      `> Everything else is a command: press <kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd> and type *Gemma Wiki*.\n\n` +
-      `> [!info] Where things go\n` +
-      `> | Folder | What lands here |\n` +
-      `> |---|---|\n` +
-      `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |\n` +
-      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. They become grounding for later questions. |\n` +
-      `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |\n` +
-      `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |\n` +
-      `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |\n` +
-      `>\n` +
-      `> Every folder has a README of its own describing what belongs in it.\n\n` +
+      `> [!info] Where the plugin lives` + `\n` +
+      `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill, and save an answer back here.` + `\n` +
+      `>` + `\n` +
+      `> Everything else is a command: press <kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd> and type *Gemma Wiki*.` + `\n\n` +
+      `## What it can do` + `\n\n` +
+      `Nothing here reaches the network. Gemma 4 runs inside Obsidian on your GPU, so every command below costs GPU time rather than money, and works on a plane.` + `\n\n` +
+      `> [!info] Ask` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Chat with active note** | Answers grounded in the note you have open — and nothing else. It says "not in the note" instead of guessing. |` + `\n` +
+      `> | **Ask your wiki** | The other half of the same panel. Reads \`index.md\` to pick the pages worth opening, then answers from those, citing them. |` + `\n` +
+      `> | **Skills** | Saved prompts — quiz me, flashcards, find gaps. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** |` + `\n\n` +
+      `> [!info] File notes into the wiki` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Ingest active note** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. |` + `\n` +
+      `> | **Scan notes for wiki** | The same thing over whole folders. Drafts everything first and shows you the batch — **nothing is written until you approve it.** |` + `\n` +
+      `> | **Suggest tags & links** | Proposes frontmatter tags and links to related pages, for one note. You review before it writes. |` + `\n\n` +
+      `> [!info] Build on top of what is filed` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Build a concept page** | Pick a tag or a name that several pages share; get a page written *above* them that links down into each. This is the wiki layer, not another summary. |` + `\n` +
+      `> | **Relink wiki pages** | Fills in or re-syncs the *Related* section on every page as the wiki grows. |` + `\n` +
+      `> | **Organize tags** | Reads every tag your ingests produced and folds them into one vocabulary in \`schema.md\`. |` + `\n` +
+      `> | **Retag wiki pages** | Rewrites existing pages to use that vocabulary, so near-duplicate tags collapse. |` + `\n\n` +
+      `> [!info] Check the wiki against itself` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Review board** | Everything that needs a human: low-confidence pages, and pages whose source note has changed since they were made. |` + `\n` +
+      `> | **Find contradictions** | Compares pages against each other and reports claims that cannot both be true. |` + `\n` +
+      `> | **Provenance spot-check** | Takes key points off a page and checks each one against the note it came from. Catches invented detail. |` + `\n` +
+      `> | **Lint wiki** | Structural only, no model: orphan pages, broken index entries. |` + `\n` +
+      `> | **Reconcile wiki** | Drops index entries and links pointing at pages you deleted. |` + `\n\n` +
+      `> [!info] The one command that edits your own note` + `\n` +
+      `> **Improve formatting** is the only thing here that writes into a note of yours. It fixes headings, lists and spacing — **it does not rewrite your words**, and the rewritten note is shown to you in full before anything is saved.` + `\n` +
+      `>` + `\n` +
+      `> A long note is split on its own headings and done in several passes; you are told how many before it starts. Select a section first to aim it at just that part.` + `\n\n` +
+      `## The chat panel` + `\n\n` +
+      `> [!info] Header` + `\n` +
+      `> | Control | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **This note** / **Wiki** | Which material the answer is allowed to use. *This note* = the note you have open. *Wiki* = the pages in this folder. Switching also changes the suggestion chips underneath. |` + `\n` +
+      `> | ${ICON_SAVE_DISK} | Save the **whole conversation** to \`chats/\` as one file. |` + `\n` +
+      `> | ${ICON_TRASH} | Clear the thread. Nothing is written anywhere. |` + `\n\n` +
+      `> [!info] Under each answer` + `\n` +
+      `> | Control | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | ${ICON_COPY} | Copy the answer as markdown. |` + `\n` +
+      `> | ${ICON_REGEN} | Ask again from the same question. Useful when an answer starts well and drifts. |` + `\n` +
+      `> | ${ICON_SAVE_TO_WIKI} | Save **this one answer** to \`answers/\` — where it becomes grounding for later questions. |` + `\n\n` +
+      `> [!info] Around the input box` + `\n` +
+      `> | Control | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | ${ICON_ATTACH} | Attach another note as extra context, on top of whatever the current mode already sends. |` + `\n` +
+      `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. |` + `\n` +
+      `> | The chips above it | One-press starting questions for the current mode. **Formatting** is marked as a write — it runs *Improve formatting*, still behind its preview. |` + `\n` +
+      `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n\n` +
+      `## Where things go` + `\n\n` +
+      `> [!info] Folders` + `\n` +
+      `> | Folder | What lands here |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |` + `\n` +
+      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. They become grounding for later questions. |` + `\n` +
+      `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |` + `\n` +
+      `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
+      `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
+      `>` + `\n` +
+      `> Every folder has a README of its own describing what belongs in it.` + `\n\n` +
       `> [!info] The three files\n` +
       `> | File | What it is |\n` +
       `> |---|---|\n` +
@@ -380,14 +453,49 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   if (!vault.getAbstractFileByPath(schemaPath())) {
     await vault.create(schemaPath(), buildSchemaFile([])).catch(() => {});
   }
-  // Never overwrites: if you have edited a README, or deleted one on purpose
-  // and it came back, that is create-if-absent doing exactly what it says.
+  // These READMEs are documentation the plugin maintains, not user content —
+  // when a release explains a feature better, an existing vault should get the
+  // better text instead of being frozen on whatever shipped the day it was
+  // created. But an edited README is the user's, and silently reverting it
+  // would be the worst thing this function could do.
+  //
+  // So each generated file carries a stamp of its own text. On startup: no
+  // file, write it. Stamp still matches the body, nobody has touched it, safe
+  // to refresh. Stamp missing or stale, the user edited it — leave it alone,
+  // forever.
   for (const [pathOf, body] of FOLDER_READMES) {
     const path = normalizePath(pathOf());
-    if (!vault.getAbstractFileByPath(path)) {
-      await vault.create(path, body).catch(() => {});
+    const existing = vault.getAbstractFileByPath(path);
+    if (!existing) {
+      await vault.create(path, stampReadme(body)).catch(() => {});
+      continue;
     }
+    if (!(existing instanceof TFile)) continue;
+    const current = await vault.read(existing).catch(() => null);
+    if (current === null || !isUnmodifiedReadme(current)) continue;
+    if (stripReadmeStamp(current) === body) continue;
+    await vault.modify(existing, stampReadme(body)).catch(() => {});
   }
+}
+
+// The stamp is an HTML comment: invisible in reading view, harmless in source
+// view, and it survives round-tripping through Obsidian untouched.
+const README_STAMP = /\n?<!-- gemma-wiki: generated, edit freely — edits are never overwritten \(([0-9a-f]{8})\) -->\n?$/;
+
+function stampReadme(body: string): string {
+  return `${body}\n<!-- gemma-wiki: generated, edit freely — edits are never overwritten (${contentHash(body)}) -->\n`;
+}
+
+export function stripReadmeStamp(text: string): string {
+  return text.replace(README_STAMP, '');
+}
+
+// True only when the file still hashes to what the plugin wrote. Any edit,
+// including deleting the stamp, makes this false and the file is left alone.
+export function isUnmodifiedReadme(text: string): boolean {
+  const m = README_STAMP.exec(text);
+  if (!m) return false;
+  return contentHash(stripReadmeStamp(text)) === m[1];
 }
 
 export async function writeWikiPage(vault: Vault, pagePath: string, content: string): Promise<void> {
