@@ -81,6 +81,11 @@ const MODEL_URL =
 // main.js, the bundle was produced without the stamping step.
 declare const BUILD_STAMP: string;
 
+// Scans are no longer trimmed to a hidden ceiling: the dialog states the size
+// and the rough time before you commit, and stopping mid-run keeps whatever
+// was drafted. findIngestCandidates still wants a number.
+const NO_SCAN_CAP = Number.MAX_SAFE_INTEGER;
+
 function log(...args: unknown[]) {
   console.log('[litert-spike]', ...args);
 }
@@ -306,9 +311,6 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Did attention leave while the current run was going? Decides whether the
   // result opens itself or waits.
   private userMovedOn = false;
-  // The cap chosen in the scan dialog for the run about to start. Falls back
-  // to the saved default for runs that skip the dialog.
-  private scanMaxThisRun: number | null = null;
   private runStartedAt = 0;
   // The pinned toast for the running operation, and whether the user closed
   // it. A dismissal is respected until they ask for it back.
@@ -2138,7 +2140,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // existed to say.
       const result = await findIngestCandidates(this.app, {
         quietHours: this.settings.scanQuietHours,
-        maxPerRun: this.settings.scanMaxPerRun,
+        maxPerRun: NO_SCAN_CAP,
         includePrefixes: this.settings.scanInclude.split(',').map((s) => s.trim()).filter(Boolean),
         excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
       });
@@ -2304,7 +2306,6 @@ export default class LiteRtSpikePlugin extends Plugin {
       notify('warn', 'A scan is already running — run "Stop the running scan" to cancel it.');
       return;
     }
-    this.scanMaxThisRun = null;
     const includePrefixes = prefixes ?? (await this.askScanFolders());
     if (!includePrefixes) return;
     if (!includePrefixes.length) return;
@@ -2333,7 +2334,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const configured = this.settings.scanInclude.split(',').map((v) => v.trim()).filter(Boolean);
     const all = await findIngestCandidates(this.app, {
       quietHours: 0,
-      maxPerRun: Number.MAX_SAFE_INTEGER,
+      maxPerRun: NO_SCAN_CAP,
       excludePrefixes: this.settings.scanExclude.split(',').map((v) => v.trim()).filter(Boolean),
     });
 
@@ -2358,16 +2359,15 @@ export default class LiteRtSpikePlugin extends Plugin {
       const modal = new ScanFolderModal(this.app, {
         folders,
         preselected: configured.filter((c) => counts.has(c)),
-        maxPerRun: this.settings.scanMaxPerRun,
-        onConfirm: (chosen, maxThisRun, remember) => {
+        onConfirm: (chosen) => {
           answered = true;
           void (async () => {
-            this.scanMaxThisRun = maxThisRun;
-            if (remember) {
-              this.settings.scanInclude = chosen.join(', ');
-              this.settings.scanMaxPerRun = maxThisRun;
-              await this.saveSettings();
-            }
+            // Remembered automatically, not behind a tick. You expect a dialog
+            // to open where you left it, and the background count should watch
+            // the folders you actually care about — which is the ones you last
+            // scanned, not a field you filled in once and forgot.
+            this.settings.scanInclude = chosen.join(', ');
+            await this.saveSettings();
             resolve(chosen);
           })();
         },
@@ -2389,7 +2389,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // of the intent. The quiet period only guards the background count,
       // where a timer could grab a half-written draft mid-edit.
       quietHours: 0,
-      maxPerRun: this.scanMaxThisRun ?? this.settings.scanMaxPerRun,
+      maxPerRun: NO_SCAN_CAP,
       includePrefixes,
       excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
     });
@@ -2418,10 +2418,8 @@ export default class LiteRtSpikePlugin extends Plugin {
           }).open();
         });
         if (!proceed) return;
-        eligible = result.unchanged
-          .slice(0, this.settings.scanMaxPerRun)
-          .map((file) => ({ file, reason: 'refresh' as const }));
-        cappedOut = Math.max(0, result.unchanged.length - this.settings.scanMaxPerRun);
+        eligible = result.unchanged.map((file) => ({ file, reason: 'refresh' as const }));
+        cappedOut = 0;
       } else {
         notify(
           'noop',

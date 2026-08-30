@@ -223,14 +223,15 @@ export class AutoIngestReviewModal extends Modal {
  * no GPU — so the dialog can tell you what each folder would actually cost
  * before you commit to it.
  */
+// Derived from the README's measured figures, not guessed: warm decode holds
+// ~29 tok/s and one note costs two calls.
+const SECONDS_PER_NOTE = 20;
+
 export class ScanFolderModal extends Modal {
   private chosen: Set<string>;
-  private remember: boolean;
-  private maxThisRun: number;
   private readonly folders: { path: string; count: number }[];
   private readonly totalCandidates: number;
-  private readonly maxPerRun: number;
-  private readonly onConfirm: (prefixes: string[], maxThisRun: number, remember: boolean) => void;
+  private readonly onConfirm: (prefixes: string[]) => void;
   private countEl: HTMLElement | null = null;
   private goBtn: HTMLButtonElement | null = null;
 
@@ -239,19 +240,14 @@ export class ScanFolderModal extends Modal {
     opts: {
       folders: { path: string; count: number }[];
       preselected: string[];
-      maxPerRun: number;
-      onConfirm: (prefixes: string[], maxThisRun: number, remember: boolean) => void;
+      onConfirm: (prefixes: string[]) => void;
     }
   ) {
     super(app);
     this.folders = opts.folders;
+    // Pre-ticked with whatever you scanned last, so the common case is one
+    // click. The pick is remembered on confirm, without asking.
     this.chosen = new Set(opts.preselected);
-    // Pre-ticking what settings already says, and defaulting "remember" to
-    // off, means the common case is one click and nothing is changed behind
-    // your back.
-    this.remember = false;
-    this.maxPerRun = opts.maxPerRun;
-    this.maxThisRun = opts.maxPerRun;
     this.totalCandidates = opts.folders.reduce((n, f) => n + f.count, 0);
     this.onConfirm = opts.onConfirm;
   }
@@ -262,17 +258,41 @@ export class ScanFolderModal extends Modal {
     return n;
   }
 
+  /**
+   * Say what the run costs, in notes and in minutes.
+   *
+   * This replaced a "max notes per scan" ceiling. That number existed because
+   * you could not see how big a run was before starting it — so the plugin
+   * quietly trimmed it and told you afterwards. Now the size is on screen
+   * before you commit, and stopping keeps whatever was drafted, so the honest
+   * move is to state the cost and let you decide rather than to decide for
+   * you.
+   *
+   * The estimate is from real instrumentation: warm decode holds ~29 tok/s
+   * (see Benchmarks in the README), and one note is two calls, so ~20s each.
+   * Rounded up, and never claimed to be exact.
+   */
   private syncFooter() {
-    const n = Math.min(this.selectedCount(), this.maxThisRun);
-    const over = this.selectedCount() - n;
+    const n = this.selectedCount();
     if (this.countEl) {
-      this.countEl.setText(
-        this.chosen.size === 0
-          ? 'Pick at least one folder.'
-          : over > 0
-            ? `${n} note${n === 1 ? '' : 's'} this run — ${over} more left for the next one (cap is ${this.maxThisRun}).`
-            : `${n} note${n === 1 ? '' : 's'}, about one model call each.`
-      );
+      this.countEl.empty();
+      if (this.chosen.size === 0) {
+        this.countEl.setText('Pick at least one folder.');
+      } else if (n === 0) {
+        // Ticked, but everything in them is already filed and unchanged.
+        // "0 notes … roughly 1 minute" was the arithmetic answering a
+        // question nobody asked.
+        this.countEl.setText('Nothing new in the folders you ticked — they are all already filed.');
+      } else {
+        const mins = Math.max(1, Math.round((n * SECONDS_PER_NOTE) / 60));
+        this.countEl.createDiv({
+          text: `${n} note${n === 1 ? '' : 's'}, about one model call each — roughly ${mins} minute${mins === 1 ? '' : 's'}.`,
+        });
+        this.countEl.createDiv({
+          cls: 'gemma4-scan-count-sub',
+          text: 'The first one is slower if the model has not loaded yet. You can stop partway and still review what was drafted.',
+        });
+      }
     }
     if (this.goBtn) {
       this.goBtn.disabled = n === 0;
@@ -325,44 +345,13 @@ export class ScanFolderModal extends Modal {
 
     this.countEl = contentEl.createDiv({ cls: 'gemma4-scan-count' });
 
-    // The cap belongs here, not in Settings: it is a decision about THIS run,
-    // and this is the only screen that tells you what the run costs. Seeing
-    // "12 notes, cap is 10" and being able to raise it on the spot is the
-    // whole point — in a settings pane the number was abstract.
-    const adv = contentEl.createEl('details', { cls: 'gemma4-scan-advanced' });
-    adv.createEl('summary', { text: 'Just this run' });
-    const capRow = adv.createDiv({ cls: 'gemma4-scan-cap' });
-    capRow.createSpan({ text: 'Most notes to draft this run' });
-    const capInput = capRow.createEl('input', { type: 'number' });
-    capInput.value = String(this.maxThisRun);
-    capInput.min = '1';
-    capInput.addEventListener('input', () => {
-      const v = parseInt(capInput.value, 10);
-      this.maxThisRun = Number.isFinite(v) && v > 0 ? v : 1;
-      this.syncFooter();
-    });
-    adv.createDiv({
-      cls: 'gemma4-scan-cap-hint',
-      text: 'A cap so a large backlog does not run the GPU through dozens of notes at once. Whatever is left over is offered on the next scan.',
-    });
-
-    const rememberRow = contentEl.createEl('label', { cls: 'gemma4-scan-remember' });
-    const rememberBox = rememberRow.createEl('input', { type: 'checkbox' });
-    rememberBox.checked = this.remember;
-    rememberBox.addEventListener('change', () => {
-      this.remember = rememberBox.checked;
-    });
-    rememberRow.createSpan({
-      text: 'Remember these folders and this cap as my defaults',
-    });
-
     const buttons = contentEl.createDiv({ cls: 'gemma4-scan-buttons' });
     buttons.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
     this.goBtn = buttons.createEl('button', { cls: 'mod-cta', text: 'Scan' });
     this.goBtn.addEventListener('click', () => {
       const prefixes = [...this.chosen];
       this.close();
-      this.onConfirm(prefixes, this.maxThisRun, this.remember);
+      this.onConfirm(prefixes);
     });
     this.syncFooter();
   }

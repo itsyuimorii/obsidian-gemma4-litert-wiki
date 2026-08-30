@@ -1229,21 +1229,21 @@
 }
 
 .gemma4-scan-count {
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: var(--font-ui-smaller);
   color: var(--text-normal);
   font-weight: 600;
 }
 
-.gemma4-scan-remember {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: var(--font-ui-smaller);
+/* The caveats under the headline number: real, but not what you are deciding
+   on, so they should not compete with it. */
+.gemma4-scan-count-sub {
+  margin-top: 4px;
   color: var(--text-muted);
-  cursor: pointer;
+  font-weight: 400;
+  line-height: 1.5;
 }
+
 
 .gemma4-scan-empty {
   font-size: var(--font-ui-smaller);
@@ -1264,31 +1264,7 @@
   font-weight: 600;
 }
 
-.gemma4-scan-advanced {
-  margin-top: 10px;
-  font-size: var(--font-ui-smaller);
-}
 
-.gemma4-scan-advanced > summary {
-  cursor: pointer;
-  color: var(--text-muted);
-  padding: 2px 0;
-}
 
-.gemma4-scan-cap {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 8px 0 4px;
-  color: var(--text-normal);
-}
 
-.gemma4-scan-cap input {
-  width: 72px;
-}
 
-.gemma4-scan-cap-hint {
-  color: var(--text-muted);
-  line-height: 1.5;
-}
