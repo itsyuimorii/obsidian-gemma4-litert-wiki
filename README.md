@@ -9,7 +9,15 @@
 
 <p align="center"><em>A Karpathy-pattern LLM wiki for Obsidian, powered by Gemma 4 running entirely inside Obsidian via LiteRT-LM + WebGPU.</em></p>
 
-A local-first Obsidian plugin built around a single idea: **run the LLM entirely inside Obsidian itself** — no Ollama, no LM Studio, no API key, no background server, no network access after the one-time model download. The model runs in Obsidian's own Electron renderer via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU.
+**Free, private, offline AI for your notes** — no API key, no subscription, no tokens ever billed, no account to make.
+
+Gemma 4 E4B runs inside Obsidian's own process via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. Not Ollama, not LM Studio, not a localhost server — the model is *in* the app. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy here is a property of the architecture, not a promise in a policy. After the one-time ~3 GB model download, the plugin never touches the network again.
+
+It implements **[Andrej Karpathy's LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: your raw notes are never modified. A separate, cross-linked wiki layer is built above them — one page per note, and **every page is shown to you in full before a single byte is written**.
+
+From there: chat grounded in one note or in the whole wiki, quiz yourself on either, build concept pages across everything sharing a tag, and let it flag its own decay with lint, provenance and contradiction checks. **Sources are listed by the plugin, never cited by the model** — citation is the one thing a small local model would get wrong without anyone noticing.
+
+Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
 
 > **Status: working MVP.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `gemma-wiki/` layer with cross-links, an `gemma-wiki/index.md` catalog and append-only `gemma-wiki/log.md`, index-first grounded chat with deterministic source attribution, save-answer-back-to-wiki, a model-free lint report, and canned single-task skills. Not yet in the community plugin store; benchmarks below are from real use.
 
@@ -30,7 +38,7 @@ A local-first Obsidian plugin built around a single idea: **run the LLM entirely
 - **Deterministic Sources row** on every answer — the plugin lists exactly what was used, clickable; citation is never left to the model.
 - **`+` attachments** — fuzzy-pick any notes as removable context pills, in either mode.
 - **⚡ Skills** — canned single-task prompts: quiz, flashcards, gap-finding, recent-activity digest (auto-switches to Wiki mode).
-- **✨ Improve formatting** — the one write action on raw notes, and the most constrained call in the plugin: structure/formatting/typos only, wording and voice preserved, full-result preview before anything is written; works on a selection for long notes.
+- **✨ Improve formatting** — the one write action on raw notes, and the most constrained call in the plugin: structure/formatting/typos only, wording and voice preserved, full-result preview before anything is written. Long notes are split on headings and blank lines into passes that each fit the model's 4096-token context, rewritten one pass at a time and stitched back together; a selection still narrows it to one section.
 - Streaming replies with a typing spinner, stop button, copy/regenerate actions, persistent starter chips, auto-growing + expandable input, clear-chat, hover tooltips everywhere.
 
 **Engineering rules the whole plugin follows**:
