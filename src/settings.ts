@@ -10,6 +10,9 @@ export interface GemmaWikiSettings {
   // grounding per answer, at the cost of GPU memory and first-token latency.
   // Applied at engine creation, so changes need a plugin reload.
   contextTokens: number;
+  // Show the four [Test] diagnostic commands in the palette. Off by default:
+  // they are debugging tools, not things to do with your notes.
+  devCommands: boolean;
   staleDays: number;
   defaultMode: 'note' | 'wiki';
   // Semi-auto ingest scan (manual trigger; no background timer yet).
@@ -34,6 +37,7 @@ export interface GemmaWikiSettings {
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   wikiDir: DEFAULT_WIKI_DIR,
   contextTokens: 64000,
+  devCommands: false,
   staleDays: 30,
   defaultMode: 'note',
   scanQuietHours: 3,
@@ -136,6 +140,21 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             notify('done', 'Context window saved — reload the plugin (toggle it off/on) to apply.', DURATION.NORMAL);
           })
+      );
+
+    new Setting(containerEl)
+      .setName('Developer commands')
+      .setDesc(
+        'Adds four [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
+          'the model, fix grammar of a selection with timings, and a JSON-reliability run. They ' +
+          'are for diagnosing a broken setup, not for working with notes. Off by default.'
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.devCommands).onChange(async (v) => {
+          this.plugin.settings.devCommands = v;
+          await this.plugin.saveSettings();
+          notify('info', 'Reload the plugin (toggle it off and on) for this to take effect.');
+        })
       );
 
     // ---------- Wiki ----------
@@ -329,41 +348,32 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       );
 
     // ---------- Scan ----------
-    new Setting(containerEl).setName('Scan for new notes').setHeading();
+    // This section configures scanning; it no longer performs it. The one
+    // action button used to live here, which made Settings the only place a
+    // user could find the feature at all — and it had to be here, because it
+    // was also the only place to say which folder. The scan dialog asks that
+    // now, so the button had nothing left that this pane was uniquely good
+    // for. Settings configures; the command palette and the chat panel act.
+    // The guidance rides on the heading rather than taking a row of its own —
+    // this section is four rows now, and a fifth that only points elsewhere
+    // would be the largest thing in it.
     new Setting(containerEl)
-      .setName('Scan now')
+      .setName('Scan for new notes')
       .setDesc(
-        'Sweep the folders below for new or changed notes, draft a card for each, and review them ' +
-          'all at once before anything is written — drafts are never saved without your tick. ' +
-          'A scan is one model call per note, so it takes a while: you can close this window and ' +
-          'keep working. Progress runs in the status bar, and the review dialog waits for you ' +
-          'there if you moved on. ' +
-          'You do not have to come back here: the same thing is on the command palette as ' +
-          '"Scan a folder into the wiki", with "Stop the running scan" next to it.'
+        'To run one: Cmd/Ctrl+P → "Scan a folder into the wiki", or the button in the chat panel ' +
+          'when your wiki is empty. Either asks which folders and how many notes each holds ' +
+          'before it starts. "Stop the running scan" cancels. The settings below are defaults ' +
+          'and the background count; the scan itself is not run from here.'
       )
-      .addButton((btn) => {
-        // The button doubles as the stop control. Its label follows the
-        // plugin's real scan state via onScanStateChange — setting it once at
-        // click time went stale whenever this pane re-rendered, so a running
-        // scan could still read "Scan now".
-        const sync = () => btn.setButtonText(this.plugin.isScanning() ? 'Stop scan' : 'Scan now');
-        sync();
-        this.plugin.onScanStateChange = sync;
-        btn.onClick(() => {
-          if (this.plugin.isScanning()) {
-            this.plugin.cancelScan();
-            return;
-          }
-          void this.plugin.scanAndReviewIngest();
-        });
-      });
+      .setHeading();
 
     new Setting(containerEl)
-      .setName('Scan these folders')
+      .setName('Default folders')
       .setDesc(
-        'Scan only looks at notes under these folders (comma-separated, e.g. "走り書き, research"). ' +
-          'Everything else in your vault is left alone. Leave blank and scan has nothing to do — this ' +
-          'is opt-in on purpose, so scanning never pulls in notes you did not mean to file.'
+        'Pre-ticked in the scan dialog, and the scope the background count uses ' +
+          '(comma-separated, e.g. "走り書き, research"). It is a default, not a limit — the dialog ' +
+          'lets you pick anything, and can save your pick back here. Blank is fine: the dialog ' +
+          'simply opens with nothing ticked.'
       )
       .addText((text) =>
         text
@@ -375,24 +385,16 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           })
       );
 
-    // Manual-scan knobs — always visible.
+    // A vault-shape fact, not a per-run decision: which folders are simply not
+    // notes. That answer changes about once a year, so it stays here while the
+    // per-run choices moved into the dialog.
     new Setting(containerEl)
-      .setName('Max notes per scan')
-      .setDesc('Cap each scan so a large backlog does not run the GPU through dozens of notes at once.')
-      .addSlider((sl) =>
-        sl
-          .setLimits(1, 30, 1)
-          .setValue(this.plugin.settings.scanMaxPerRun)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            this.plugin.settings.scanMaxPerRun = v;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Exclude folders')
-      .setDesc('Optional: within the scanned folders above, skip these sub-paths (comma-separated, e.g. a drafts subfolder). The wiki folder is always excluded.')
+      .setName('Never scan these')
+      .setDesc(
+        'Folders that are not notes — templates, attachments, an archive. Skipped by every scan ' +
+          'and by the background count, whatever you tick in the dialog (comma-separated). The ' +
+          'wiki folder is always excluded.'
+      )
       .addText((text) =>
         text
           .setPlaceholder('Templates, 10_リソース')

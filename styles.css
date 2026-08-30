@@ -1182,3 +1182,113 @@
   height: 15px;
   color: var(--text-normal);
 }
+
+/* ---------- Scan folder picker ---------- */
+
+.gemma4-scan-modal .gemma4-scan-lede {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-bottom: 12px;
+}
+
+.gemma4-scan-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.gemma4-scan-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+}
+
+.gemma4-scan-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-scan-row-path {
+  flex: 1;
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+}
+
+/* The number is the point of this dialog — it is what the settings field
+   could never tell you before you committed to a run. */
+.gemma4-scan-row-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.gemma4-scan-count {
+  margin-top: 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.gemma4-scan-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.gemma4-scan-empty {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 8px 0 4px;
+}
+
+.gemma4-scan-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* The empty-wiki state carries real explanation, so its hints need room. */
+.gemma4-chat-empty-emphasis {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.gemma4-scan-advanced {
+  margin-top: 10px;
+  font-size: var(--font-ui-smaller);
+}
+
+.gemma4-scan-advanced > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.gemma4-scan-cap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 4px;
+  color: var(--text-normal);
+}
+
+.gemma4-scan-cap input {
+  width: 72px;
+}
+
+.gemma4-scan-cap-hint {
+  color: var(--text-muted);
+  line-height: 1.5;
+}

@@ -52,7 +52,7 @@ import {
   type ProvenanceFlag,
 } from './provenance';
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
-import { AutoIngestReviewModal, findIngestCandidates, type IngestDraft } from './auto-ingest';
+import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
@@ -306,6 +306,9 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Did attention leave while the current run was going? Decides whether the
   // result opens itself or waits.
   private userMovedOn = false;
+  // The cap chosen in the scan dialog for the run about to start. Falls back
+  // to the saved default for runs that skip the dialog.
+  private scanMaxThisRun: number | null = null;
   private runStartedAt = 0;
   // The pinned toast for the running operation, and whether the user closed
   // it. A dismissal is respected until they ask for it back.
@@ -460,7 +463,9 @@ export default class LiteRtSpikePlugin extends Plugin {
       parked.open();
       return;
     }
-    void this.scanAndReviewIngest();
+    void this.scanAndReviewIngest(
+      this.settings.scanInclude.split(',').map((v) => v.trim()).filter(Boolean)
+    );
   }
 
   /**
@@ -841,36 +846,38 @@ export default class LiteRtSpikePlugin extends Plugin {
       callback: () => void this.spotCheckProvenance(),
     });
 
-    this.addCommand({
-      id: 'litert-create-skills-folder',
-      name: 'Create skills folder with examples',
-      callback: () => void this.createSkillsFolder(),
-    });
+    // Diagnostics I wrote for myself while getting LiteRT-LM to run inside
+    // Electron. They are genuinely useful when something is broken — "is
+    // WebGPU there", "does the runtime load without the model", "can this
+    // model actually hold a JSON schema" — but they are four of the twenty
+    // entries a user sees when they type the plugin's name, and none of them
+    // is a thing anyone wants to do with their notes. Off unless asked for,
+    // in Settings → Model → Developer commands.
+    if (this.settings.devCommands) {
+      this.addCommand({
+        id: 'litert-check-webgpu',
+        name: '[Test] Check WebGPU',
+        callback: async () => {
+          const result = await checkWebGPU();
+          log('WebGPU check:', result);
+          if (result.ok) notify('done', `WebGPU OK — ${result.detail}`, DURATION.NORMAL);
+          else notify('error', `WebGPU unavailable — ${result.detail}`);
+        },
+      });
 
-    this.addCommand({
-      id: 'litert-check-webgpu',
-      name: '[Test] Check WebGPU',
-      callback: async () => {
-        const result = await checkWebGPU();
-        log('WebGPU check:', result);
-        if (result.ok) notify('done', `WebGPU OK — ${result.detail}`, DURATION.NORMAL);
-        else notify('error', `WebGPU unavailable — ${result.detail}`);
-      },
-    });
-
-    this.addCommand({
-      id: 'litert-load-wasm',
-      name: '[Test] Load WASM runtime (no model download)',
-      callback: async () => {
-        const p = new Progress('Loading LiteRT-LM WASM runtime… full detail in the console (Cmd/Ctrl+Opt+I).');
-        try {
-          await this.ensureWasmLoaded();
-          p.done('LiteRT-LM WASM runtime loaded successfully.');
-        } catch (err) {
-          p.fail('Loading the WASM runtime', err);
-        }
-      },
-    });
+      this.addCommand({
+        id: 'litert-load-wasm',
+        name: '[Test] Load WASM runtime (no model download)',
+        callback: async () => {
+          const p = new Progress('Loading LiteRT-LM WASM runtime… full detail in the console (Cmd/Ctrl+Opt+I).');
+          try {
+            await this.ensureWasmLoaded();
+            p.done('LiteRT-LM WASM runtime loaded successfully.');
+          } catch (err) {
+            p.fail('Loading the WASM runtime', err);
+          }
+        },
+      });
 
     this.addCommand({
       id: 'litert-download-model',
@@ -890,212 +897,213 @@ export default class LiteRtSpikePlugin extends Plugin {
       },
     });
 
-    this.addCommand({
-      id: 'litert-fix-grammar',
-      name: '[Test] Fix grammar of selection',
-      editorCallback: async (editor) => {
-        const selection = editor.getSelection();
-        if (!selection.trim()) {
-          notify('warn', 'Select some text first, then run this command.');
-          return;
-        }
-        // v1 finding (2026-08-24): the 28s TTFT on a cold engine was mostly
-        // one-time GPU warmup cost, not per-call — once warm, prefill jumps
-        // ~5-6x. Cap is deliberately loose here — this spike's job right
-        // now is to find where the model's real context ceiling is
-        // (currently unknown), not to pre-guess a safe limit. A hard
-        // failure at some length is a valid, useful result, not a bug to
-        // prevent.
-        const MAX_INPUT_CHARS = 40000;
-        if (selection.length > MAX_INPUT_CHARS) {
-          notify(
-            'warn',
-            `Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
-              'Select a shorter passage (a paragraph, not a whole note).'
-          );
-          return;
-        }
-        // Rough token estimate (chars/3, generous for mixed CJK/English) so
-        // the output budget scales with input instead of being a fixed
-        // guess that either truncates long inputs or wastes tokens on
-        // short ones.
-        const estimatedInputTokens = Math.ceil(selection.length / 3);
-        const maxOutputTokens = Math.min(4096, Math.max(256, Math.ceil(estimatedInputTokens * 1.5)));
+      this.addCommand({
+        id: 'litert-fix-grammar',
+        name: '[Test] Fix grammar of selection',
+        editorCallback: async (editor) => {
+          const selection = editor.getSelection();
+          if (!selection.trim()) {
+            notify('warn', 'Select some text first, then run this command.');
+            return;
+          }
+          // v1 finding (2026-08-24): the 28s TTFT on a cold engine was mostly
+          // one-time GPU warmup cost, not per-call — once warm, prefill jumps
+          // ~5-6x. Cap is deliberately loose here — this spike's job right
+          // now is to find where the model's real context ceiling is
+          // (currently unknown), not to pre-guess a safe limit. A hard
+          // failure at some length is a valid, useful result, not a bug to
+          // prevent.
+          const MAX_INPUT_CHARS = 40000;
+          if (selection.length > MAX_INPUT_CHARS) {
+            notify(
+              'warn',
+              `Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
+                'Select a shorter passage (a paragraph, not a whole note).'
+            );
+            return;
+          }
+          // Rough token estimate (chars/3, generous for mixed CJK/English) so
+          // the output budget scales with input instead of being a fixed
+          // guess that either truncates long inputs or wastes tokens on
+          // short ones.
+          const estimatedInputTokens = Math.ceil(selection.length / 3);
+          const maxOutputTokens = Math.min(4096, Math.max(256, Math.ceil(estimatedInputTokens * 1.5)));
 
-        const p = new Progress('Loading model (first run downloads ~3GB)…');
-        let conversation: import('@litert-lm/core').Conversation | undefined;
-        try {
-          const engine = await this.ensureEngine((text) => {
-            log(text);
-            p.update(text);
-          });
-          p.update('Generating…');
+          const p = new Progress('Loading model (first run downloads ~3GB)…');
+          let conversation: import('@litert-lm/core').Conversation | undefined;
+          try {
+            const engine = await this.ensureEngine((text) => {
+              log(text);
+              p.update(text);
+            });
+            p.update('Generating…');
 
-          const { SamplerType } = await import('@litert-lm/core');
-          conversation = await engine.createConversation({
-            preface: {
-              messages: [
-                {
-                  role: 'system',
-                  content:
-                    'You are a copy editor. Fix grammar and spelling mistakes in the text the user gives you. ' +
-                    'Return ONLY the corrected text — no explanation, no preamble, no quotes around it. ' +
-                    'If the text is already correct, return it unchanged.',
-                },
-              ],
-            },
-            sessionConfig: {
-              samplerParams: { type: SamplerType.GREEDY },
-              maxOutputTokens,
-            },
-          });
+            const { SamplerType } = await import('@litert-lm/core');
+            conversation = await engine.createConversation({
+              preface: {
+                messages: [
+                  {
+                    role: 'system',
+                    content:
+                      'You are a copy editor. Fix grammar and spelling mistakes in the text the user gives you. ' +
+                      'Return ONLY the corrected text — no explanation, no preamble, no quotes around it. ' +
+                      'If the text is already correct, return it unchanged.',
+                  },
+                ],
+              },
+              sessionConfig: {
+                samplerParams: { type: SamplerType.GREEDY },
+                maxOutputTokens,
+              },
+            });
 
-          const wallStart = Date.now();
-          let result = '';
-          const stream = conversation.sendMessageStreaming(selection);
-          const reader = stream.getReader();
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const content = value?.content;
-            if (typeof content === 'string') {
-              result += content;
-            } else if (Array.isArray(content)) {
-              for (const part of content) {
-                if (part.type === 'text' && part.text) result += part.text;
+            const wallStart = Date.now();
+            let result = '';
+            const stream = conversation.sendMessageStreaming(selection);
+            const reader = stream.getReader();
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const content = value?.content;
+              if (typeof content === 'string') {
+                result += content;
+              } else if (Array.isArray(content)) {
+                for (const part of content) {
+                  if (part.type === 'text' && part.text) result += part.text;
+                }
               }
             }
+            const wallMs = Date.now() - wallStart;
+
+            const bench = await conversation.getBenchmarkInfo();
+            log('Grammar fix result:', result);
+            log('Wall time (ms):', wallMs);
+            log('Benchmark info:', bench);
+
+            editor.replaceSelection(result.trim());
+            p.done(
+              `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
+                `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`,
+              DURATION.LONG
+            );
+          } catch (err) {
+            p.fail('Fixing grammar', err);
+          } finally {
+            await conversation?.delete().catch(() => {});
           }
-          const wallMs = Date.now() - wallStart;
+        },
+      });
 
-          const bench = await conversation.getBenchmarkInfo();
-          log('Grammar fix result:', result);
-          log('Wall time (ms):', wallMs);
-          log('Benchmark info:', bench);
+      this.addCommand({
+        id: 'litert-json-reliability',
+        name: '[Test] JSON reliability test (5 runs)',
+        editorCallback: async (editor) => {
+          const selection = editor.getSelection();
+          if (!selection.trim()) {
+            notify('warn', 'Select a short paragraph first, then run this command.');
+            return;
+          }
+          if (selection.length > 3000) {
+            notify('warn', 'Keep it under 3000 chars for this test — pick a single paragraph.');
+            return;
+          }
 
-          editor.replaceSelection(result.trim());
-          p.done(
-            `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
-              `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`,
-            DURATION.LONG
-          );
-        } catch (err) {
-          p.fail('Fixing grammar', err);
-        } finally {
-          await conversation?.delete().catch(() => {});
-        }
-      },
-    });
+          const RUNS = 5;
+          const p = new Progress('JSON reliability test: loading model…');
+          try {
+            const engine = await this.ensureEngine((text) => {
+              log(text);
+              p.update(text);
+            });
 
-    this.addCommand({
-      id: 'litert-json-reliability',
-      name: '[Test] JSON reliability test (5 runs)',
-      editorCallback: async (editor) => {
-        const selection = editor.getSelection();
-        if (!selection.trim()) {
-          notify('warn', 'Select a short paragraph first, then run this command.');
-          return;
-        }
-        if (selection.length > 3000) {
-          notify('warn', 'Keep it under 3000 chars for this test — pick a single paragraph.');
-          return;
-        }
+            const { SamplerType } = await import('@litert-lm/core');
+            let successCount = 0;
+            const outcomes: string[] = [];
 
-        const RUNS = 5;
-        const p = new Progress('JSON reliability test: loading model…');
-        try {
-          const engine = await this.ensureEngine((text) => {
-            log(text);
-            p.update(text);
-          });
+            for (let i = 1; i <= RUNS; i++) {
+              p.update(`JSON reliability test: run ${i}/${RUNS}…`);
+              let conversation: import('@litert-lm/core').Conversation | undefined;
+              try {
+                conversation = await engine.createConversation({
+                  preface: {
+                    messages: [
+                      {
+                        role: 'system',
+                        content:
+                          'You extract structured metadata from a note. Given the text the user provides, ' +
+                          'respond with ONLY a single JSON object matching this exact shape, no markdown code ' +
+                          'fences, no explanation, nothing before or after it: ' +
+                          '{"summary": "one sentence summary", "tags": ["tag1", "tag2", "tag3"]}. ' +
+                          'Tags must be short lowercase noun phrases, exactly 3 of them.',
+                      },
+                    ],
+                  },
+                  sessionConfig: {
+                    samplerParams: { type: SamplerType.GREEDY },
+                    maxOutputTokens: 512,
+                  },
+                });
 
-          const { SamplerType } = await import('@litert-lm/core');
-          let successCount = 0;
-          const outcomes: string[] = [];
-
-          for (let i = 1; i <= RUNS; i++) {
-            p.update(`JSON reliability test: run ${i}/${RUNS}…`);
-            let conversation: import('@litert-lm/core').Conversation | undefined;
-            try {
-              conversation = await engine.createConversation({
-                preface: {
-                  messages: [
-                    {
-                      role: 'system',
-                      content:
-                        'You extract structured metadata from a note. Given the text the user provides, ' +
-                        'respond with ONLY a single JSON object matching this exact shape, no markdown code ' +
-                        'fences, no explanation, nothing before or after it: ' +
-                        '{"summary": "one sentence summary", "tags": ["tag1", "tag2", "tag3"]}. ' +
-                        'Tags must be short lowercase noun phrases, exactly 3 of them.',
-                    },
-                  ],
-                },
-                sessionConfig: {
-                  samplerParams: { type: SamplerType.GREEDY },
-                  maxOutputTokens: 512,
-                },
-              });
-
-              let raw = '';
-              const stream = conversation.sendMessageStreaming(selection);
-              const reader = stream.getReader();
-              for (;;) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const content = value?.content;
-                if (typeof content === 'string') raw += content;
-                else if (Array.isArray(content)) {
-                  for (const part of content) {
-                    if (part.type === 'text' && part.text) raw += part.text;
+                let raw = '';
+                const stream = conversation.sendMessageStreaming(selection);
+                const reader = stream.getReader();
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  const content = value?.content;
+                  if (typeof content === 'string') raw += content;
+                  else if (Array.isArray(content)) {
+                    for (const part of content) {
+                      if (part.type === 'text' && part.text) raw += part.text;
+                    }
                   }
                 }
-              }
 
-              // Small models often wrap JSON in ```json ... ``` despite
-              // being told not to — strip that before parsing rather than
-              // counting it as a hard failure.
-              const cleaned = raw
-                .trim()
-                .replace(/^```(?:json)?\s*/i, '')
-                .replace(/```\s*$/i, '')
-                .trim();
+                // Small models often wrap JSON in ```json ... ``` despite
+                // being told not to — strip that before parsing rather than
+                // counting it as a hard failure.
+                const cleaned = raw
+                  .trim()
+                  .replace(/^```(?:json)?\s*/i, '')
+                  .replace(/```\s*$/i, '')
+                  .trim();
 
-              try {
-                const parsed = JSON.parse(cleaned);
-                const valid =
-                  typeof parsed === 'object' &&
-                  parsed !== null &&
-                  typeof parsed.summary === 'string' &&
-                  Array.isArray(parsed.tags) &&
-                  parsed.tags.length === 3 &&
-                  parsed.tags.every((t: unknown) => typeof t === 'string');
-                if (valid) {
-                  successCount++;
-                  log(`Run ${i}: OK`, parsed);
-                  outcomes.push(`Run ${i}: OK — ${JSON.stringify(parsed)}`);
-                } else {
-                  log(`Run ${i}: parsed but wrong shape`, parsed, 'raw:', raw);
-                  outcomes.push(`Run ${i}: WRONG SHAPE — ${cleaned}`);
+                try {
+                  const parsed = JSON.parse(cleaned);
+                  const valid =
+                    typeof parsed === 'object' &&
+                    parsed !== null &&
+                    typeof parsed.summary === 'string' &&
+                    Array.isArray(parsed.tags) &&
+                    parsed.tags.length === 3 &&
+                    parsed.tags.every((t: unknown) => typeof t === 'string');
+                  if (valid) {
+                    successCount++;
+                    log(`Run ${i}: OK`, parsed);
+                    outcomes.push(`Run ${i}: OK — ${JSON.stringify(parsed)}`);
+                  } else {
+                    log(`Run ${i}: parsed but wrong shape`, parsed, 'raw:', raw);
+                    outcomes.push(`Run ${i}: WRONG SHAPE — ${cleaned}`);
+                  }
+                } catch (parseErr) {
+                  log(`Run ${i}: JSON.parse failed`, parseErr, 'raw:', raw);
+                  outcomes.push(`Run ${i}: PARSE FAILED — raw: ${raw}`);
                 }
-              } catch (parseErr) {
-                log(`Run ${i}: JSON.parse failed`, parseErr, 'raw:', raw);
-                outcomes.push(`Run ${i}: PARSE FAILED — raw: ${raw}`);
+              } finally {
+                await conversation?.delete().catch(() => {});
               }
-            } finally {
-              await conversation?.delete().catch(() => {});
             }
-          }
 
-          log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
-          const text = `JSON reliability: ${successCount}/${RUNS} valid. Full detail in console (search "JSON reliability").`;
-          if (successCount === RUNS) p.done(text, DURATION.LONG);
-          else p.warn(text);
-        } catch (err) {
-          p.fail('The JSON reliability test', err);
-        }
-      },
-    });
+            log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
+            const text = `JSON reliability: ${successCount}/${RUNS} valid. Full detail in console (search "JSON reliability").`;
+            if (successCount === RUNS) p.done(text, DURATION.LONG);
+            else p.warn(text);
+          } catch (err) {
+            p.fail('The JSON reliability test', err);
+          }
+        },
+      });
+    }
 
     // Badge refresh: once the layout is ready, then whenever metadata
     // resolves (covers wiki page creation, deletion, and vault sync).
@@ -2122,9 +2130,16 @@ export default class LiteRtSpikePlugin extends Plugin {
   async refreshScanBadge() {
     if (!this.scanStatusEl || !this.settings.autoScanEnabled) return;
     try {
+      // The count MUST use the same scope a scan would. It did not: this call
+      // passed no includePrefixes, so the chip counted the entire vault while
+      // a scan only ever looked at the configured folders. With "testing-cases"
+      // configured, the chip could read "40 to review" and the scan it starts
+      // would find three — a number that was wrong about the only thing it
+      // existed to say.
       const result = await findIngestCandidates(this.app, {
         quietHours: this.settings.scanQuietHours,
         maxPerRun: this.settings.scanMaxPerRun,
+        includePrefixes: this.settings.scanInclude.split(',').map((s) => s.trim()).filter(Boolean),
         excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
       });
       this.reviewCount = result.eligible.length + result.cappedOut;
@@ -2273,23 +2288,26 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
   }
 
-  async scanAndReviewIngest() {
+  /**
+   * Ask which folders, then scan them.
+   *
+   * This used to read a settings field and refuse when it was blank, which
+   * made a command called "Scan a folder into the wiki" the one command that
+   * would not let you pick a folder. The dialog does the asking now; the
+   * settings field is only what it opens pre-ticked.
+   *
+   * Pass prefixes to skip the dialog — the background chip already knows what
+   * it counted.
+   */
+  async scanAndReviewIngest(prefixes?: string[]) {
     if (this.scanRunning) {
       notify('warn', 'A scan is already running — run "Stop the running scan" to cancel it.');
       return;
     }
-    // Allow-list scope (opt-in): scan only looks at the folders the user named.
-    // Blank means nothing to scan — guide them to set it (or ingest one note
-    // by hand) rather than silently sweeping the whole vault.
-    const includePrefixes = this.settings.scanInclude.split(',').map((s) => s.trim()).filter(Boolean);
-    if (!includePrefixes.length) {
-      notify(
-        'warn',
-        'No scan folders set. In Settings → "Scan these folders", name the folder(s) to scan ' +
-          '(e.g. your inbox). To file one specific note instead, use "Ingest active note into wiki".'
-      );
-      return;
-    }
+    this.scanMaxThisRun = null;
+    const includePrefixes = prefixes ?? (await this.askScanFolders());
+    if (!includePrefixes) return;
+    if (!includePrefixes.length) return;
     this.setScanRunning(true);
     this.scanCancelled = false;
     this.beginRun();
@@ -2301,15 +2319,77 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
   }
 
+  /**
+   * Build the folder list for the scan dialog, with an exact count per folder.
+   *
+   * One deterministic sweep over the whole vault, then bucket the results by
+   * folder — rather than a sweep per folder, which would be the same work
+   * multiplied by however many folders you have. No model runs here, so the
+   * numbers are free and exact.
+   *
+   * Returns null if the user cancelled.
+   */
+  private async askScanFolders(): Promise<string[] | null> {
+    const configured = this.settings.scanInclude.split(',').map((v) => v.trim()).filter(Boolean);
+    const all = await findIngestCandidates(this.app, {
+      quietHours: 0,
+      maxPerRun: Number.MAX_SAFE_INTEGER,
+      excludePrefixes: this.settings.scanExclude.split(',').map((v) => v.trim()).filter(Boolean),
+    });
+
+    // Bucket by the note's immediate parent folder. Notes at the vault root
+    // are offered as one entry so they are reachable rather than invisible.
+    const counts = new Map<string, number>();
+    for (const c of all.eligible) {
+      const slash = c.file.path.lastIndexOf('/');
+      const folder = slash === -1 ? '/' : c.file.path.slice(0, slash);
+      counts.set(folder, (counts.get(folder) ?? 0) + 1);
+    }
+    // A folder already in settings stays on the list even at zero, so an
+    // existing choice never silently disappears from under the user.
+    for (const c of configured) if (!counts.has(c)) counts.set(c, 0);
+
+    const folders = [...counts.entries()]
+      .map(([path, count]) => ({ path, count }))
+      .sort((a, b) => b.count - a.count || a.path.localeCompare(b.path));
+
+    return new Promise((resolve) => {
+      let answered = false;
+      const modal = new ScanFolderModal(this.app, {
+        folders,
+        preselected: configured.filter((c) => counts.has(c)),
+        maxPerRun: this.settings.scanMaxPerRun,
+        onConfirm: (chosen, maxThisRun, remember) => {
+          answered = true;
+          void (async () => {
+            this.scanMaxThisRun = maxThisRun;
+            if (remember) {
+              this.settings.scanInclude = chosen.join(', ');
+              this.settings.scanMaxPerRun = maxThisRun;
+              await this.saveSettings();
+            }
+            resolve(chosen);
+          })();
+        },
+      });
+      const close = modal.onClose.bind(modal);
+      modal.onClose = () => {
+        close();
+        if (!answered) resolve(null);
+      };
+      modal.open();
+    });
+  }
+
   private async runScanAndReview(includePrefixes: string[]) {
     this.status('Scanning for new or changed notes…');
     const result = await findIngestCandidates(this.app, {
-      // Manual scan ignores the quiet period (issue #42): clicking "Scan now"
+      // Manual scan ignores the quiet period (issue #42): starting a scan
       // is an explicit ask — skipping the notes you just wrote is the opposite
-      // of the intent. The quiet period only guards background auto-scan,
+      // of the intent. The quiet period only guards the background count,
       // where a timer could grab a half-written draft mid-edit.
       quietHours: 0,
-      maxPerRun: this.settings.scanMaxPerRun,
+      maxPerRun: this.scanMaxThisRun ?? this.settings.scanMaxPerRun,
       includePrefixes,
       excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
     });

@@ -139,7 +139,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 | Command | What it does |
 |---|---|
 | **Ingest active note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3–5 key points, salient mentions, self-rated confidence) plus a validated related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a badge in the file explorer. |
-| **Scan notes for wiki (semi-automatic ingest)** | The same extraction across the folders named in settings, for new or changed notes only. Drafts everything first, then one review list **sorted low-confidence first**. Refuses to run with a blank folder list rather than sweeping the vault. |
+| **Scan a folder into the wiki (batch, local Gemma)** | The same extraction across whole folders, for new or changed notes only. Opens a dialog that **counts what each folder holds before you commit**, drafts everything first, then shows one review list **sorted low-confidence first**. Scope is opt-in: it never sweeps the vault without you ticking a folder. |
 | **Suggest tags & links for active note (local Gemma)** | Proposes frontmatter tags and links to related wiki pages for one note, behind a preview. |
 
 **Build the layer above**
@@ -172,8 +172,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 | Command | What it does |
 |---|---|
 | **Download model (one-time, ~3GB)** | Downloads and caches the model with live progress, instead of waiting for the first command to trigger it. |
-| **Create skills folder with examples** | Creates `skills/` with a README and two working examples. |
-| **[Test] Check WebGPU** | Confirms a usable WebGPU adapter is available. |
+| **[Test] Check WebGPU** | Confirms a usable WebGPU adapter is available. *(The four `[Test]` commands are hidden unless Settings → Model → Developer commands is on.)* |
 | **[Test] Load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without the model — isolates runtime issues from model issues. |
 | **[Test] Fix grammar of selection** | Runs a real generation on the selection, logging prefill/decode speed and time-to-first-token to the console. |
 | **[Test] JSON reliability test (5 runs)** | Five independent structured-JSON generations against the selection, reported as a pass rate — the risk test for whether the model can reliably drive the ingest pipeline. |
