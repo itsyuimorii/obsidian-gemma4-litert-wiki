@@ -305,7 +305,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] File notes into the wiki` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
-      `> | **Ingest active note** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. |` + `\n` +
+      `> | **Ingest active note** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. **This is the one-note version of Scan.** |` + `\n` +
       `> | **Scan a folder into the wiki** | The same thing over whole folders. It asks which ones, and **shows how many new or changed notes each holds and roughly how long the run takes** before you commit. Then it drafts them all and shows you the batch — **nothing is written until you approve it**, and stopping partway still gives you what was drafted. |` + `\n` +
       `> | **Suggest tags & links** | Proposes frontmatter tags and links to related pages, for one note. You review before it writes. |` + `\n\n` +
       `> [!info] Build on top of what is filed` + `\n` +

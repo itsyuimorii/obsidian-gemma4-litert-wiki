@@ -1282,3 +1282,10 @@
 .gemma4-chat-suggestion-running {
   opacity: 0.85;
 }
+
+/* The second line of the scan dialog's preamble: real, but it points at a
+   different door, so it should not compete with the one you are standing in. */
+.gemma4-scan-lede-aside {
+  margin-top: -6px;
+  color: var(--text-faint);
+}
