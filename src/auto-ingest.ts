@@ -232,6 +232,11 @@ export class ScanFolderModal extends Modal {
   private readonly folders: { path: string; count: number }[];
   private readonly totalCandidates: number;
   private readonly onConfirm: (prefixes: string[]) => void;
+  private readonly onCancel: () => void;
+  // Set before close() so onClose can tell "confirmed" from "dismissed".
+  // Without it the caller had to guess from the outside, and guessed by
+  // reading a flag that close() ran before anything could set.
+  private confirmed = false;
   private countEl: HTMLElement | null = null;
   private goBtn: HTMLButtonElement | null = null;
 
@@ -241,6 +246,7 @@ export class ScanFolderModal extends Modal {
       folders: { path: string; count: number }[];
       preselected: string[];
       onConfirm: (prefixes: string[]) => void;
+      onCancel: () => void;
     }
   ) {
     super(app);
@@ -250,6 +256,7 @@ export class ScanFolderModal extends Modal {
     this.chosen = new Set(opts.preselected);
     this.totalCandidates = opts.folders.reduce((n, f) => n + f.count, 0);
     this.onConfirm = opts.onConfirm;
+    this.onCancel = opts.onCancel;
   }
 
   private selectedCount(): number {
@@ -349,6 +356,12 @@ export class ScanFolderModal extends Modal {
     buttons.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
     this.goBtn = buttons.createEl('button', { cls: 'mod-cta', text: 'Scan' });
     this.goBtn.addEventListener('click', () => {
+      // Mark the outcome BEFORE closing. close() runs onClose synchronously,
+      // and onClose is what reports a dismissal — so anything set afterwards
+      // is set too late. This exact ordering silently cancelled every scan:
+      // the caller saw "dismissed", returned, and nothing ran, with no error
+      // and no notification to say so.
+      this.confirmed = true;
       const prefixes = [...this.chosen];
       this.close();
       this.onConfirm(prefixes);
@@ -358,5 +371,6 @@ export class ScanFolderModal extends Modal {
 
   onClose() {
     this.contentEl.empty();
+    if (!this.confirmed) this.onCancel();
   }
 }
