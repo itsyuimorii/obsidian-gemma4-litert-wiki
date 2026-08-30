@@ -518,6 +518,13 @@ export class ChatView extends ItemView {
         // "Find gaps" keeps its verb: "Gaps" alone does not say gaps in what.
         label: 'Quiz',
         icon: 'graduation-cap',
+        // Note-scoped, and not only as a matter of taste. Run in Wiki mode
+        // these three retrieve NOTHING: the lexical scorer matches the words
+        // in the prompt against page summaries, and "create practice
+        // questions from this material" shares no vocabulary with a page
+        // about compound interest. Zero pages came back and the model was
+        // asked to quiz you on a catalog.
+        mode: 'note',
         prompt:
           'Create 5 practice questions that test understanding of this material. Number each ' +
           'question and put its answer in bold directly below it.',
@@ -525,6 +532,7 @@ export class ChatView extends ItemView {
       {
         label: 'Flashcards',
         icon: 'layers',
+        mode: 'note',
         prompt:
           'Create 8 flashcards from this material. Format each as **Q:** question then **A:** ' +
           'answer on the next line, with a blank line between cards.',
@@ -532,6 +540,7 @@ export class ChatView extends ItemView {
       {
         label: 'Find gaps',
         icon: 'search',
+        mode: 'note',
         prompt:
           'What important questions does this material raise but not answer? List the gaps and ' +
           'why each matters.',
@@ -545,18 +554,32 @@ export class ChatView extends ItemView {
     skillsBtn.addEventListener('click', (evt) => {
       void (async () => {
         const custom = await readSkills(this.app.vault);
+        const all = [...SKILLS, ...custom];
         const menu = new Menu();
-        for (const skill of [...SKILLS, ...custom]) {
-          menu.addItem((item) =>
-            item
-              .setTitle(skill.label)
-              .setIcon(skill.icon)
-              .onClick(() => {
-                if (skill.mode && skill.mode !== this.mode) this.setMode(skill.mode);
-                this.inputEl.value = skill.prompt;
-                void this.handleSend();
-              })
-          );
+        // A skill that declares a mode used to switch you into it on click.
+        // That is a menu item quietly changing what the panel is grounded in
+        // — you pressed "Feynman" from Wiki mode and landed in This note,
+        // with nothing saying so. Show it as unavailable instead, and say
+        // which mode it wants.
+        const unusable = all.filter((s) => s.mode && s.mode !== this.mode);
+        if (unusable.length === all.length && all.length) {
+          const want = all[0].mode === 'wiki' ? 'Wiki' : 'This note';
+          menu.addItem((item) => item.setTitle(`Switch to ${want} to use these`).setDisabled(true));
+          menu.addSeparator();
+        }
+        for (const skill of all) {
+          const wrongMode = !!skill.mode && skill.mode !== this.mode;
+          menu.addItem((item) => {
+            item.setTitle(skill.label).setIcon(skill.icon);
+            if (wrongMode) {
+              item.setDisabled(true);
+              return;
+            }
+            item.onClick(() => {
+              this.inputEl.value = skill.prompt;
+              void this.handleSend();
+            });
+          });
         }
         menu.showAtMouseEvent(evt);
       })();

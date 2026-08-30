@@ -301,7 +301,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | **Chat with active note** | Answers grounded in the note you have open — and nothing else. It says "not in the note" instead of guessing. |` + `\n` +
       `> | **Ask your wiki** | The other half of the same panel. Reads \`index.md\` to pick the pages worth opening, then answers from those, citing them. A question about the *collection* — *Find connections*, *What's still open?* — grounds in **every page instead**, because "what links my pages" is not a question retrieval can find an answer to. |` + `\n` +
-      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus the two that ship as files. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
+      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Feynman*, which ship as files. **All of them work on the open note**, so in Wiki mode they show greyed with a line saying to switch. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
       `> [!info] File notes into the wiki` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -350,7 +350,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
       `> | ${ICON_ATTACH} | Attach another note as extra context, on top of whatever the current mode already sends. |` + `\n` +
-      `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. |` + `\n` +
+      `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. A skill can declare which mode it needs; one that needs the other mode is **shown greyed rather than switching you into it** — a menu item should not quietly change what the panel is grounded in. |` + `\n` +
       `> | The chips above it | Three one-press starters, fixed — the row you learn is the row you keep. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* **While a scan is running, the first one becomes *Stop scan*.** Chips marked as writes (*Formatting*, *Scan*) do something rather than ask something, always behind their own preview. |` + `\n` +
       `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n` +
       `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
