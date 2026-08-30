@@ -168,23 +168,41 @@ export class ChatView extends ItemView {
       el.createDiv({ cls: 'gemma4-chat-empty-title', text: 'Your wiki is empty' });
       el.createDiv({
         cls: 'gemma4-chat-empty-hint',
-        text: 'Wiki mode answers from pages you have filed. File some first:',
+        text: 'Wiki mode answers from pages you have filed here. Nothing is filed yet.',
       });
+
       const actions = el.createDiv({ cls: 'gemma4-chat-empty-actions' });
       const batch = actions.createEl('button', {
         cls: 'gemma4-chat-empty-action mod-cta',
         text: 'Scan a folder',
       });
-      setTooltip(batch, 'Draft a page for every new or changed note in the folders you named in settings');
+      setTooltip(batch, 'Pick folders, see how many notes each holds, then draft a page for each');
       batch.addEventListener('click', () => void this.plugin.scanAndReviewIngest());
 
       const one = actions.createEl('button', { cls: 'gemma4-chat-empty-action', text: 'File this note' });
       setTooltip(one, 'Draft one page from the note you have open');
       one.addEventListener('click', () => void this.plugin.ingestActiveNote());
 
+      // This explanation used to be the description of a "Scan now" button
+      // buried in Settings — good copy in a place a new user had no reason to
+      // open. It belongs where the decision is: next to the button, on the
+      // screen you land on with an empty wiki.
       el.createDiv({
         cls: 'gemma4-chat-empty-hint',
-        text: 'Nothing is written until you approve it. Or switch to This note above and ask about the open note right now.',
+        text:
+          'Scanning sweeps the folders you pick for new or changed notes and drafts a page for ' +
+          'each. It is one model call per note, so it takes a while — keep working while it runs; ' +
+          'progress is in the status bar and the review list waits for you there.',
+      });
+      el.createDiv({
+        cls: 'gemma4-chat-empty-hint gemma4-chat-empty-emphasis',
+        text: 'Nothing is ever written without your tick.',
+      });
+      el.createDiv({
+        cls: 'gemma4-chat-empty-hint',
+        text:
+          'Or switch to This note above and ask about the note you have open right now — that ' +
+          'needs no setup at all.',
       });
       return;
     }
