@@ -1268,3 +1268,11 @@
 
 
 
+
+/* Buttons inside an inline message — a refusal that names the way out should
+   also be the way out. Same shape as the empty-state actions. */
+.gemma4-chat-info-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}

@@ -81,6 +81,73 @@ export const VIEW_TYPE_CHAT = 'gemma4-litert-wiki-chat-view';
 // context window (settings) minus room for the answer and instructions.
 // Token-estimated (CJK-aware), not char-counted.
 
+/** One chip above the input: a label, and what pressing it does. */
+export interface SuggestionSpec {
+  label: string;
+  /** What to send, for the chips that ask a question. */
+  ask?: string;
+  /** A non-question action: scan, file a note, reformat one. Styled as a write. */
+  action?: 'scan' | 'ingest' | 'improve';
+}
+
+/**
+ * Which chips belong above the input, given the mode and whether the wiki
+ * holds anything.
+ *
+ * Pulled out as a pure function because the bug this fixes lives entirely in
+ * this decision, not in the rendering: with an empty wiki, every one of the
+ * three wiki-mode questions is guaranteed to fail. The panel was inviting the
+ * user to do something that could not work, three times over, and answering
+ * each with the same refusal.
+ *
+ * This row is also the only part of the panel that never disappears — the
+ * empty state that used to carry "Scan a folder" is about an empty
+ * CONVERSATION, and vanishes the moment you send anything, while an empty
+ * WIKI stays empty until you file something. Two different emptinesses; the
+ * remedy belongs to the one that persists.
+ */
+export function suggestionsFor(mode: 'note' | 'wiki', wikiEmpty: boolean): SuggestionSpec[] {
+  if (mode === 'note') {
+    return [
+      { label: 'Summarize', ask: 'Summarize this note' },
+      { label: 'Key points', ask: 'What are the key points?' },
+      { label: 'Formatting', action: 'improve' },
+    ];
+  }
+  // Scan leads in both states. Filing a folder is not a first-run chore you
+  // do once — a wiki grows, and the folder you want next is usually not the
+  // folder you scanned first.
+  if (wikiEmpty) {
+    return [
+      { label: 'Scan a folder', action: 'scan' },
+      { label: 'File this note', action: 'ingest' },
+    ];
+  }
+  // Three, and no more: the row is permanent screen space, and a fourth wraps
+  // on a narrow panel. Scan takes one slot because it is an action and the
+  // skills menu structurally cannot hold one — a skill file is frontmatter
+  // plus a prompt, with no way to express "do this". The other two are the
+  // questions whose answers are not already sitting in a file you could open.
+  // What went: "What's in my wiki?" (that is index.md) and "Added recently"
+  // (that is log.md, and it duplicated a skills-menu entry besides).
+  return [
+    { label: 'Scan a folder', action: 'scan' },
+    {
+      label: 'Find connections',
+      ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
+    },
+    {
+      label: "What's still open?",
+      // Wiki-wide, which is what separates it from the "Find gaps" skill:
+      // that one looks for holes in whatever the chat is grounded in right
+      // now, this one looks across everything filed.
+      ask:
+        'What questions do my pages raise but never answer? List the gaps and why each ' +
+        'matters. Cite the pages.',
+    },
+  ];
+}
+
 export class ChatView extends ItemView {
   private plugin: LiteRtSpikePlugin;
   private messagesEl!: HTMLElement;
@@ -94,6 +161,11 @@ export class ChatView extends ItemView {
   private lastQuestion: string | null = null;
   private activeConversation: Conversation | null = null;
   private mode: 'note' | 'wiki' = 'note'; // overwritten from settings in onOpen
+  // Whether the wiki holds any pages. Cached, because the chips are drawn
+  // synchronously and metadataCache fires 'resolved' constantly — reading
+  // index.md on every one of those would be a file read per keystroke-ish
+  // event for a boolean that changes about once.
+  private wikiEmpty = true;
   private modeButtons: { note: HTMLElement; wiki: HTMLElement } | null = null;
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
@@ -154,6 +226,27 @@ export class ChatView extends ItemView {
    * moment a user is looking straight at an empty wiki was the one moment
    * nothing told them what to do about it.
    */
+  /**
+   * Re-read whether the wiki holds anything, and redraw only if that changed.
+   *
+   * metadataCache fires 'resolved' constantly, and this is behind a file read,
+   * so the guard is the point: without it every resolve would re-read
+   * index.md to re-answer a boolean that flips roughly once in the life of a
+   * vault.
+   */
+  private async refreshWikiEmpty(): Promise<void> {
+    let empty = true;
+    try {
+      empty = (await readIndexEntries(this.app.vault)).length === 0;
+    } catch {
+      empty = this.wikiEmpty;
+    }
+    if (empty === this.wikiEmpty) return;
+    this.wikiEmpty = empty;
+    this.renderSuggestions();
+    void this.renderEmptyState();
+  }
+
   private async renderEmptyState() {
     const el = this.emptyStateEl;
     if (!el) return;
@@ -161,10 +254,7 @@ export class ChatView extends ItemView {
     const icon = el.createDiv({ cls: 'gemma4-chat-empty-icon' });
     setIcon(icon, 'gemma-wiki-logo');
 
-    const wikiEmpty =
-      this.mode === 'wiki' && (await readIndexEntries(this.app.vault)).length === 0;
-
-    if (wikiEmpty) {
+    if (this.mode === 'wiki' && this.wikiEmpty) {
       el.createDiv({ cls: 'gemma4-chat-empty-title', text: 'Your wiki is empty' });
       el.createDiv({
         cls: 'gemma4-chat-empty-hint',
@@ -220,47 +310,36 @@ export class ChatView extends ItemView {
   // Suggestion chips live above the input, permanently — they used to sit
   // in the empty state and vanished after the first question. Note-mode
   // only: canned wiki-mode questions would fight the lexical retrieval.
+  /** What pressing a suggestion does — from a chip or from a message. */
+  private runSuggestion(spec: SuggestionSpec) {
+    if (spec.ask) {
+      this.inputEl.value = spec.ask;
+      void this.handleSend();
+      return;
+    }
+    if (spec.action === 'scan') return void this.plugin.scanAndReviewIngest();
+    if (spec.action === 'ingest') return void this.plugin.ingestActiveNote();
+    void this.plugin.improveActiveNote();
+  }
+
   private renderSuggestions() {
     if (!this.suggestionRow) return;
     this.suggestionRow.empty();
     this.suggestionRow.show();
-    // Short labels; the full question lives in the prompt. Chips swap per
-    // mode instead of hiding — wiki mode gets prompts that are reliable
-    // against catalog+log grounding. The Improve write op routes straight
-    // to the preview-gated editor and never enters retrieval.
-    const ask = (q: string) => {
-      this.inputEl.value = q;
-      void this.handleSend();
+    // Short labels; the full question lives in the prompt. What belongs here
+    // is decided by suggestionsFor(); this only draws it.
+    const TIP: Record<string, string> = {
+      scan: 'Pick folders, see how many notes each holds, then draft a page for each',
+      ingest: 'Draft one page from the note you have open',
+      improve: 'Edits this note — you review before anything is written',
     };
-    const items: { label: string; run: () => void; write?: boolean }[] =
-      this.mode === 'note'
-        ? [
-            { label: 'Summarize', run: () => ask('Summarize this note') },
-            { label: 'Key points', run: () => ask('What are the key points?') },
-            { label: 'Formatting', write: true, run: () => void this.plugin.improveActiveNote() },
-          ]
-        : [
-            {
-              label: "What's in my wiki?",
-              run: () => ask('What is in my wiki? Give a short overview grouped by topic.'),
-            },
-            {
-              label: 'Added recently',
-              run: () => ask('What did I add to the wiki recently, based on the activity log?'),
-            },
-            {
-              label: 'Find connections',
-              run: () =>
-                ask('What connections or common themes link the pages in my wiki? Cite the pages.'),
-            },
-          ];
-    for (const item of items) {
+    for (const spec of suggestionsFor(this.mode, this.wikiEmpty)) {
       const chip = this.suggestionRow.createEl('button', {
-        cls: item.write ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
-        text: item.label,
+        cls: spec.action ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
+        text: spec.label,
       });
-      if (item.write) setTooltip(chip, 'Edits this note — you review before anything is written');
-      chip.addEventListener('click', item.run);
+      if (spec.action) setTooltip(chip, TIP[spec.action]);
+      chip.addEventListener('click', () => this.runSuggestion(spec));
     }
   }
 
@@ -447,17 +526,6 @@ export class ChatView extends ItemView {
           'What important questions does this material raise but not answer? List the gaps and ' +
           'why each matters.',
       },
-      {
-        label: 'Digest recent wiki activity',
-        icon: 'history',
-        // Needs the catalog + log, which only Wiki mode carries — running
-        // it in This-note mode produced "I do not have access to an
-        // activity log". The skill switches mode itself.
-        mode: 'wiki',
-        prompt:
-          'Based on the activity log and catalog, summarize what was added to the wiki recently, ' +
-          'grouped by topic.',
-      },
     ];
 
     // Custom skills (issue #4) live as files in <wiki>/skills/ — "config as a
@@ -518,6 +586,12 @@ export class ChatView extends ItemView {
     });
 
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateNoteChip()));
+    // The chips depend on whether the wiki holds anything, and that changes
+    // out from under this panel — a scan finishing, a page written, a page
+    // deleted. Read it once now, then follow the vault. refreshWikiEmpty
+    // redraws only when the answer flips.
+    void this.refreshWikiEmpty();
+    this.registerEvent(this.app.metadataCache.on('resolved', () => void this.refreshWikiEmpty()));
   }
 
   private setMode(mode: 'note' | 'wiki') {
@@ -573,10 +647,26 @@ export class ChatView extends ItemView {
   // Failures render inside the thread rather than as a floating Notice —
   // otherwise the user's question bubble is left dangling with no visible
   // response, which read as "the model can't answer".
-  private appendInfoMessage(text: string) {
+  /**
+   * An inline note in the thread — a refusal, a truncation warning.
+   *
+   * Optionally with buttons. A refusal that names the way out and then makes
+   * you go find it is only half a message: the "your wiki is empty" one used
+   * to name a command you had to type, while the only clickable version of the
+   * same thing lived in the empty state, which disappears the moment you send
+   * anything.
+   */
+  private appendInfoMessage(text: string, actions?: SuggestionSpec[]) {
     this.emptyStateEl.hide();
     const row = this.messagesEl.createDiv({ cls: 'gemma4-chat-row gemma4-chat-row-assistant' });
-    row.createDiv({ cls: 'gemma4-chat-info', text });
+    const box = row.createDiv({ cls: 'gemma4-chat-info', text });
+    if (actions?.length) {
+      const bar = box.createDiv({ cls: 'gemma4-chat-info-actions' });
+      for (const spec of actions) {
+        const btn = bar.createEl('button', { cls: 'gemma4-chat-empty-action', text: spec.label });
+        btn.addEventListener('click', () => this.runSuggestion(spec));
+      }
+    }
     this.scrollToBottom();
   }
 
@@ -694,7 +784,12 @@ export class ChatView extends ItemView {
       const entries = await readIndexEntries(this.app.vault);
       if (!entries.length) {
         this.appendInfoMessage(
-          'Your wiki is empty — run "Ingest active note into wiki" on a few notes first, then ask again.'
+          'Your wiki is empty, so there is nothing to answer from. File something first — ' +
+            'nothing is written without your approval.',
+          [
+            { label: 'Scan a folder', action: 'scan' },
+            { label: 'File this note', action: 'ingest' },
+          ]
         );
         return null;
       }

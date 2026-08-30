@@ -52,9 +52,10 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - **Two grounding modes**: *This note* (the open file) and *Wiki* (your ingested pages).
 - **Deterministic Sources row** on every answer — the plugin lists exactly what was used, clickable; citation is never left to the model.
 - **`+` attachments** — fuzzy-pick any notes as removable context pills, in either mode.
-- **⚡ Skills** — canned single-task prompts: quiz, flashcards, gap-finding, recent-activity digest (auto-switches to Wiki mode), plus anything in `skills/`.
+- **⚡ Skills** — canned single-task prompts: quiz, flashcards, gap-finding, plus anything in `skills/`. A skill file is frontmatter and a prompt, so the menu holds *questions*; anything that **does** something (scan, file a note, reformat one) is a chip above the input instead.
 - **✨ Improve formatting** — the one write action on raw notes, and the most constrained call in the plugin: structure/formatting/typos only, wording and voice preserved, full-result preview before anything is written. Long notes are split on headings and blank lines into passes that each fit the context window, rewritten one pass at a time and stitched back together; a selection still narrows it to one section.
-- Streaming replies with a typing spinner, stop button, copy/regenerate actions, persistent starter chips, auto-growing + expandable input, clear-chat, hover tooltips everywhere.
+- **Three chips above the input, and they change with the state.** In Wiki mode they are *Scan a folder*, *Find connections*, *What's still open?* — and with nothing filed yet they become *Scan a folder* and *File this note*, because every wiki question is guaranteed to fail against an empty wiki and offering three of them is offering three refusals. The chip row is the one part of the panel that never disappears, which is why the way to fill an empty wiki lives there rather than in an empty state that vanishes the moment you type.
+- Streaming replies with a typing spinner, stop button, copy/regenerate actions, auto-growing + expandable input, clear-chat, hover tooltips everywhere.
 
 **Engineering rules the whole plugin follows**:
 
@@ -72,7 +73,7 @@ Click the book-and-spark ribbon icon to open the side panel. Two grounding modes
 - **This note** — answers strictly from the currently open note.
 - **Wiki** — the Karpathy Query path: reads the `gemma-wiki/index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
 
-Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), honest refusals when the material doesn't contain the answer, and per-message **copy / regenerate / save-to-wiki** actions. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (quiz, flashcards, gap-finding, recent-activity digest) against the current grounding.
+Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), honest refusals when the material doesn't contain the answer, and per-message **copy / regenerate / save-to-wiki** actions. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (quiz, flashcards, gap-finding) against the current grounding.
 
 ## 📑 Contents
 
