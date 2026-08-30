@@ -301,11 +301,11 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | **Chat with active note** | Answers grounded in the note you have open — and nothing else. It says "not in the note" instead of guessing. |` + `\n` +
       `> | **Ask your wiki** | The other half of the same panel. Reads \`index.md\` to pick the pages worth opening, then answers from those, citing them. A question about the *collection* — *Find connections*, *What's still open?* — grounds in **every page instead**, because "what links my pages" is not a question retrieval can find an answer to. |` + `\n` +
-      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Feynman*, which ship as files. **All of them work on the open note**, so in Wiki mode they show greyed with a line saying to switch. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
+      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Feynman*, which ship as files. **All of them work on the open note**, so in Wiki mode they show greyed with a line saying to switch. A skill with \`fill: true\` puts its prompt in the input box and waits for you to finish the sentence instead of sending — that is how *Feynman* asks which idea. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
       `> [!info] File notes into the wiki` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
-      `> | **Ingest active note** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. **This is the one-note version of Scan.** |` + `\n` +
+      `> | **Ingest this note into wiki** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. **This is the one-note version of Scan.** |` + `\n` +
       `> | **Scan a folder into the wiki** | The same thing over whole folders. It asks which ones, and **shows how many new or changed notes each holds and roughly how long the run takes** before you commit. Then it drafts them all and shows you the batch — **nothing is written until you approve it**. |` + `\n` +
       `> | **Suggest tags & links** | Proposes frontmatter tags and links to related pages, for one note. You review before it writes. |` + `\n\n` +
       `> [!info] Build on top of what is filed` + `\n` +
@@ -809,6 +809,16 @@ export interface WikiSkill {
   icon: string;
   prompt: string;
   mode?: 'note' | 'wiki';
+  /**
+   * Put the prompt in the input box and stop, instead of sending it.
+   *
+   * For a skill that needs one word from you — which concept, which section.
+   * A skill is one prompt and one press, and that is right for "quiz me on
+   * this"; it is wrong for anything that has to be aimed. Ending the prompt
+   * with the blank and leaving the cursor there costs one press and keeps the
+   * careful wording that a hand-typed question would lose.
+   */
+  fill?: boolean;
 }
 
 // A skill file is `key: value` frontmatter between --- fences, then the prompt
@@ -856,6 +866,7 @@ function parseSkillFile(name: string, content: string): WikiSkill | null {
     icon: front.icon || 'wand-2',
     prompt,
     mode,
+    fill: front.fill === 'true',
   };
 }
 
@@ -882,9 +893,10 @@ function buildSkillFile(
   icon: string,
   mode: 'note' | 'wiki' | undefined,
   prompt: string,
-  doc?: string
+  doc?: string,
+  fill = false
 ): string {
-  const modeLine = mode ? `mode: ${mode}\n` : '';
+  const modeLine = (mode ? `mode: ${mode}\n` : '') + (fill ? 'fill: true\n' : '');
   // The callout goes above the prompt so the file reads as documentation first;
   // stripCalloutBlocks() removes it again on the way to the model.
   const docBlock = doc ? `${doc}\n\n` : '';
@@ -931,31 +943,47 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
   }
   const seeds: Array<[string, string]> = [
     [`${wikiSkillsDir()}/README.md`, SKILLS_README],
-    // The Feynman technique rather than "explain like I'm five": the second
-    // half — naming what you could not explain — is the part that is actually
-    // useful on a knowledge base, and it is a different question from the
-    // built-in "Find gaps" (that one looks for holes in the material; this one
-    // looks for holes in your grasp of it).
+    // The Feynman technique needs a target. Explaining "this material" when
+    // the material is a whole note produces a summary — which Summarize
+    // already does — and the old second half ("what would have to be in the
+    // material") is Find gaps. It had no job of its own, which is why it felt
+    // like nothing.
+    //
+    // So it asks for one idea, and it asks YOU which one: fill: true puts the
+    // prompt in the box with the blank at the end and waits. Send it empty and
+    // the model picks one and names its pick, so the one-press path still
+    // works.
     [
       `${wikiSkillsDir()}/feynman.md`,
       buildSkillFile(
         'Feynman',
         'lightbulb',
         'note',
-        'Explain this material to someone clever who has never met the topic: plain words, short ' +
-          'sentences, every piece of jargon either dropped or defined the first time it appears.\n\n' +
-          'Then, under a heading "Where I had to be vague", list the points you could not explain ' +
-          'without hand-waving, and say what would have to be in the material for you to explain ' +
-          'them properly.',
+        'Explain one idea from this note to someone clever who has never met it: plain words, ' +
+          'short sentences, every piece of jargon either dropped or defined the first time it ' +
+          'appears, and one concrete example or analogy.\n\n' +
+          'Then, under a heading "Where this explanation is thin", say what you had to gloss ' +
+          'over and what the note would need to contain for you to explain it properly.\n\n' +
+          'If no idea is named below, pick the single most important one in the note and say ' +
+          'which one you picked.\n\n' +
+          'The idea to explain: ',
         `> [!info] What this skill is\n` +
-          `> The Feynman technique, not "explain like I am five". The first half is the plain-words explanation; **the second half is the useful part** — naming what you could not explain without hand-waving.\n` +
+          `> **Type one idea at the end of the prompt, then press Enter.** This skill fills the ` +
+          `input box instead of sending straight away, because the Feynman technique is about ` +
+          `*one thing* — explaining a whole note in plain words is a summary, and you already ` +
+          `have **Summarize** for that.\n` +
           `>\n` +
-          `> | | Looks for |\n` +
+          `> Leave the blank empty and it picks the note's central idea itself, and tells you ` +
+          `which one it picked.\n` +
+          `>\n` +
+          `> | | Gives you |\n` +
           `> |---|---|\n` +
-          `> | This skill | Holes in **your grasp** of the material |\n` +
-          `> | Built-in *Find gaps* | Holes in **the material itself** |\n` +
+          `> | **Summarize** | The whole note, compressed |\n` +
+          `> | **This skill** | **One idea, in depth, with an example** |\n` +
+          `> | **Find gaps** | What the note raises but never answers |\n` +
           `>\n` +
-          `> Everything below this box is the prompt. **Callouts are documentation and are stripped before the model sees it** — edit the prompt freely, and delete this box if you want.`
+          `> Everything below this box is the prompt. **Callouts are documentation and are stripped before the model sees it** — edit the prompt freely, and delete this box if you want.`,
+        true
       ),
     ],
     [
