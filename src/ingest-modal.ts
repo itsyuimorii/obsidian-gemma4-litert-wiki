@@ -1,4 +1,4 @@
-import { App, MarkdownRenderer, Modal, Component } from 'obsidian';
+import { App, MarkdownRenderer, Modal, Component, setIcon } from 'obsidian';
 
 // A small yes/no gate. Resolves true if the user confirms, false otherwise
 // (including closing the modal). Used e.g. when a note is already ingested and
@@ -245,5 +245,92 @@ export class OnboardingModal extends Modal {
     // Closing any other way (Esc, backdrop, Not now) counts as declining.
     if (!this.decided) this.onResult(false);
     this.contentEl.empty();
+  }
+}
+
+// Shown once, immediately after the plugin creates its folder for the first
+// time. Deliberately NOT a confirmation: there is no decision here, and a
+// dialog that only has one sensible answer is friction, not consent. It exists
+// because the alternative — creating eight things in someone's vault silently —
+// leaves them with a folder they never asked about and cannot interpret.
+// The primary action opens index.md, which carries the same explanation
+// permanently, so this card is a doorway rather than the only telling.
+export class ScaffoldCreatedModal extends Modal {
+  private dir: string;
+  private items: { path: string; what: string }[];
+  private onOpenIndex: () => void;
+  private onOpenPanel: () => void;
+
+  constructor(
+    app: App,
+    dir: string,
+    items: { path: string; what: string }[],
+    onOpenIndex: () => void,
+    onOpenPanel: () => void
+  ) {
+    super(app);
+    this.dir = dir;
+    this.items = items;
+    this.onOpenIndex = onOpenIndex;
+    this.onOpenPanel = onOpenPanel;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('gemma4-scaffold-modal');
+    // Widen the shell as well as the content: at the default modal width the
+    // eight paths plus the two explanations were a line or two too tall and the
+    // card came up with a scrollbar, which is a bad look for the first thing
+    // the plugin ever shows anyone.
+    this.modalEl.addClass('gemma4-scaffold-shell');
+    contentEl.createEl('h3', { text: `Gemma Wiki set up "${this.dir}/"` });
+    contentEl.createEl('p', {
+      cls: 'gemma4-scaffold-lede',
+      text:
+        'Everything this plugin writes goes in that one folder. Your own notes are never ' +
+        'moved or modified — they are read and closed.',
+    });
+
+    const list = contentEl.createDiv({ cls: 'gemma4-scaffold-list' });
+    for (const item of this.items) {
+      const row = list.createDiv({ cls: 'gemma4-scaffold-row' });
+      row.createSpan({ cls: 'gemma4-scaffold-path', text: item.path });
+      row.createSpan({ cls: 'gemma4-scaffold-what', text: item.what });
+    }
+
+    contentEl.createEl('p', {
+      cls: 'gemma4-scaffold-foot',
+      text:
+        'Each folder holds a README explaining what belongs in it. Rename the folder, or check ' +
+        'that nothing is missing, in Settings → Gemma Wiki.',
+    });
+
+    // Where the plugin actually lives. A first-time user has no reason to guess
+    // that a ribbon icon on the far left is the whole product, so this says it
+    // in words and the panel opens on its own once this card is dismissed.
+    // Draw the actual ribbon icon inline rather than describing it. "The Gemma
+    // Wiki icon" is useless to someone staring at a column of nine icons they
+    // have never looked at closely; the picture is the instruction.
+    const where = contentEl.createEl('p', { cls: 'gemma4-scaffold-where' });
+    where.appendText('You talk to it from the side panel — click ');
+    const inlineIcon = where.createSpan({ cls: 'gemma4-inline-icon' });
+    setIcon(inlineIcon, 'gemma-wiki-logo');
+    where.appendText(
+      ' in the ribbon down the left edge of the window. It is opening now so you can see where it is.'
+    );
+
+    const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
+    const index = buttons.createEl('button', { text: 'Open index.md' });
+    index.addEventListener('click', () => {
+      this.close();
+      this.onOpenIndex();
+    });
+    const open = buttons.createEl('button', { cls: 'mod-cta', text: 'Show me the panel' });
+    open.addEventListener('click', () => this.close());
+  }
+
+  onClose() {
+    this.contentEl.empty();
+    this.onOpenPanel();
   }
 }

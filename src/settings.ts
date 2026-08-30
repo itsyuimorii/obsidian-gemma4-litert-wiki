@@ -1,6 +1,7 @@
-import { App, Notice, PluginSettingTab, Setting, TFolder } from 'obsidian';
+import { App, ButtonComponent, Notice, PluginSettingTab, Setting, TFolder } from 'obsidian';
+import { ConfirmModal } from './ingest-modal';
 import type LiteRtSpikePlugin from './main';
-import { DEFAULT_WIKI_DIR } from './wiki-store';
+import { DEFAULT_WIKI_DIR, wikiScaffoldPaths } from './wiki-store';
 
 export interface GemmaWikiSettings {
   wikiDir: string;
@@ -23,6 +24,10 @@ export interface GemmaWikiSettings {
   // drafting only runs when the user clicks the chip. Default OFF.
   autoScanEnabled: boolean;
   autoScanIntervalHours: number;
+  // Whether the one-time "here is the folder that was just created" card has
+  // been shown. Not a consent flag — the folder is made either way; this only
+  // stops the explanation reappearing every launch.
+  scaffoldNoticeShown: boolean;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -36,6 +41,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanExclude: '',
   autoScanEnabled: false,
   autoScanIntervalHours: 6,
+  scaffoldNoticeShown: false,
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {
@@ -100,12 +106,23 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     // ---------- Wiki ----------
     new Setting(containerEl).setName('Wiki').setHeading();
 
+    // Renaming the knowledge folder moves every page and rewrites every
+    // internal link, so Apply stays disabled until the field actually differs
+    // from what is saved. It used to be permanently clickable and answered
+    // "No change." — one useless notice per press, stacking if you pressed twice.
     let pendingDir = this.plugin.settings.wikiDir;
+    let applyBtn: ButtonComponent | null = null;
+    const normalizeDir = (v: string) => (v || DEFAULT_WIKI_DIR).trim().replace(/^\/+|\/+$/g, '');
+    const syncApply = () => {
+      const next = normalizeDir(pendingDir);
+      applyBtn?.setDisabled(!next || next === this.plugin.settings.wikiDir);
+    };
+
     new Setting(containerEl)
       .setName('Knowledge folder name')
       .setDesc(
-        'Folder the plugin creates and maintains (sources, answers, chats, index, log). ' +
-          'Changing it renames the existing folder and rewrites internal links. Leave blank to reset to the default.'
+        'The one folder the plugin writes to. Your own notes are never moved or modified. ' +
+          'Changing this renames the folder and rewrites internal links; blank resets to the default.'
       )
       .addText((text) =>
         text
@@ -113,24 +130,108 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.wikiDir)
           .onChange((v) => {
             pendingDir = v;
+            syncApply();
           })
       )
-      .addButton((btn) =>
+      .addButton((btn) => {
+        applyBtn = btn;
         btn.setButtonText('Apply').onClick(async () => {
-          const next = (pendingDir || DEFAULT_WIKI_DIR).trim().replace(/^\/+|\/+$/g, '');
+          const next = normalizeDir(pendingDir);
           const prev = this.plugin.settings.wikiDir;
-          if (!next || next === prev) {
-            new Notice('ℹ️ No change.');
-            return;
-          }
+          if (!next || next === prev) return;
           const existing = this.app.vault.getAbstractFileByPath(next);
           if (existing && !(existing instanceof TFolder)) {
             new Notice(`⚠️ "${next}" already exists and is not a folder.`);
             return;
           }
+          // A typo here does not fail — it silently starts a second, empty
+          // knowledge base under the misspelled name and leaves the real one
+          // orphaned. Moving a whole wiki deserves the confirmation that
+          // creating an empty folder never did.
+          const pageCount = this.app.vault
+            .getMarkdownFiles()
+            .filter((f) => f.path.startsWith(`${prev}/`)).length;
+          const ok = await new Promise<boolean>((resolve) => {
+            new ConfirmModal(this.app, {
+              title: 'Rename the knowledge folder',
+              body:
+                `${prev}  →  ${next}\n\n` +
+                (pageCount
+                  ? `${pageCount} file${pageCount === 1 ? '' : 's'} will move, and links pointing into ` +
+                    `"${prev}/" will be rewritten.`
+                  : `"${prev}/" is empty or missing, so nothing moves — the folders will simply be ` +
+                    `created under "${next}/".`) +
+                '\n\nCheck the spelling: a name you did not mean leaves your existing wiki behind.',
+              confirmText: 'Rename',
+              onResult: resolve,
+            }).open();
+          });
+          if (!ok) return;
           await this.plugin.renameWikiDir(prev, next);
           this.display();
-        })
+        });
+        syncApply();
+      });
+
+    // What the plugin actually put in the vault. The settings page used to
+    // describe the layout in prose in three different places and got it wrong
+    // (concepts/, skills/ and schema.md were missing from the list) — this is
+    // generated from the same list the scaffold builds from, so it cannot drift.
+    const map = containerEl.createDiv({ cls: 'gemma4-folder-map' });
+    let missing = 0;
+    for (const entry of wikiScaffoldPaths()) {
+      // Trailing slash is for display; the vault index is keyed without it.
+      const here = !!this.app.vault.getAbstractFileByPath(entry.path.replace(/\/$/, ''));
+      if (!here) missing++;
+      const row = map.createDiv({ cls: here ? 'gemma4-folder-row' : 'gemma4-folder-row is-missing' });
+      // The three files are openable from here, which is what the separate
+      // "Open schema.md" button used to be for. Folders are not: Obsidian has
+      // no clean reveal-a-folder API, so skills/ keeps its own button.
+      const isFile = here && entry.path.endsWith('.md');
+      const pathEl = row.createSpan({
+        cls: isFile ? 'gemma4-folder-path is-link' : 'gemma4-folder-path',
+        text: entry.path,
+      });
+      if (isFile) {
+        pathEl.addEventListener('click', () => {
+          (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
+          void this.app.workspace.openLinkText(entry.path.replace(/\.md$/, ''), '', false);
+        });
+      }
+      row.createSpan({ cls: 'gemma4-folder-what', text: entry.what });
+      row.createSpan({ cls: 'gemma4-folder-state', text: here ? '✓' : 'missing' });
+    }
+
+    // Showing the state turns "Repair folders" from a button whose purpose is
+    // a mystery (the folders are made on startup, so why is it here?) into the
+    // action for a condition you can actually see. Sync clients drop empty
+    // directories often enough that the recovery path has to exist.
+    new Setting(containerEl)
+      .setName('Folders')
+      .setDesc(
+        missing
+          ? `${missing} of ${wikiScaffoldPaths().length} missing — they are normally created when Obsidian starts.`
+          : 'All present. These are created when Obsidian starts; this button is only for putting one back.'
+      )
+      .addButton((btn) => {
+        // Deliberately not a CTA. The red rows already carry the signal, and a
+        // filled accent button for a recovery action reads as the main thing
+        // to do on the page, which it never is.
+        btn.setButtonText(missing ? `Create ${missing} missing` : 'Repair folders');
+        btn.onClick(async () => {
+          await this.plugin.repairWikiFolders();
+          this.display();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('What this plugin created')
+      .setDesc(
+        'The card shown the first time the folder was made — what each folder is for, and where ' +
+          'the chat panel lives. Shown once on purpose; this is how to see it again.'
+      )
+      .addButton((btn) =>
+        btn.setButtonText('Show setup card').onClick(() => this.plugin.showSetupCard())
       );
 
     // ---------- Schema ----------
@@ -139,13 +240,10 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       .setName('Tag vocabulary & naming rules')
       .setClass('gemma4-stack-buttons')
       .setDesc(
-        'Tag rules live in the wiki\'s schema.md ("config as a note"), not here. "Open schema.md" ' +
-          'opens that file (creating it first if it doesn\'t exist yet) so you can read or edit the ' +
-          'rules directly. "Organize tags" has local Gemma read the tags already on your wiki, merge ' +
-          'near-synonyms into one clean list, and write it back for you to review first — it can take ' +
-          'a while on the first run while the local model loads, watch the notice in the corner for progress.'
+        'Tag rules live in schema.md, not here — config as a note; open it from the list above. ' +
+          '"Organize tags" has local Gemma merge near-synonyms into one vocabulary and writes it back ' +
+          'for you to review. The first run is slow while the model loads.'
       )
-      .addButton((btn) => btn.setButtonText('Open schema.md').onClick(() => void this.plugin.openSchemaFile()))
       .addButton((btn) =>
         btn.setButtonText('Organize tags').onClick(() => void this.plugin.suggestTagVocabulary())
       );
@@ -155,12 +253,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Custom skills')
       .setDesc(
-        'Your one-shot prompts live as files in the wiki\'s skills/ folder ("config as a note"), ' +
-          'one file per skill — frontmatter for name/icon/mode, the body is the prompt. Each appears ' +
-          'in the ⚡ menu of the chat panel. Create the folder with a README and two examples, then ' +
-          'add or edit files there.'
+        'One file per skill in skills/ — frontmatter for name/icon/mode, the body is the prompt. ' +
+          'Each file becomes an entry in the ⚡ menu of the chat panel. The folder ships with a README ' +
+          'and two examples.'
       )
-      .addButton((btn) => btn.setButtonText('Create skills folder').onClick(() => void this.plugin.createSkillsFolder()));
+      .addButton((btn) => btn.setButtonText('Open skills folder').onClick(() => void this.plugin.createSkillsFolder()));
 
     // ---------- Chat ----------
     new Setting(containerEl).setName('Chat').setHeading();
