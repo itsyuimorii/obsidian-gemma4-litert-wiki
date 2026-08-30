@@ -27,10 +27,10 @@ export interface GemmaWikiSettings {
   // drafting only runs when the user clicks the chip. Default OFF.
   autoScanEnabled: boolean;
   autoScanIntervalHours: number;
-  // Whether the one-time "here is the folder that was just created" card has
-  // been shown. Not a consent flag — the folder is made either way; this only
-  // stops the explanation reappearing every launch.
-  scaffoldNoticeShown: boolean;
+  // Whether a message has ever been sent in this vault. Drives the one-line
+  // nudge in the empty panel; a chat plugin that keeps telling you how to chat
+  // after you already have is just noise.
+  hasChatted: boolean;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanExclude: '',
   autoScanEnabled: false,
   autoScanIntervalHours: 6,
-  scaffoldNoticeShown: false,
+  hasChatted: false,
 };
 
 export class GemmaWikiSettingTab extends PluginSettingTab {

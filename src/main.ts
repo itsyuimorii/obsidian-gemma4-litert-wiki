@@ -598,6 +598,59 @@ export default class LiteRtSpikePlugin extends Plugin {
         '<path d="M58 33 l5.27 11.73 11.73 5.27 -11.73 5.27 -5.27 11.73 -5.27 -11.73 -11.73 -5.27 11.73 -5.27 Z" fill="currentColor"/>'
     );
 
+    // Say something the moment a knowledge folder is deleted, not at the next
+    // launch. The rule — the folder comes back, the pages inside it do not —
+    // is written in the folder's README, but nobody reads a README before the
+    // thing it warns about. Said here it lands while Cmd+Z still works and the
+    // pages are still in Obsidian's trash.
+    //
+    // The count comes from index.md rather than the vault: by the time this
+    // fires the files are gone from the index, but their catalog entries are
+    // still there, which is exactly the list of what was lost.
+    this.registerEvent(
+      this.app.vault.on('delete', (file) => {
+        if (!(file instanceof TFolder)) return;
+        const dir = wikiDir();
+        if (file.path !== dir && !file.path.startsWith(`${dir}/`)) return;
+        // Count the folder's own descendants first. Obsidian hands us the
+        // pre-deletion TFolder, so its children are usually still readable —
+        // and that is the only source that works when the whole knowledge
+        // folder goes, because index.md is inside it and went too. Falling
+        // back to the catalog covers the case where children are already gone.
+        const countPages = (f: TFolder): number =>
+          f.children.reduce(
+            (n, c) =>
+              n + (c instanceof TFolder ? countPages(c) : c.path.endsWith('.md') && !/README\.md$/i.test(c.path) ? 1 : 0),
+            0
+          );
+        void (async () => {
+          let lost = 0;
+          try {
+            lost = countPages(file);
+          } catch {
+            lost = 0;
+          }
+          if (!lost) {
+            lost = (await readIndexEntries(this.app.vault)).filter((e) =>
+              e.linkPath.startsWith(`${file.path}/`)
+            ).length;
+          }
+          const pages = lost
+            ? `${lost} page${lost === 1 ? '' : 's'} went with it. `
+            : 'It was empty. ';
+          new Notice(
+            `⚠️ Deleted "${file.path}". ${pages}` +
+              'The folder comes back when Obsidian restarts, or from Settings → Repair folders — ' +
+              (lost
+                ? 'the pages do not. Undo now with Cmd/Ctrl+Z, or restore them from Obsidian\'s ' +
+                  'trash, then run "Reconcile wiki" if you decide to let them go.'
+                : 'nothing was lost.'),
+            lost ? 15000 : 7000
+          );
+        })();
+      })
+    );
+
     // Follow the folder if it is renamed or moved from the file explorer.
     // Without this the setting kept pointing at the old path: every folder read
     // as missing, and "Create missing" built a second, empty knowledge base
@@ -687,10 +740,13 @@ export default class LiteRtSpikePlugin extends Plugin {
         await ensureSkillsScaffold(this.app.vault);
         log('scaffold check:', { dir: wikiDir(), existedBefore, restored: gone });
 
-        // First ever run in this vault: one card explaining what just appeared.
-        if (!existedBefore && !this.settings.scaffoldNoticeShown) {
-          this.settings.scaffoldNoticeShown = true;
-          await this.saveSettings();
+        // The folder did not exist a moment ago and does now, so say what
+        // appeared. This used to also require a "never shown" flag, which
+        // suppressed the card in the one case where it is most wanted: someone
+        // deleted the whole knowledge folder and it was just rebuilt from
+        // nothing. existedBefore already says exactly what the flag was trying
+        // to say, and says it correctly.
+        if (!existedBefore) {
           // Open index.md *before* the card. Obsidian expands and highlights the
           // parent folders of whatever file is active, so this is what actually
           // makes the new folder visible — an emoji in its name would be seen
