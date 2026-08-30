@@ -306,7 +306,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
       `> | **Ingest active note** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. **This is the one-note version of Scan.** |` + `\n` +
-      `> | **Scan a folder into the wiki** | The same thing over whole folders. It asks which ones, and **shows how many new or changed notes each holds and roughly how long the run takes** before you commit. Then it drafts them all and shows you the batch — **nothing is written until you approve it**, and stopping partway still gives you what was drafted. |` + `\n` +
+      `> | **Scan a folder into the wiki** | The same thing over whole folders. It asks which ones, and **shows how many new or changed notes each holds and roughly how long the run takes** before you commit. Then it drafts them all and shows you the batch — **nothing is written until you approve it**. |` + `\n` +
       `> | **Suggest tags & links** | Proposes frontmatter tags and links to related pages, for one note. You review before it writes. |` + `\n\n` +
       `> [!info] Build on top of what is filed` + `\n` +
       `> | | What it does |` + `\n` +
@@ -366,6 +366,10 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | ⏳ *Drafting 7/30 — …* | Working. Click to repeat the message. |` + `\n` +
       `> | ✅ *30 drafts ready to review* | **Finished, and waiting for you.** Click to open it. |` + `\n` +
       `> | 📥 *4 to review* | Notes have changed since you filed them. Click to scan. **Off by default**, and when on it only *counts* — it never runs the model behind your back. |` + `\n\n` +
+      `> [!info] Stopping a scan` + `\n` +
+      `> While one is running, the **Scan a folder** chip becomes **Stop scan** — and so does "Stop the running scan" on the command palette.` + `\n` +
+      `>` + `\n` +
+      `> A model call cannot be interrupted, so **the note being drafted right now finishes first** — up to a minute — and it is kept. Everything drafted up to that point goes to the review list as usual; the rest is simply offered again on the next scan. **Stopping never loses work and never writes anything.**` + `\n\n` +
       `> [!info] A dialog will not jump in front of you` + `\n` +
       `> If you stayed and waited, the result opens by itself — you are waiting on it, and making you click again would be silly.` + `\n` +
       `>` + `\n` +

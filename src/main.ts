@@ -2192,7 +2192,14 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   cancelScan(): void {
-    if (this.scanRunning) this.scanCancelled = true;
+    if (!this.scanRunning) return;
+    this.scanCancelled = true;
+    // Say so immediately. A model call cannot be interrupted, so the note in
+    // flight runs to completion — up to forty seconds — and nothing fires a
+    // progress callback during generation, so the status sat on "Drafting
+    // 7/30" the whole time. You pressed Stop and watched something claim to
+    // still be drafting.
+    this.status('Stopping — the note being drafted right now will finish first');
   }
 
   // File one open note as a wiki page. Extracted from the command callback
@@ -2398,7 +2405,6 @@ export default class LiteRtSpikePlugin extends Plugin {
       excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
     });
     let eligible = result.eligible;
-    let cappedOut = result.cappedOut;
     if (!eligible.length) {
       const quietNote = result.skippedQuiet
         ? ` (${result.skippedQuiet} skipped — edited within the quiet period)`
@@ -2423,7 +2429,6 @@ export default class LiteRtSpikePlugin extends Plugin {
         });
         if (!proceed) return;
         eligible = result.unchanged.map((file) => ({ file, reason: 'refresh' as const }));
-        cappedOut = 0;
       } else {
         notify(
           'noop',
@@ -2468,9 +2473,10 @@ export default class LiteRtSpikePlugin extends Plugin {
       try {
         const content = await this.app.vault.read(file);
         const clamped = clampToTokens(cleanClippedMarkdown(content), this.budget('ingest'));
-        const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
-          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`)
-        );
+        const extraction = await this.extractNoteMetadata(clamped.text, (t) => {
+          if (this.scanCancelled) return;
+          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`);
+        });
         const sourceHash = contentHash(content);
         const pagePath = wikiPagePath(file.basename);
         const selfLink = pagePath.replace(/\.md$/, '');
@@ -2479,7 +2485,9 @@ export default class LiteRtSpikePlugin extends Plugin {
         );
         let related: { title: string; linkPath: string }[] = [];
         if (candidates.length) {
-          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
+          if (!this.scanCancelled) {
+            this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
+          }
           related = await this.pickRelatedPages(extraction.summary, candidates);
         }
         batchEntries.push({ linkPath: selfLink, title: file.basename, summary: extraction.summary });
@@ -2506,11 +2514,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       return;
     }
 
-    const capNote = cancelled
-      ? ' (scan stopped — the rest will be offered next scan)'
-      : cappedOut
-        ? ` (${cappedOut} more left for the next scan)`
-        : '';
+    const capNote = cancelled ? ' — you stopped it, the rest is offered next scan' : '';
     const reviewModal = new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
       if (!approved.length) return;
       await ensureWikiScaffold(this.app.vault);
