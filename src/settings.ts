@@ -1,4 +1,4 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, Setting, TFolder } from 'obsidian';
+import { App, ButtonComponent, EventRef, Notice, PluginSettingTab, Setting, TFolder } from 'obsidian';
 import { ConfirmModal } from './ingest-modal';
 import type LiteRtSpikePlugin from './main';
 import { DEFAULT_WIKI_DIR, wikiScaffoldPaths } from './wiki-store';
@@ -52,16 +52,50 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // Vault listeners for the folder-state table, torn down with the pane.
+  private watchers: EventRef[] = [];
+
   // Closing the pane drops the button this callback writes to; leaving it
-  // registered would have a finishing scan poke a detached element.
+  // registered would have a finishing scan poke a detached element. Same for
+  // the vault listeners below — a detached table is not worth redrawing.
   hide(): void {
     this.plugin.onScanStateChange = null;
+    for (const ref of this.watchers) this.app.vault.offref(ref);
+    this.watchers = [];
+  }
+
+  // The folder table is computed when the pane renders, so deleting a folder
+  // with Settings open left it showing eight ticks for something that was no
+  // longer there. Re-render, but only when the path that changed is one the
+  // table actually shows — a scan writing twenty pages should not redraw the
+  // pane twenty times.
+  private watchScaffold(): void {
+    const owned = new Set(wikiScaffoldPaths().map((e) => e.path.replace(/\/$/, '')));
+    const touched = (path: string) => owned.has(path) || path === this.plugin.settings.wikiDir;
+    const rerender = (file: { path: string }) => {
+      if (!touched(file.path)) return;
+      const scrollTop = this.containerEl.scrollTop;
+      this.display();
+      this.containerEl.scrollTop = scrollTop;
+    };
+    // Registered one by one: vault.on is overloaded per event name, so a union
+    // in a loop does not narrow.
+    this.watchers.push(this.app.vault.on('create', rerender));
+    this.watchers.push(this.app.vault.on('delete', rerender));
+    this.watchers.push(
+      this.app.vault.on('rename', (file, oldPath) => {
+        if (touched(file.path) || touched(oldPath)) rerender(file);
+      })
+    );
   }
 
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass('gemma4-settings');
+    for (const ref of this.watchers) this.app.vault.offref(ref);
+    this.watchers = [];
+    this.watchScaffold();
 
     // ---------- Model ----------
     new Setting(containerEl).setName('Model').setHeading();

@@ -377,6 +377,36 @@ export default class LiteRtSpikePlugin extends Plugin {
     // miss and can act on. Both calls are no-ops once the files exist.
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
+        // Cross-machine safety. wikiDir lives in data.json, which many sync
+        // setups do not carry, so machine B can be looking for "gemma-wiki"
+        // while the vault it just synced holds "wiki" — and would happily
+        // build a second, empty knowledge base beside the real one. If the
+        // configured folder is missing but something that looks like a wiki
+        // is present, ask before creating anything.
+        if (!this.app.vault.getAbstractFileByPath(wikiDir())) {
+          const found = this.findExistingWiki();
+          if (found) {
+            const use = await new Promise<boolean>((resolve) => {
+              new ConfirmModal(this.app, {
+                title: 'Found an existing Gemma Wiki',
+                body:
+                  `This vault already contains "${found}/", which has an index and a sources ` +
+                  `folder — but this machine is configured to use "${wikiDir()}/", which is not ` +
+                  'here.\n\nThat usually means the folder was renamed on another machine and the ' +
+                  'setting did not sync.\n\nUse the folder that is actually here? Choosing "No" ' +
+                  `creates a second, empty wiki at "${wikiDir()}/".`,
+                confirmText: `Use "${found}/"`,
+                onResult: resolve,
+              }).open();
+            });
+            if (use) {
+              this.settings.wikiDir = found;
+              await this.saveSettings();
+              setWikiDir(found);
+            }
+          }
+        }
+
         const existedBefore = !!this.app.vault.getAbstractFileByPath(wikiDir());
         const gone = wikiScaffoldPaths()
           .filter((e) => !this.app.vault.getAbstractFileByPath(e.path.replace(/\/$/, '')))
@@ -406,7 +436,12 @@ export default class LiteRtSpikePlugin extends Plugin {
         // returned rather than discover it later and think the delete failed.
         // A notice, not a dialog: there is nothing to decide, and it is already
         // fixed by the time they read it.
-        if (existedBefore && gone.length) {
+        // Reaching here means this was not the first run — that branch returns
+        // above. So the only question left is whether anything was actually
+        // put back. It used to also require existedBefore, which meant the
+        // worst case — the entire knowledge folder deleted — rebuilt in total
+        // silence, while losing one subfolder got a notice.
+        if (gone.length) {
           new Notice(
             `ℹ️ Restored ${gone.length} missing item${gone.length === 1 ? '' : 's'} in ${wikiDir()}/:\n` +
               gone.join('\n') +
@@ -1107,6 +1142,25 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   // Seed <wiki>/skills/ with a README and two example skills, then open the
   // README. Shared by the command and the settings button.
+  // A folder counts as a knowledge base if it holds both an index and a
+  // sources/ subfolder — specific enough not to match someone's own notes.
+  // Returns nothing if there is more than one candidate: guessing between two
+  // is worse than asking for none.
+  private findExistingWiki(): string | null {
+    const hits = this.app.vault
+      .getAllLoadedFiles()
+      .filter((f): f is TFolder => f instanceof TFolder)
+      .filter(
+        (f) =>
+          f.path &&
+          f.path !== wikiDir() &&
+          !!this.app.vault.getAbstractFileByPath(`${f.path}/index.md`) &&
+          !!this.app.vault.getAbstractFileByPath(`${f.path}/sources`)
+      )
+      .map((f) => f.path);
+    return hits.length === 1 ? hits[0] : null;
+  }
+
   // The first-run card, on demand. Shown automatically once; this is how you
   // get it back. Repeating it on every launch would be nagging — after the
   // first time there is nothing new in it, and Obsidian restores the panel with
