@@ -336,8 +336,10 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         'Sweep the folders below for new or changed notes, draft a card for each, and review them ' +
           'all at once before anything is written — drafts are never saved without your tick. ' +
           'A scan is one model call per note, so it takes a while: you can close this window and ' +
-          'keep working, and the review dialog opens when it finishes. ' +
-          'To ingest one specific note instead, use the command palette: "Ingest active note into wiki".'
+          'keep working. Progress runs in the status bar, and the review dialog waits for you ' +
+          'there if you moved on. ' +
+          'You do not have to come back here: the same thing is on the command palette as ' +
+          '"Scan a folder into the wiki", with "Stop the running scan" next to it.'
       )
       .addButton((btn) => {
         // The button doubles as the stop control. Its label follows the
