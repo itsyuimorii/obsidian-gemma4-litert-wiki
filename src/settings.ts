@@ -17,10 +17,9 @@ export interface GemmaWikiSettings {
   defaultMode: 'note' | 'wiki';
   // Semi-auto ingest scan (manual trigger; no background timer yet).
   scanQuietHours: number;
-  scanMaxPerRun: number;
-  // Allow-list: "Scan now" only looks at notes under these folders (comma-
-  // separated path prefixes). Blank = nothing to scan (opt-in by design), so
-  // scan never sweeps the whole vault. Cmd+P ingest still works on any note.
+  // The folders you last scanned. Written by the scan dialog, not by hand —
+  // it remembers your pick so the next dialog opens where you left off, and
+  // the background count uses the same scope. Blank until your first scan.
   scanInclude: string;
   scanExclude: string; // comma-separated path prefixes to skip (within the allow-list)
   // Background scan (issue #2): periodically COUNT new/changed notes and
@@ -41,7 +40,6 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   staleDays: 30,
   defaultMode: 'note',
   scanQuietHours: 3,
-  scanMaxPerRun: 10,
   scanInclude: '',
   scanExclude: '',
   autoScanEnabled: false,
@@ -354,40 +352,21 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     // was also the only place to say which folder. The scan dialog asks that
     // now, so the button had nothing left that this pane was uniquely good
     // for. Settings configures; the command palette and the chat panel act.
-    // The guidance rides on the heading rather than taking a row of its own —
-    // this section is four rows now, and a fifth that only points elsewhere
-    // would be the largest thing in it.
-    new Setting(containerEl)
-      .setName('Scan for new notes')
-      .setDesc(
-        'To run one: Cmd/Ctrl+P → "Scan a folder into the wiki", or the button in the chat panel ' +
-          'when your wiki is empty. Either asks which folders and how many notes each holds ' +
-          'before it starts. "Stop the running scan" cancels. The settings below are defaults ' +
-          'and the background count; the scan itself is not run from here.'
-      )
-      .setHeading();
+    // A heading is a heading. The guidance sits in a row of its own so it gets
+    // the same card as everything else on this page — hung off the heading it
+    // rendered as bare text floating outside the cards, which read as a stray
+    // paragraph rather than part of the section.
+    new Setting(containerEl).setName('Scan for new notes').setHeading();
 
     new Setting(containerEl)
-      .setName('Default folders')
+      .setName('How to run a scan')
       .setDesc(
-        'Pre-ticked in the scan dialog, and the scope the background count uses ' +
-          '(comma-separated, e.g. "走り書き, research"). It is a default, not a limit — the dialog ' +
-          'lets you pick anything, and can save your pick back here. Blank is fine: the dialog ' +
-          'simply opens with nothing ticked.'
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder('走り書き, research')
-          .setValue(this.plugin.settings.scanInclude)
-          .onChange(async (v) => {
-            this.plugin.settings.scanInclude = v;
-            await this.plugin.saveSettings();
-          })
+        'Cmd/Ctrl+P → "Scan a folder into the wiki", or the button in the chat panel when your ' +
+          'wiki is empty. It asks which folders, shows how many notes each one holds, and ' +
+          'remembers your last pick. "Stop the running scan" cancels — whatever was drafted ' +
+          'before you stopped is still offered for review.'
       );
 
-    // A vault-shape fact, not a per-run decision: which folders are simply not
-    // notes. That answer changes about once a year, so it stays here while the
-    // per-run choices moved into the dialog.
     new Setting(containerEl)
       .setName('Never scan these')
       .setDesc(
