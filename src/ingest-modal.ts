@@ -44,6 +44,7 @@ export class IngestPreviewModal extends Modal {
   private pagePath: string;
   private overwriting: boolean;
   private onApprove: () => void;
+  private heading: string;
   private renderHost = new Component();
 
   constructor(
@@ -51,19 +52,25 @@ export class IngestPreviewModal extends Modal {
     pagePath: string,
     pageContent: string,
     overwriting: boolean,
-    onApprove: () => void
+    onApprove: () => void,
+    heading = 'Review wiki page before writing'
   ) {
     super(app);
     this.pagePath = pagePath;
     this.pageContent = pageContent;
     this.overwriting = overwriting;
     this.onApprove = onApprove;
+    this.heading = heading;
   }
 
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('gemma4-ingest-modal');
-    contentEl.createEl('h3', { text: 'Review wiki page before writing' });
+    // The heading used to be hard-coded to "Review wiki page before writing",
+    // which was wrong for Improve: that path previews the user's OWN note, so
+    // the dialog announced a wiki page directly above a line reading
+    // "Will overwrite: my-note.md".
+    contentEl.createEl('h3', { text: this.heading });
     contentEl.createDiv({
       cls: 'gemma4-ingest-path',
       text: this.overwriting ? `Will overwrite: ${this.pagePath}` : `Will create: ${this.pagePath}`,

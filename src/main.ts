@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
+import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
@@ -299,21 +300,45 @@ export default class LiteRtSpikePlugin extends Plugin {
   // One shared status Notice for the whole plugin: later messages update
   // the same toast instead of stacking a new one per operation — repeated
   // ingests were piling up popups.
+  //
+  // It now speaks the same vocabulary as every other notification (see
+  // src/notify.ts). It used to speak none: all 56 calls through here were
+  // unmarked, including all 8 failures, so the one channel that reported
+  // things going wrong was the one channel with no way to say so.
   private status(text: string) {
+    const body = mark('progress', text);
     if (this.statusNotice) {
-      this.statusNotice.setMessage(text);
+      this.statusNotice.setMessage(body);
     } else {
-      this.statusNotice = new Notice(text, 0);
+      this.statusNotice = new Notice(body, 0);
     }
   }
 
-  private statusEnd(text?: string, timeoutMs = 0) {
+  /**
+   * Close the running status toast, optionally with a final word.
+   *
+   * The kind decides the mark and the dwell time, so a caller never picks a
+   * millisecond count again. Warnings and failures are also written to
+   * `log.md`, because a toast is not a record.
+   */
+  private statusEnd(text?: string, kind: NoticeKind = 'done', durationMs?: number) {
     const n = this.statusNotice;
     this.statusNotice = null;
     if (!n) return;
-    if (text) n.setMessage(text);
-    if (timeoutMs > 0) setTimeout(() => n.hide(), timeoutMs);
-    else n.hide();
+    if (!text) {
+      n.hide();
+      return;
+    }
+    n.setMessage(mark(kind, text));
+    void logNotice(this.app.vault, kind, text);
+    const ms = durationMs ?? (kind === 'error' || kind === 'warn' ? DURATION.LONG : DURATION.SHORT);
+    setTimeout(() => n.hide(), ms);
+  }
+
+  /** Report a thrown error through the status toast, in the house style. */
+  private statusFail(what: string, err: unknown) {
+    console.error(`[gemma4-litert-wiki] ${what} failed`, err);
+    this.statusEnd(failureText(what, err), 'error');
   }
 
   async onload() {
@@ -352,7 +377,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           await this.saveSettings();
           setWikiDir(file.path);
           this.refreshIngestBadges();
-          new Notice(`ℹ️ Knowledge folder is now "${file.path}" — Gemma Wiki followed the rename.`, 6000);
+          notify('info', `Knowledge folder is now "${file.path}" — Gemma Wiki followed the rename.`);
         })();
       })
     );
@@ -447,11 +472,12 @@ export default class LiteRtSpikePlugin extends Plugin {
         // worst case — the entire knowledge folder deleted — rebuilt in total
         // silence, while losing one subfolder got a notice.
         if (gone.length) {
-          new Notice(
-            `ℹ️ Restored ${gone.length} missing item${gone.length === 1 ? '' : 's'} in ${wikiDir()}/:\n` +
+          notifyAndLog(
+            this.app.vault,
+            'warn',
+            `Restored ${gone.length} missing item${gone.length === 1 ? '' : 's'} in ${wikiDir()}/:\n` +
               gone.join('\n') +
-              '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.',
-            12000
+              '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.'
           );
         }
       })();
@@ -472,7 +498,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       callback: async () => {
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new Notice('⚠️ Open a note first.');
+          notify('warn', 'Open a note first.');
           return;
         }
         const content = await this.app.vault.read(file);
@@ -484,8 +510,9 @@ export default class LiteRtSpikePlugin extends Plugin {
         const existingHash = getIngestedSourceHashes(this.app).get(file.path);
         const skip = precheckNote(content, existingHash);
         if (skip === 'empty' || skip === 'frontmatter-only') {
-          new Notice(
-            skip === 'empty' ? 'ℹ️ Note is empty — nothing to ingest.' : 'ℹ️ Note is only frontmatter — nothing to ingest.'
+          notify(
+            'noop',
+            skip === 'empty' ? 'Note is empty — nothing to ingest.' : 'Note is only frontmatter — nothing to ingest.'
           );
           return;
         }
@@ -516,7 +543,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         // missing.
         const clamped = clampToTokens(cleaned, this.budget('ingest'));
         if (clamped.truncated) {
-          new Notice('ℹ️ Note is long — ingesting a truncated version that fits the local model context.', 6000);
+          // Same event as the chat panel's truncation message, so it says the
+          // same thing: whose limit it is, and what you can do about it. The
+          // old wording ("fits the local model context") blamed the model for
+          // a cap this plugin chose.
+          notify(
+            'warn',
+            `Only the first ~${Math.round(this.budget('ingest') / 1000)}k tokens of "${file.basename}" were ` +
+              'read — the page below is based on that much. Raise Context window in settings to read more.'
+          );
         }
 
         this.status(`Ingesting "${file.basename}"…`);
@@ -551,15 +586,12 @@ export default class LiteRtSpikePlugin extends Plugin {
               await this.rippleConceptPages(pagePath, [...extraction.tags, ...(extraction.mentions ?? [])]);
               await this.pruneIndex();
               await appendLog(this.app.vault, 'ingest', file.basename);
-              this.status(`Wiki page written: ${pagePath}`);
-              this.statusEnd(undefined, 2500);
+              this.statusEnd(`Wiki page written: ${pagePath}`);
               this.refreshIngestBadges();
             })();
           }).open();
         } catch (err) {
-          console.error('[gemma4-litert-wiki] ingest failed', err);
-          this.status(`Ingest FAILED — ${err instanceof Error ? err.message : String(err)}`);
-          this.statusEnd(undefined, 8000);
+          this.statusFail('Ingest', err);
         }
       },
     });
@@ -591,7 +623,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // lint and as disconnected dots in the graph view.
         const entries = await this.liveIndexEntries();
         if (entries.length < 2) {
-          new Notice('⚠️ Need at least two indexed pages to relink.');
+          notify('warn', 'Need at least two indexed pages to relink.');
           return;
         }
         const proposals: RelinkProposal[] = [];
@@ -615,7 +647,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         }
         this.statusEnd();
         if (!proposals.length) {
-          new Notice('ℹ️ Nothing to relink — every page has an up-to-date Related section, or no matches were found.');
+          notify('noop', 'Nothing to relink — every page has an up-to-date Related section, or no matches were found.');
           return;
         }
         new RelinkPreviewModal(this.app, proposals, () => {
@@ -637,7 +669,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
               await appendLog(this.app.vault, 'relink', prop.title);
             }
-            new Notice(`✅ Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`, 4000);
+            notify('done', `Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`);
           })();
         }).open();
       },
@@ -668,13 +700,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         await this.pruneIndex();
         await this.pruneDeadRelatedLinks();
         const after = (await readIndexEntries(this.app.vault)).length;
-        new Notice(
-          before === after
-            ? 'ℹ️ Wiki is already consistent — no links to deleted pages.'
-            : `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
-              'and any related links pointing at them.',
-          5000
-        );
+        if (before === after) {
+          notify('noop', 'Wiki is already consistent — no links to deleted pages.');
+        } else {
+          notify(
+            'done',
+            `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
+              'and any related links pointing at them.'
+          );
+        }
       },
     });
 
@@ -720,7 +754,8 @@ export default class LiteRtSpikePlugin extends Plugin {
       callback: async () => {
         const result = await checkWebGPU();
         log('WebGPU check:', result);
-        new Notice(result.ok ? `✅ WebGPU OK — ${result.detail}` : `❌ WebGPU FAILED — ${result.detail}`, 10000);
+        if (result.ok) notify('done', `WebGPU OK — ${result.detail}`, DURATION.NORMAL);
+        else notify('error', `WebGPU unavailable — ${result.detail}`);
       },
     });
 
@@ -728,16 +763,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-load-wasm',
       name: '[Test] Load WASM runtime (no model download)',
       callback: async () => {
-        new Notice('⏳ Loading LiteRT-LM WASM runtime… check the developer console (Cmd+Opt+I) for detail.', 5000);
+        const p = new Progress('Loading LiteRT-LM WASM runtime… full detail in the console (Cmd/Ctrl+Opt+I).');
         try {
           await this.ensureWasmLoaded();
-          new Notice('✅ LiteRT-LM WASM runtime loaded successfully.', 8000);
+          p.done('LiteRT-LM WASM runtime loaded successfully.');
         } catch (err) {
-          console.error('[litert-spike] wasm load failed', err);
-          new Notice(
-            `❌ WASM load FAILED — see console for stack. ${err instanceof Error ? err.message : String(err)}`,
-            12000
-          );
+          p.fail('Loading the WASM runtime', err);
         }
       },
     });
@@ -746,18 +777,15 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-download-model',
       name: 'Download model (one-time, ~3GB)',
       callback: async () => {
-        const notice = new Notice('⏳ Preparing model download…', 0);
+        const p = new Progress('Preparing model download…');
         try {
           const blob = await this.ensureModelBlob((text) => {
             log(text);
-            notice.setMessage(text);
+            p.update(text);
           });
-          notice.setMessage(`Model ready. Size: ${(blob.size / 1e9).toFixed(2)} GB`);
-          setTimeout(() => notice.hide(), 5000);
+          p.done(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
         } catch (err) {
-          console.error('[gemma4-litert-wiki] model download failed', err);
-          notice.setMessage(`Download: ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 10000);
+          p.fail('Downloading the model', err, this.app.vault);
         }
       },
     });
@@ -768,7 +796,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       editorCallback: async (editor) => {
         const selection = editor.getSelection();
         if (!selection.trim()) {
-          new Notice('⚠️ Select some text first, then run this command.');
+          notify('warn', 'Select some text first, then run this command.');
           return;
         }
         // v1 finding (2026-08-24): the 28s TTFT on a cold engine was mostly
@@ -780,10 +808,10 @@ export default class LiteRtSpikePlugin extends Plugin {
         // prevent.
         const MAX_INPUT_CHARS = 40000;
         if (selection.length > MAX_INPUT_CHARS) {
-          new Notice(
-            `ℹ️ Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
-              'Select a shorter passage (a paragraph, not a whole note).',
-            8000
+          notify(
+            'warn',
+            `Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
+              'Select a shorter passage (a paragraph, not a whole note).'
           );
           return;
         }
@@ -794,14 +822,14 @@ export default class LiteRtSpikePlugin extends Plugin {
         const estimatedInputTokens = Math.ceil(selection.length / 3);
         const maxOutputTokens = Math.min(4096, Math.max(256, Math.ceil(estimatedInputTokens * 1.5)));
 
-        const notice = new Notice('⏳ Loading model (first run downloads ~3GB)…', 0);
+        const p = new Progress('Loading model (first run downloads ~3GB)…');
         let conversation: import('@litert-lm/core').Conversation | undefined;
         try {
           const engine = await this.ensureEngine((text) => {
             log(text);
-            notice.setMessage(text);
+            p.update(text);
           });
-          notice.setMessage('Generating…');
+          p.update('Generating…');
 
           const { SamplerType } = await import('@litert-lm/core');
           conversation = await engine.createConversation({
@@ -845,16 +873,14 @@ export default class LiteRtSpikePlugin extends Plugin {
           log('Wall time (ms):', wallMs);
           log('Benchmark info:', bench);
 
-          notice.setMessage(
-            `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
-              `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`
-          );
           editor.replaceSelection(result.trim());
-          setTimeout(() => notice.hide(), 10000);
+          p.done(
+            `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
+              `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`,
+            DURATION.LONG
+          );
         } catch (err) {
-          console.error('[litert-spike] grammar fix failed', err);
-          notice.setMessage(`FAILED — see console. ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 12000);
+          p.fail('Fixing grammar', err);
         } finally {
           await conversation?.delete().catch(() => {});
         }
@@ -867,20 +893,20 @@ export default class LiteRtSpikePlugin extends Plugin {
       editorCallback: async (editor) => {
         const selection = editor.getSelection();
         if (!selection.trim()) {
-          new Notice('⚠️ Select a short paragraph first, then run this command.');
+          notify('warn', 'Select a short paragraph first, then run this command.');
           return;
         }
         if (selection.length > 3000) {
-          new Notice('⚠️ Keep it under 3000 chars for this test — pick a single paragraph.', 6000);
+          notify('warn', 'Keep it under 3000 chars for this test — pick a single paragraph.');
           return;
         }
 
         const RUNS = 5;
-        const notice = new Notice(`ℹ️ JSON reliability test: loading model…`, 0);
+        const p = new Progress('JSON reliability test: loading model…');
         try {
           const engine = await this.ensureEngine((text) => {
             log(text);
-            notice.setMessage(text);
+            p.update(text);
           });
 
           const { SamplerType } = await import('@litert-lm/core');
@@ -888,7 +914,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           const outcomes: string[] = [];
 
           for (let i = 1; i <= RUNS; i++) {
-            notice.setMessage(`JSON reliability test: run ${i}/${RUNS}…`);
+            p.update(`JSON reliability test: run ${i}/${RUNS}…`);
             let conversation: import('@litert-lm/core').Conversation | undefined;
             try {
               conversation = await engine.createConversation({
@@ -962,14 +988,11 @@ export default class LiteRtSpikePlugin extends Plugin {
           }
 
           log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
-          notice.setMessage(
-            `JSON reliability: ${successCount}/${RUNS} valid. Full detail in console (search "JSON reliability").`
-          );
-          setTimeout(() => notice.hide(), 12000);
+          const text = `JSON reliability: ${successCount}/${RUNS} valid. Full detail in console (search "JSON reliability").`;
+          if (successCount === RUNS) p.done(text, DURATION.LONG);
+          else p.warn(text);
         } catch (err) {
-          console.error('[litert-spike] JSON reliability test failed', err);
-          notice.setMessage(`FAILED — see console. ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 12000);
+          p.fail('The JSON reliability test', err);
         }
       },
     });
@@ -1078,12 +1101,12 @@ export default class LiteRtSpikePlugin extends Plugin {
   async suggestTagsAndLinks() {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new Notice('⚠️ Open a note first.');
+      notify('warn', 'Open a note first.');
       return;
     }
     const content = await this.app.vault.read(file);
     if (precheckNote(content, undefined) !== null) {
-      new Notice('ℹ️ Note is empty — nothing to suggest.');
+      notify('noop', 'Note is empty — nothing to suggest.');
       return;
     }
 
@@ -1125,14 +1148,12 @@ export default class LiteRtSpikePlugin extends Plugin {
               await this.app.vault.append(file, block);
             }
           }
-          new Notice(`ℹ️ Updated "${file.basename}" — tags & links added.`, 3000);
+          notify('done', `Updated "${file.basename}" — tags & links added.`);
           this.refreshIngestBadges();
         })();
       }).open();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] suggest tags/links failed', err);
-      this.status(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`);
-      this.statusEnd(undefined, 8000);
+      this.statusFail('Suggest', err);
     }
   }
 
@@ -1191,16 +1212,16 @@ export default class LiteRtSpikePlugin extends Plugin {
     await ensureWikiScaffold(this.app.vault);
     await ensureSkillsScaffold(this.app.vault);
     if (!missing.length) {
-      new Notice(`✅ Everything is already in place under ${wikiDir()}/.`, 4000);
+      notify('noop', `Everything is already in place under ${wikiDir()}/.`);
       return;
     }
-    new Notice(`✅ Created ${missing.length} missing item${missing.length === 1 ? '' : 's'}:\n${missing.join('\n')}`, 8000);
+    notify('done', `Created ${missing.length} missing item${missing.length === 1 ? '' : 's'}:\n${missing.join('\n')}`);
   }
 
   async createSkillsFolder() {
     await ensureSkillsScaffold(this.app.vault);
     const path = `${wikiDir()}/skills`;
-    new Notice(`✅ Skills folder ready at ${path}. Open its README, then add a .md file per skill.`, 6000);
+    notify('done', `Skills folder ready at ${path}. Open its README, then add a .md file per skill.`);
     const readme = this.app.vault.getAbstractFileByPath(`${path}/README.md`);
     if (readme instanceof TFile) await this.app.workspace.getLeaf(true).openFile(readme);
   }
@@ -1232,10 +1253,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   async suggestTagVocabulary() {
     const counts = this.wikiTagCounts();
     if (!counts.length) {
-      new Notice(
-        '⚠️ No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
-          'Ingest a few notes first, then run "Organize tags".',
-        7000
+      notify(
+        'warn',
+        'No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
+          'Ingest a few notes first, then run "Organize tags".'
       );
       return;
     }
@@ -1244,14 +1265,14 @@ export default class LiteRtSpikePlugin extends Plugin {
     let vocab: string[];
     try {
       vocab = await this.cleanTagVocabulary(counts);
-      this.statusEnd('Vocabulary ready — review it below.', 2500);
+      this.statusEnd('Vocabulary ready — review it below.');
     } catch (err) {
       console.error('[gemma4-litert-wiki] vocab suggest failed', err);
-      this.statusEnd(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Suggest', err);
       return;
     }
     if (!vocab.length) {
-      new Notice('ℹ️ The model returned an empty vocabulary — nothing to write.', 5000);
+      notify('noop', 'The model returned an empty vocabulary — nothing to write.');
       return;
     }
 
@@ -1263,7 +1284,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const rejectedSet = new Set(existing.rejected.map((t) => slugify(t)));
     vocab = vocab.filter((t) => !rejectedSet.has(t));
     if (!vocab.length) {
-      new Notice('ℹ️ Every proposed tag is on the Rejected list — nothing to write.', 6000);
+      notify('noop', 'Every proposed tag is on the Rejected list — nothing to write.');
       return;
     }
     const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold, [], existing.rejected);
@@ -1274,8 +1295,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         await ensureWikiScaffold(this.app.vault);
         await writeWikiPage(this.app.vault, path, content);
         await appendLog(this.app.vault, 'schema', `tag vocabulary (${vocab.length} tags)`);
-        this.status(`Schema written: ${path}`);
-        this.statusEnd(undefined, 2500);
+        this.statusEnd(`Schema written: ${path}`);
       })();
     }).open();
   }
@@ -1316,10 +1336,11 @@ export default class LiteRtSpikePlugin extends Plugin {
   private notePendingGrowth(before: number, after: number): void {
     const MARK = 20;
     if (before < MARK && after >= MARK) {
-      new Notice(
-        `⚠️ ${after} tags are waiting in schema.md's Pending list. Run "Organize tags" to fold them ` +
-          'into the vocabulary — until then, similar notes keep coining near-duplicate tags.',
-        9000
+      notifyAndLog(
+        this.app.vault,
+        'warn',
+        `${after} tags are waiting in schema.md's Pending list. Run "Organize tags" to fold them ` +
+          'into the vocabulary — until then, similar notes keep coining near-duplicate tags.'
       );
     }
   }
@@ -1444,7 +1465,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         pages.length < 2
           ? 'Need at least two wiki pages to compare.'
           : 'No tag-sharing page pairs to check — nothing can contradict.',
-        5000
+        'noop'
       );
       return;
     }
@@ -1465,21 +1486,21 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] contradiction scan failed', err);
-      this.statusEnd(`Contradiction scan FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Contradiction scan', err);
       return;
     }
     // The pair cap is also silent otherwise: "0 flagged" reads as "your wiki is
     // consistent" when pairs were never looked at.
     const notChecked = uncappedPairs - pairs.length;
     if (unjudged || notChecked) {
-      new Notice(
-        '⚠️ ' + [
+      notify(
+        'warn',
+        [
           unjudged ? `${unjudged} of ${pairs.length} pairs could not be judged (see console)` : '',
           notChecked ? `${notChecked} more pair${notChecked === 1 ? '' : 's'} not checked this run (cap ${MAX_PAIRS})` : '',
         ]
           .filter(Boolean)
-          .join('; ') + '.',
-        8000
+          .join('; ') + '.'
       );
     }
     new ContradictionReportModal(this.app, flags, pairs.length, uncappedPairs).open();
@@ -1493,7 +1514,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.status('Sampling wiki pages…');
     const samples = await sampleWikiPages(this.app, LIMIT);
     if (!samples.length) {
-      this.statusEnd('No ingested pages with key points to check.', 5000);
+      this.statusEnd('No ingested pages with key points to check.', 'noop');
       return;
     }
     const flags: ProvenanceFlag[] = [];
@@ -1512,7 +1533,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] provenance check failed', err);
-      this.statusEnd(`Provenance check FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Provenance check', err);
       return;
     }
     new ProvenanceReportModal(this.app, flags, samples.length).open();
@@ -1587,7 +1608,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Never map INTO a banned tag, even if a stale hand-edit left it in both lists.
     const vocab = [...new Set(schema.tags.map((t) => slugify(t)).filter((t) => t && !rejected.has(t)))];
     if (!vocab.length) {
-      new Notice('⚠️ No vocabulary in schema.md yet — run "Organize tags" first.', 6000);
+      notify('warn', 'No vocabulary in schema.md yet — run "Organize tags" first.');
       return;
     }
     const STRUCTURAL = new Set(['concept', 'answer', 'chat']);
@@ -1613,7 +1634,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     if (!offVocab.size) {
-      new Notice('ℹ️ All page tags already match the vocabulary — nothing to retag.', 5000);
+      notify('noop', 'All page tags already match the vocabulary — nothing to retag.');
       return;
     }
 
@@ -1624,7 +1645,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] retag mapping failed', err);
-      this.statusEnd(`Retag FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Retag', err);
       return;
     }
 
@@ -1645,7 +1666,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       if (JSON.stringify(from) !== JSON.stringify(to)) changes.push({ file: p.file, from, to });
     }
     if (!changes.length) {
-      new Notice('ℹ️ The model kept every old tag as-is — nothing to retag.', 6000);
+      notify('noop', 'The model kept every old tag as-is — nothing to retag.');
       return;
     }
 
@@ -1667,7 +1688,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             });
           }
           await appendLog(this.app.vault, 'retag', `${changes.length} pages to vocabulary`);
-          new Notice(`✅ Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`, 4000);
+          notify('done', `Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`);
         })();
       },
     }).open();
@@ -1788,10 +1809,11 @@ export default class LiteRtSpikePlugin extends Plugin {
       .sort((a, b) => b.members.length - a.members.length);
 
     if (!candidates.length) {
-      new Notice(
-        `ℹ️ No tag or mention is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
+      notify(
+        'noop',
+        `No tag or mention is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
           'Ingest more notes, or lower the threshold in schema.md.',
-        7000
+        DURATION.NORMAL
       );
       return;
     }
@@ -1805,7 +1827,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.statusEnd();
         } catch (err) {
           console.error('[gemma4-litert-wiki] concept overview failed', err);
-          this.statusEnd(`Concept page FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+          this.statusFail('Concept page', err);
           return;
         }
         const members = cluster.members.map((e) => ({ title: e.title, linkPath: e.linkPath }));
@@ -1818,8 +1840,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             await writeWikiPage(this.app.vault, pagePath, pageContent);
             await upsertIndexEntry(this.app.vault, pagePath, `${cluster.tag} (concept)`, overview.slice(0, 140));
             await appendLog(this.app.vault, 'concept', cluster.tag);
-            this.status(`Concept page written: ${pagePath}`);
-            this.statusEnd(undefined, 2500);
+            this.statusEnd(`Concept page written: ${pagePath}`);
             this.refreshIngestBadges();
           })();
         }).open();
@@ -2052,7 +2073,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   async scanAndReviewIngest() {
     if (this.scanRunning) {
-      new Notice('⚠️ A scan is already running — use "Stop scan" in settings to cancel it.', 5000);
+      notify('warn', 'A scan is already running — use "Stop scan" in settings to cancel it.');
       return;
     }
     // Allow-list scope (opt-in): scan only looks at the folders the user named.
@@ -2060,10 +2081,10 @@ export default class LiteRtSpikePlugin extends Plugin {
     // by hand) rather than silently sweeping the whole vault.
     const includePrefixes = this.settings.scanInclude.split(',').map((s) => s.trim()).filter(Boolean);
     if (!includePrefixes.length) {
-      new Notice(
-        '⚠️ No scan folders set. In Settings → "Scan these folders", name the folder(s) to scan ' +
-          '(e.g. your inbox). To file one specific note instead, use "Ingest active note into wiki".',
-        9000
+      notify(
+        'warn',
+        'No scan folders set. In Settings → "Scan these folders", name the folder(s) to scan ' +
+          '(e.g. your inbox). To file one specific note instead, use "Ingest active note into wiki".'
       );
       return;
     }
@@ -2119,11 +2140,12 @@ export default class LiteRtSpikePlugin extends Plugin {
           .map((file) => ({ file, reason: 'refresh' as const }));
         cappedOut = Math.max(0, result.unchanged.length - this.settings.scanMaxPerRun);
       } else {
-        new Notice(
+        notify(
+          'noop',
           result.scanned
-            ? `ℹ️ Scanned ${result.scanned} notes — nothing new or changed to ingest.${quietNote}`
-            : 'ℹ️ No notes in scope to scan.',
-          6000
+            ? `Scanned ${result.scanned} notes — nothing new or changed to ingest.${quietNote}`
+            : 'No notes in scope to scan.',
+          DURATION.NORMAL
         );
         return;
       }
@@ -2138,11 +2160,12 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Drafting is one model call per note — minutes for a batch. Say so up
     // front, and say the settings pane is not holding it: users sat watching
     // a dialog they could have closed, unsure whether closing would cancel.
-    new Notice(
-      `⏳ Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each. You can close Settings ` +
+    notify(
+      'progress',
+      `Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each. You can close Settings ` +
         'and keep working; the review dialog opens here when it is done. ' +
         '(To stop early, reopen Settings and click "Stop scan".)',
-      9000
+      DURATION.LONG
     );
     // Pages drafted earlier in THIS batch are valid link targets for later
     // ones: they are about to be written together. Without this, scanning a
@@ -2193,10 +2216,8 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.statusEnd();
 
     if (!drafts.length) {
-      new Notice(
-        cancelled ? 'ℹ️ Scan stopped — no drafts were finished.' : '❌ Every draft failed to generate — nothing to review.',
-        6000
-      );
+      if (cancelled) notify('noop', 'Scan stopped — no drafts were finished.', DURATION.NORMAL);
+      else notifyAndLog(this.app.vault, 'error', 'Every draft failed to generate — nothing to review.');
       return;
     }
 
@@ -2205,7 +2226,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       : cappedOut
         ? ` (${cappedOut} more left for the next scan)`
         : '';
-    new Notice(`✅ ${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}.`, 4000);
+    notify('done', `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}.`);
 
     new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
       if (!approved.length) return;
@@ -2230,7 +2251,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       await this.pruneDeadRelatedLinks();
       this.refreshIngestBadges();
       void this.refreshScanBadge();
-      new Notice(`✅ Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`, 4000);
+      notify('done', `Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`);
     }).open();
   }
 
@@ -2253,7 +2274,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   async improveActiveNote() {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new Notice('⚠️ Open a note first.');
+      notify('warn', 'Open a note first.');
       return;
     }
     // With a selection active, improve just the selection — still the way to
@@ -2271,7 +2292,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const selTo = usingSelection ? editor?.getCursor('to') : undefined;
     const content = usingSelection ? selection : await this.app.vault.read(file);
     if (!content.trim()) {
-      new Notice('ℹ️ Note is empty — nothing to improve.');
+      notify('noop', 'Note is empty — nothing to improve.');
       return;
     }
 
@@ -2288,7 +2309,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     if (!body.trim()) {
-      new Notice('ℹ️ Note is only frontmatter — nothing to improve.');
+      notify('noop', 'Note is only frontmatter — nothing to improve.');
       return;
     }
 
@@ -2298,7 +2319,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const chunks = chunkForImprove(body, MAX_INPUT_TOKENS);
     const passes = chunks.filter((c) => !c.verbatim && c.raw.trim()).length;
     if (passes === 0) {
-      new Notice('ℹ️ Nothing to improve — this note is one oversized code block, which is preserved as-is.', 8000);
+      notify('noop', 'Nothing to improve — this note is one oversized code block, which is preserved as-is.');
       return;
     }
     // Each pass is roughly half a minute of GPU time. Past a couple of them
@@ -2412,10 +2433,10 @@ export default class LiteRtSpikePlugin extends Plugin {
         (passes > 1 ? ` — ${passes} passes` : '') +
         (failed > 0 ? `, ${failed} left unchanged (failed)` : '');
       if (failed > 0) {
-        new Notice(
-          `⚠️ ${failed} of ${passes} passes failed; those sections are unchanged in the preview. ` +
-            'See the console for why.',
-          8000
+        notify(
+          'warn',
+          `${failed} of ${passes} passes failed; those sections are unchanged in the preview. ` +
+            'Press Cmd/Ctrl+Opt+I for the full error.'
         );
       }
       new IngestPreviewModal(this.app, source, improved, true, () => {
@@ -2426,13 +2447,11 @@ export default class LiteRtSpikePlugin extends Plugin {
             await this.app.vault.modify(file, improved);
           }
           await appendLog(this.app.vault, 'improve', file.basename);
-          new Notice(`✅ Note updated: ${file.basename}`, 3000);
+          notify('done', `Note updated: ${file.basename}`);
         })();
-      }).open();
+      }, 'Review your note before it is rewritten').open();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] improve failed', err);
-      this.status(`Improve FAILED — ${err instanceof Error ? err.message : String(err)}`);
-      this.statusEnd(undefined, 8000);
+      this.statusFail('Improve', err);
     }
   }
 
@@ -2744,7 +2763,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   // source: frontmatter points at raw notes (untouched); only the layer's
   // own paths (index links, Related links, path-prefixed wikilinks) move.
   async renameWikiDir(prev: string, next: string) {
-    const notice = new Notice(`⏳ Renaming ${prev} → ${next}…`, 0);
+    const p = new Progress(`Renaming ${prev} → ${next}…`);
     let skipped = 0;
     try {
       const prevFolder = this.app.vault.getAbstractFileByPath(prev);
@@ -2794,17 +2813,21 @@ export default class LiteRtSpikePlugin extends Plugin {
       await ensureWikiScaffold(this.app.vault);
       await ensureSkillsScaffold(this.app.vault);
       this.refreshIngestBadges();
-      notice.setMessage(
-        skipped
-          ? `⚠️ Wiki folder is now "${next}". ${skipped} file${skipped === 1 ? '' : 's'} already existed there ` +
+      if (skipped) {
+        void logNotice(
+          this.app.vault,
+          'warn',
+          `Renamed "${prev}" to "${next}"; ${skipped} file(s) already existed there and were left behind.`
+        );
+        p.warn(
+          `Wiki folder is now "${next}". ${skipped} file${skipped === 1 ? '' : 's'} already existed there ` +
             `and were left as they were — the originals are still in "${prev}/".`
-          : `✅ Wiki folder is now "${next}".`
-      );
-      setTimeout(() => notice.hide(), skipped ? 10000 : 4000);
+        );
+      } else {
+        p.done(`Wiki folder is now "${next}".`);
+      }
     } catch (err) {
-      console.error('[gemma4-litert-wiki] rename wiki dir failed', err);
-      notice.setMessage(`Rename failed — ${err instanceof Error ? err.message : String(err)}`);
-      setTimeout(() => notice.hide(), 8000);
+      p.fail('Renaming the wiki folder', err, this.app.vault);
     }
   }
 
@@ -2827,15 +2850,12 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Trigger the (resumable) download from the settings page — same gated
   // path used on first use, so re-download and resume both work here.
   async downloadModelFromSettings() {
-    const notice = new Notice('⏳ Preparing model download…', 0);
+    const p = new Progress('Preparing model download…');
     try {
-      const blob = await this.ensureModelBlob((t) => notice.setMessage(t));
-      notice.setMessage(`Model ready. Size: ${(blob.size / 1e9).toFixed(2)} GB`);
-      setTimeout(() => notice.hide(), 5000);
+      const blob = await this.ensureModelBlob((t) => p.update(t));
+      p.done(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
     } catch (err) {
-      console.error('[gemma4-litert-wiki] settings download failed', err);
-      notice.setMessage(`Download: ${err instanceof Error ? err.message : String(err)}`);
-      setTimeout(() => notice.hide(), 10000);
+      p.fail('Downloading the model', err, this.app.vault);
     }
   }
 
@@ -2941,10 +2961,10 @@ export default class LiteRtSpikePlugin extends Plugin {
           const asked = this.settings.contextTokens || 4096;
           log('context window:', { asked, granted });
           if (granted < asked) {
-            new Notice(
-              `\u2139\uFE0F Context window: asked for ${asked.toLocaleString()} tokens, the model ` +
-                `granted ${granted.toLocaleString()}. Gemma Wiki is using the real number.`,
-              8000
+            notify(
+              'info',
+              `Context window: asked for ${asked.toLocaleString()} tokens, the model granted ` +
+                `${granted.toLocaleString()}. Gemma Wiki is using the real number.`
             );
           }
         }

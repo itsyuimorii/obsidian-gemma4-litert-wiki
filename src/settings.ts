@@ -1,7 +1,8 @@
-import { App, ButtonComponent, EventRef, Notice, PluginSettingTab, Setting, TFolder } from 'obsidian';
+import { App, ButtonComponent, EventRef, PluginSettingTab, Setting, TFolder } from 'obsidian';
 import { ConfirmModal } from './ingest-modal';
 import type LiteRtSpikePlugin from './main';
 import { DEFAULT_WIKI_DIR, wikiScaffoldPaths } from './wiki-store';
+import { DURATION, notify } from './notify';
 
 export interface GemmaWikiSettings {
   wikiDir: string;
@@ -133,7 +134,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.contextTokens = parseInt(v, 10) || 64000;
             await this.plugin.saveSettings();
-            new Notice('✅ Context window saved — reload the plugin (toggle it off/on) to apply.', 6000);
+            notify('done', 'Context window saved — reload the plugin (toggle it off/on) to apply.', DURATION.NORMAL);
           })
       );
 
@@ -175,7 +176,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           if (!next || next === prev) return;
           const existing = this.app.vault.getAbstractFileByPath(next);
           if (existing && !(existing instanceof TFolder)) {
-            new Notice(`⚠️ "${next}" already exists and is not a folder.`);
+            notify('warn', `"${next}" already exists and is not a folder.`);
             return;
           }
           // A typo here does not fail — it silently starts a second, empty
