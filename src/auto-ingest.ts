@@ -323,6 +323,16 @@ export class ScanFolderModal extends Modal {
         'progress runs in the status bar, and the review list waits for you there if you moved ' +
         'on. Nothing is ever written without your tick.',
     });
+    // Name the other door. This dialog is the batch, and the single-note path
+    // is a command with a different name — someone who found this one has no
+    // reason to guess that "Ingest active note into wiki" is the same job for
+    // one file.
+    contentEl.createDiv({
+      cls: 'gemma4-scan-lede gemma4-scan-lede-aside',
+      text:
+        'This is the batch. For just the note you have open, close this and press Cmd/Ctrl+P → ' +
+        '"Ingest active note into wiki".',
+    });
 
     if (!this.folders.length) {
       contentEl.createDiv({
