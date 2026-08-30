@@ -1309,3 +1309,17 @@
   background: transparent;
   color: var(--text-muted);
 }
+||||||| parent of 9bdaaab (A first move, a warning while undo still works, and a card that comes back)
+
+/* The one-line nudge under the empty state, shown until the first message is
+   sent. Styled as a quiet aside, not a banner — it is a pointer at the chips
+   that are already there, not an announcement. */
+.gemma4-chat-empty-nudge {
+  margin-top: 14px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  border-radius: 8px;
+  padding: 7px 12px;
+  line-height: 1.5;
+}
