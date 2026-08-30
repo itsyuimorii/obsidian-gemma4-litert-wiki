@@ -119,10 +119,15 @@ export interface SuggestionSpec {
  */
 export function suggestionsFor(mode: 'note' | 'wiki'): SuggestionSpec[] {
   if (mode === 'note') {
+    // "Key points" went: it and "Summarize" are the same operation in two
+    // layouts, and they were two of the three slots. The freed slot goes to
+    // the action that was missing entirely — This-note mode had no way to put
+    // the note you are looking at into the wiki, even though actions can ONLY
+    // live in this row and that one is the plugin's core loop.
     return [
       { label: 'Summarize', ask: 'Summarize this note' },
-      { label: 'Key points', ask: 'What are the key points?' },
       { label: 'Formatting', action: 'improve' },
+      { label: 'Ingest this note into wiki', action: 'ingest' },
     ];
   }
   // Three, fixed, and the same whatever state the wiki is in.
@@ -321,7 +326,7 @@ export class ChatView extends ItemView {
     // is decided by suggestionsFor(); this only draws it.
     const TIP: Record<string, string> = {
       scan: 'Pick folders, see how many notes each holds, then draft a page for each',
-      ingest: 'Draft one page from the note you have open',
+      ingest: 'Draft one wiki page from the note you have open — you review it before anything is written',
       improve: 'Edits this note — you review before anything is written',
     };
     const scanning = this.plugin.isScanning();
@@ -510,7 +515,7 @@ export class ChatView extends ItemView {
     });
     setIcon(skillsBtn, 'zap');
     setTooltip(skillsBtn, 'Run a skill');
-    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki' }[] = [
+    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean }[] = [
       {
         // Nouns, because every one of these hands you a thing: a quiz, a set of
         // cards, a checklist. The menu was three imperatives and two nouns,
@@ -576,7 +581,20 @@ export class ChatView extends ItemView {
               return;
             }
             item.onClick(() => {
-              this.inputEl.value = skill.prompt;
+              // The parser trims the file, so a prompt written to end in
+              // "…explain: " arrives without its space and the cursor lands
+              // against the colon. Put it back rather than asking every skill
+              // author to notice.
+              this.inputEl.value =
+                skill.fill && /[:\-–—]$/.test(skill.prompt) ? `${skill.prompt} ` : skill.prompt;
+              this.autoGrowInput();
+              if (skill.fill) {
+                // Hand it over unsent, cursor at the end, where the blank is.
+                this.inputEl.focus();
+                const end = this.inputEl.value.length;
+                this.inputEl.setSelectionRange(end, end);
+                return;
+              }
               void this.handleSend();
             });
           });
@@ -825,7 +843,7 @@ export class ChatView extends ItemView {
             'nothing is written without your approval.',
           [
             { label: 'Scan a folder', action: 'scan' },
-            { label: 'File this note', action: 'ingest' },
+            { label: 'Ingest this note into wiki', action: 'ingest' },
           ]
         );
         return null;

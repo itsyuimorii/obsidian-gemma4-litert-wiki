@@ -673,7 +673,10 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-ingest-note',
-      name: 'Ingest active note into wiki (local Gemma)',
+      // One name for one action, in the palette and on the chip alike. A
+      // button reading "File this note" beside a command reading "Ingest
+      // active note" is the same crime as Scan carrying two names.
+      name: 'Ingest this note into wiki (local Gemma)',
       callback: () => void this.ingestActiveNote(),
     });
 
