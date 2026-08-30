@@ -2877,24 +2877,32 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   // Per-feature input budgets derived from the configured context window.
   // Floors are the old 4096-context values, so a small window behaves exactly
-  // as before; ceilings keep prefill latency sane even at 64k — feeding the
-  // model 60k tokens per call would take minutes, not seconds.
+  // as before.
+  //
+  // The ceilings exist because prefill is not free — filling 60k tokens takes
+  // minutes, not seconds. But they used to be flat numbers, which made the
+  // Context window setting lie: it promises "longer notes fit whole", and a
+  // 27k-token note was truncated identically at 32k and at 64k because chat
+  // stopped at 24k either way. Raising the setting did nothing and the user
+  // was told the model could not hold it, which was not true — the plugin
+  // would not give it to the model. The ceilings now scale with the window, so
+  // the setting does what it says while still keeping a single call bounded.
   budget(kind: 'chat' | 'ingest' | 'improve' | 'provenance'): number {
     const ctx = this.settings.contextTokens || 4096;
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     switch (kind) {
       case 'chat':
         // Grounding for one answer: context minus output + instructions.
-        return clamp(ctx - 2000, 2400, 24000);
+        return clamp(ctx - 2000, 2400, Math.max(24000, Math.floor(ctx * 0.75)));
       case 'ingest':
         // One note being summarized into a card.
-        return clamp(Math.floor(ctx / 3), 2600, 16000);
+        return clamp(Math.floor(ctx / 3), 2600, Math.max(16000, Math.floor(ctx * 0.4)));
       case 'improve':
         // Input cap where input PLUS a same-sized rewrite must fit.
         return clamp(Math.floor((ctx - 1000) / 2.2), 1750, 24000);
       case 'provenance':
         // Source note fed to the claims check.
-        return clamp(Math.floor(ctx / 5), 2200, 12000);
+        return clamp(Math.floor(ctx / 5), 2200, Math.max(12000, Math.floor(ctx * 0.25)));
     }
   }
 
