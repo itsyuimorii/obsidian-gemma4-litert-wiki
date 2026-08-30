@@ -313,11 +313,15 @@ export class ScanFolderModal extends Modal {
     contentEl.createEl('h3', { text: 'Scan a folder into the wiki' });
     contentEl.createDiv({
       cls: 'gemma4-scan-lede',
+      // This explanation used to sit in the chat panel's empty state, where it
+      // was read by someone who had not yet decided to scan anything. It reads
+      // better here, above the folder list, at the moment the decision is
+      // actually in front of you.
       text:
         'Sweeps the folders you pick for new or changed notes and drafts a page for each. ' +
-        'One model call per note, so it takes a while — you can close this and keep working. ' +
-        'Progress runs in the status bar, and the review list waits for you there if you moved on. ' +
-        'Nothing is written without your tick.',
+        'One model call per note, so it takes a while — you can close this and keep working; ' +
+        'progress runs in the status bar, and the review list waits for you there if you moved ' +
+        'on. Nothing is ever written without your tick.',
     });
 
     if (!this.folders.length) {

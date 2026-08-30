@@ -2169,11 +2169,22 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Set by the settings tab so the Scan button can follow the real state
   // instead of a label set once at click time — which lost track whenever the
   // pane re-rendered, leaving a running scan showing "Scan now".
-  onScanStateChange: (() => void) | null = null;
+  // A set, not a single slot. It was one callback, and the settings pane
+  // cleared it on hide() — which was correct while the pane was the only thing
+  // that set it, and became a way to silently kill someone else's updates the
+  // moment a second consumer appeared. A chip frozen on "Stop scan" forever,
+  // because a settings pane was opened and closed.
+  private scanStateListeners = new Set<() => void>();
+
+  /** Watch whether a scan is running. Returns the unsubscribe. */
+  onScanState(fn: () => void): () => void {
+    this.scanStateListeners.add(fn);
+    return () => this.scanStateListeners.delete(fn);
+  }
 
   private setScanRunning(running: boolean): void {
     this.scanRunning = running;
-    this.onScanStateChange?.();
+    for (const fn of this.scanStateListeners) fn();
   }
 
   isScanning(): boolean {
