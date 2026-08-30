@@ -172,9 +172,26 @@ const ICON_SVG = (paths: string, box = '0 0 24 24'): string =>
   `stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ` +
   `style="vertical-align:-3px">${paths}</svg>`;
 
+// The plugin's own ribbon icon, so a note can say "click this" and show the
+// actual button rather than describing it. Same paths as addIcon() in main.ts;
+// if that mark changes, this has to change with it.
+const ICON_BRAND = ICON_SVG(
+  '<path d="M20.8 12.5 H79.2 a4 4 0 0 1 4 4 V83.3 a4 4 0 0 1 -4 4 H20.8 a8.3 8.3 0 0 1 -8.3 -8.3 ' +
+    'V20.8 a8.3 8.3 0 0 1 8.3 -8.3 Z"/>' +
+    '<path d="M29.2 12.5 V87.5"/>' +
+    '<path d="M58 33 l5.27 11.73 11.73 5.27 -11.73 5.27 -5.27 11.73 -5.27 -11.73 -11.73 -5.27 ' +
+    '11.73 -5.27 Z" fill="currentColor" stroke="none"/>',
+  '0 0 100 100'
+);
+
 const ICON_SAVE_TO_WIKI = ICON_SVG(
   '<path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>' +
     '<path d="M3 15h6"/><path d="M6 12v6"/>'
+);
+
+const ICON_SAVE_DISK = ICON_SVG(
+  '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>' +
+    '<path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>'
 );
 
 const ICON_ZAP = ICON_SVG(
@@ -250,6 +267,10 @@ const FOLDER_READMES: Array<[() => string, string]> = [
     () => `${_wikiDir}/README.md`,
     `# ${_wikiDir}\n\n` +
       `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified — they stay wherever you keep them. *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
+      `> [!info] Where the plugin lives\n` +
+      `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill from the ${ICON_ZAP} menu, and save an answer back here.\n` +
+      `>\n` +
+      `> Everything else is a command: press <kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd> and type *Gemma Wiki*.\n\n` +
       `> [!info] Where things go\n` +
       `> | Folder | What lands here |\n` +
       `> |---|---|\n` +
@@ -313,7 +334,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] chats/ or answers/?\n` +
       `> | You want | Use |\n` +
       `> |---|---|\n` +
-      `> | The whole thread, for the record | The save button in the panel header → lands here. |\n` +
+      `> | The whole thread, for the record | The ${ICON_SAVE_DISK} save button in the header of the ${ICON_BRAND} panel → lands here. |\n` +
       `> | One good answer, as part of the wiki | ${ICON_SAVE_TO_WIKI} **Save to wiki** under that message → lands in \`answers/\`, and **becomes grounding for future questions**. |\n`,
   ],
   [
@@ -483,7 +504,7 @@ export function buildSchemaFile(
     `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
     `wiki. Each section below explains itself — click a ▸ to expand it.\n\n` +
     `## Tags\n\n` +
-    `> [!tip]- What this is\n` +
+    `> [!info]- What this is\n` +
     `> Your controlled vocabulary. On ingest the model reuses these exact tags instead of coining\n` +
     `> synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together share one\n` +
     `> tag — and can then reach the concept-page threshold below.\n` +
@@ -497,7 +518,7 @@ export function buildSchemaFile(
     `> vocabulary changes, run **Retag wiki pages to vocabulary** — it shows every change first.\n\n` +
     `${tagLines}\n\n` +
     `## Naming\n\n` +
-    `> [!tip]- What this does\n` +
+    `> [!info]- What this does\n` +
     `> The \`concept:\` line is fed into the tag-naming prompt, so editing it changes how new tags are\n` +
     `> named (e.g. asking for a singular noun). It is guidance, not a guarantee — the local model is\n` +
     `> small, so treat it as a nudge.\n` +
@@ -505,13 +526,13 @@ export function buildSchemaFile(
     `> mechanically, not by the model.\n\n` +
     `${namingLines}\n\n` +
     `## Concept threshold\n\n` +
-    `> [!tip]- What this does\n` +
+    `> [!info]- What this does\n` +
     `> When this many pages share a tag — or share a mention — **Build a concept page** offers that\n` +
     `> cluster as a candidate. Raise it to be shown only well-established clusters, lower it to see\n` +
     `> thin ones. Leave the value blank and it falls back to ${DEFAULT_CONCEPT_THRESHOLD}.\n\n` +
     `${conceptThreshold}\n\n` +
     `## Pending\n\n` +
-    `> [!tip]- How to clear these\n` +
+    `> [!info]- How to clear these\n` +
     `> New tags ingest used that aren't in your vocabulary yet. Ingest also reads this list, so a tag\n` +
     `> waiting here already helps later notes reuse it instead of coining a near-duplicate.\n` +
     `> Two ways to clear them, and **both are your approval**:\n` +
@@ -525,7 +546,7 @@ export function buildSchemaFile(
     `> Either way it takes effect for **future** ingests; pages you already have are never touched.\n\n` +
     `${pendingLines}\n\n` +
     `## Rejected\n\n` +
-    `> [!tip]- What this is\n` +
+    `> [!info]- What this is\n` +
     `> Tags you've banned — your veto, and it outranks everything: **Organize tags** will never\n` +
     `> re-propose one, ingest will never apply one, and Pending will never queue one.\n` +
     `> Deleting a tag from \`## Tags\` alone only lasts until the next Organize, because rebuilds\n` +
