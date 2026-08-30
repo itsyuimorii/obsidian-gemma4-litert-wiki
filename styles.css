@@ -1046,3 +1046,124 @@
   overflow-y: auto;
   margin-bottom: 12px;
 }
+
+/* Folder map in settings: what the plugin actually created in the vault.
+   Generated from wikiScaffoldPaths(), so it cannot drift from the scaffold. */
+.gemma4-folder-map {
+  margin: 0 0 18px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+.gemma4-folder-row {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 3px 0;
+}
+.gemma4-folder-path {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  min-width: 190px;
+  flex-shrink: 0;
+}
+.gemma4-folder-what {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/* Folder map row state: a ✓ when present, a word when not. */
+.gemma4-folder-state {
+  margin-left: auto;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.gemma4-folder-row.is-missing .gemma4-folder-path,
+.gemma4-folder-row.is-missing .gemma4-folder-state {
+  color: var(--text-error);
+}
+
+/* Paths in the folder map open the file they name. */
+.gemma4-folder-path.is-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--background-modifier-border);
+  text-underline-offset: 3px;
+}
+.gemma4-folder-path.is-link:hover {
+  color: var(--text-accent);
+  text-decoration-color: var(--text-accent);
+}
+
+/* The one-time card shown after the plugin creates its folder. Laid out as a
+   real two-column list rather than preformatted text: the earlier version
+   reused the generic confirm dialog and the paths ended up in a cramped
+   scroll box with the last rows cut off. */
+.gemma4-scaffold-modal .gemma4-scaffold-lede {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.55;
+  margin: 6px 0 12px;
+}
+.gemma4-scaffold-list {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.gemma4-scaffold-row {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 2.5px 0;
+}
+.gemma4-scaffold-path {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  min-width: 200px;
+  flex-shrink: 0;
+}
+.gemma4-scaffold-what {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+.gemma4-scaffold-modal .gemma4-scaffold-foot {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  line-height: 1.55;
+  margin-bottom: 4px;
+}
+
+.gemma4-scaffold-modal .gemma4-scaffold-where {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  line-height: 1.5;
+  margin: 10px 0 2px;
+}
+
+/* Wider shell so the paths and their descriptions fit on one line each and the
+   whole card lands inside the viewport without a scrollbar. */
+.gemma4-scaffold-shell {
+  width: min(760px, 92vw);
+  max-width: min(760px, 92vw);
+}
+
+/* The ribbon icon, drawn inline in a sentence so "click this" is literal. */
+.gemma4-inline-icon {
+  display: inline-flex;
+  vertical-align: -4px;
+  padding: 2px;
+  margin: 0 1px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: var(--background-secondary);
+}
+.gemma4-inline-icon .svg-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--text-normal);
+}

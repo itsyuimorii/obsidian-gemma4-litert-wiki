@@ -9,6 +9,13 @@ import { normalizePath, TFile, Vault, type App } from 'obsidian';
 // mutable module var; every path derives from it through a getter so a
 // changed setting takes effect everywhere without re-import. The plugin
 // calls setWikiDir() on load before any wiki operation runs.
+// No emoji in the default name. It was tried: it does make the folder easy to
+// spot, but it lands in every page path and every wikilink
+// ("[[📚 gemma-wiki/sources/foo|foo]]"), and the glyph renders a size larger
+// than the surrounding text in the file explorer, which no amount of CSS on
+// our side can fix. Discoverability is handled where it belongs instead — the
+// folder is revealed and highlighted on first run, and the ribbon icon says
+// what it opens.
 export const DEFAULT_WIKI_DIR = 'gemma-wiki';
 let _wikiDir = DEFAULT_WIKI_DIR;
 
@@ -156,24 +163,178 @@ async function writeFile(vault: Vault, path: string, content: string): Promise<v
   }
 }
 
+// Lucide glyphs as inline SVG, for the generated notes. Obsidian renders inline
+// HTML in reading view, so "click <icon>" can show the actual button instead of
+// naming it. Written so the sentence still reads correctly if a future
+// sanitiser strips the tag — the icon is an aid, never the only signal.
+const ICON_SVG = (paths: string, box = '0 0 24 24'): string =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="${box}" fill="none" ` +
+  `stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ` +
+  `style="vertical-align:-3px">${paths}</svg>`;
+
+const ICON_SAVE_TO_WIKI = ICON_SVG(
+  '<path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>' +
+    '<path d="M3 15h6"/><path d="M6 12v6"/>'
+);
+
+const ICON_ZAP = ICON_SVG(
+  '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 ' +
+    '.78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'
+);
+
+// Expanded, not a collapsed toggle. This is the first file a new user opens,
+// and "> [!info]-" hides its own contents behind a click nobody knows to make —
+// the explanation was there and invisible. Entries are appended to the end of
+// the file, so everything here has to sit above "## Pages".
 const INDEX_HEADER =
   `# Wiki Index\n\n` +
-  `> [!info]- What this file is\n` +
-  `> The wiki's directory: one line per page — a link, then a one-sentence summary.\n` +
-  `> The plugin maintains it. Wiki-mode chat reads this file FIRST to decide which pages to open,\n` +
-  `> which is why summaries live here and not just on the pages.\n` +
-  `> It repairs itself: entries for pages you delete are dropped automatically (and you can force a\n` +
-  `> pass with **Reconcile wiki**). Safe to read; you should not need to hand-edit it.\n\n`;
+  // Each paragraph is emitted as ONE line. Wrapping the source at 95 characters
+  // read as deliberate line breaks in Obsidian and the intro came out ragged,
+  // broken mid-sentence.
+  `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified — they stay wherever you keep them. *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
+  `> [!info] Where things go\n` +
+  `> | Folder | What lands here |\n` +
+  `> |---|---|\n` +
+  `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |\n` +
+  `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. |\n` +
+  `> | \`chats/\` | Whole conversations, saved from the panel header. |\n` +
+  `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |\n` +
+  `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |\n` +
+  `>\n` +
+  `> Every folder also has a **README** describing what belongs in it.\n\n` +
+  `> [!info] How this file is used\n` +
+  `> One line per page: a link, then a one-sentence summary. **Wiki-mode chat reads this file first** to decide which pages to open — which is why the summaries live here and not only on the pages themselves.\n` +
+  `>\n` +
+  `> It repairs itself: entries for pages you delete are dropped automatically, and **Reconcile wiki** forces a pass. Safe to read; you should not need to hand-edit it.\n\n` +
+  `> [!info] The other two files\n` +
+  `> | File | What it is |\n` +
+  `> |---|---|\n` +
+  `> | \`log.md\` | Append-only record of every operation, greppable by action. |\n` +
+  `> | \`schema.md\` | Your tag vocabulary, the naming rules, and the tags you rejected. |\n\n` +
+  `## Pages\n\n`;
 
 const LOG_HEADER =
   `# Wiki Log\n\n` +
-  `> [!info]- What this file is\n` +
-  `> An append-only timeline of what the plugin did, one \`- [date] action | title\` line per\n` +
-  `> operation (\`ingest\`, \`concept\`, \`relink\`, \`schema\`). Nothing here is read back — it exists so\n` +
-  `> you can check what happened and when, and it greps cleanly by action.\n\n`;
+  `**An append-only timeline of what the plugin did.** Nothing here is ever read back — it exists so you can check what happened and when.\n\n` +
+  `> [!info] How to read it\n` +
+  `> One \`- [date] action | title\` line per operation, so it greps cleanly by action.\n` +
+  `>\n` +
+  `> | Action | Written when |\n` +
+  `> |---|---|\n` +
+  `> | \`ingest\` | A note became a page in \`sources/\`. |\n` +
+  `> | \`improve\` | A raw note was reformatted, after you approved it. |\n` +
+  `> | \`concept\` | A concept page was built from a tag or mention. |\n` +
+  `> | \`relink\` | Related sections were backfilled or re-synced. |\n` +
+  `> | \`schema\` | The tag vocabulary was rewritten. |\n`;
 
+// Every folder and file the plugin owns, in display order. Exported so the
+// settings page can show the layout and the repair button can report what was
+// missing, without keeping a second copy of the list that drifts.
+// One definition of "a page in the wiki", because there were ten copies of it
+// and they disagreed. index/log/schema are the wiki's own machinery, and every
+// README is documentation for the folder it sits in — none of them is a page,
+// so none of them should ever appear in lint, the review board, retag, relink
+// or the contradiction sweep.
+export function isWikiPage(file: { path: string; basename: string }): boolean {
+  if (!file.path.startsWith(`${_wikiDir}/`)) return false;
+  if (file.path === indexPath() || file.path === logPath() || file.path === schemaPath()) return false;
+  if (file.basename.toLowerCase() === 'readme') return false;
+  return true;
+}
+
+export function wikiScaffoldPaths(): { path: string; what: string }[] {
+  return [
+    { path: `${wikiSourcesDir()}/`, what: 'One page per ingested note' },
+    { path: `${wikiAnswersDir()}/`, what: 'Chat answers you saved' },
+    { path: `${wikiChatsDir()}/`, what: 'Saved conversations' },
+    { path: `${wikiConceptsDir()}/`, what: 'Pages built across a shared tag' },
+    { path: `${wikiSkillsDir()}/`, what: 'One file per ⚡ menu entry' },
+    { path: indexPath(), what: 'Catalog — wiki chat reads this first' },
+    { path: logPath(), what: 'Append-only record of what ran' },
+    { path: schemaPath(), what: 'Tag vocabulary, naming rules, rejected tags' },
+  ];
+}
+
+
+
+// A README per folder, in the same shape as index.md: a bold opening line, then
+// expanded "> [!info]" blocks, with a table wherever there is something to
+// tabulate. Two rules learned the hard way — never "[!info]-", which collapses
+// the explanation behind a click nobody knows to make, and never wrap a
+// paragraph across source lines, which Obsidian renders as hard breaks.
+//
+// Excluded from every page enumeration by isWikiPage(), so documenting a folder
+// never costs you a phantom wiki page in lint or the review board.
+const FOLDER_READMES: Array<[() => string, string]> = [
+  [
+    () => `${wikiSourcesDir()}/README.md`,
+    `# sources\n\n` +
+      `**One page here for each note you have ingested.** These pages are summaries *of* your notes — never the notes themselves. Your originals stay wherever you keep them and are not modified; ingest opens a note, reads it, and closes it.\n\n` +
+      `> [!info] What a page holds\n` +
+      `> A summary, three to five key points, up to three tags, and the entities the note mentions. The frontmatter carries the machinery:\n` +
+      `>\n` +
+      `> | Field | What it does |\n` +
+      `> |---|---|\n` +
+      `> | \`source\` | The note this page was made from. |\n` +
+      `> | \`source_hash\` | What that note looked like at the time. **This is how drift is caught** — edit the note and the review board reports this page as out of date. |\n` +
+      `> | \`confidence\` | \`high\`, \`med\` or \`low\`, written by the model about its own extraction. Anything below \`high\` lands on the review board. |\n` +
+      `> | \`tags\` | One to three topics, drawn from the vocabulary in \`schema.md\`. |\n\n` +
+      `> [!info] Editing and deleting\n` +
+      `> Edit any page freely — it is your note now.\n` +
+      `>\n` +
+      `> **Deleting one breaks nothing:** its entry in \`index.md\` is dropped automatically, and **Reconcile wiki** forces a pass that also clears links pointing at it from other pages.\n`,
+  ],
+  [
+    () => `${wikiAnswersDir()}/README.md`,
+    `# answers\n\n` +
+      `**Chat replies you decided were worth keeping.** Nothing arrives here on its own: you save an answer with ${ICON_SAVE_TO_WIKI} **Save to wiki** under a message, and it goes through the same review gate as everything else — you see the exact page before it is written.\n\n` +
+      `> [!info] Why bother saving\n` +
+      `> An answer that only lives in a chat panel is gone the moment you clear the thread.\n` +
+      `>\n` +
+      `> Saved here it becomes part of the wiki: **indexed, searchable, and available as grounding for later questions.** Exploration compounds instead of evaporating.\n\n` +
+      `> [!info] What a page holds\n` +
+      `> | Part | Why it is kept |\n` +
+      `> |---|---|\n` +
+      `> | The question | So the answer is not stranded without what it was answering. |\n` +
+      `> | The answer | The reply as it was given, not a paraphrase. |\n` +
+      `> | The sources | Exactly what the plugin put in the prompt, so months later you can still check what it was based on. |\n`,
+  ],
+  [
+    () => `${wikiChatsDir()}/README.md`,
+    `# chats\n\n` +
+      `**Whole conversations, saved from the header of the chat panel.** This is an archive, not working material — the query path never reads these files back. They are here so a thread you want to keep does not depend on the panel staying open.\n\n` +
+      `> [!info] What a page holds\n` +
+      `> Dataview-friendly frontmatter, then the thread as question and answer blocks, each with the sources that were used.\n\n` +
+      `> [!info] chats/ or answers/?\n` +
+      `> | You want | Use |\n` +
+      `> |---|---|\n` +
+      `> | The whole thread, for the record | The save button in the panel header → lands here. |\n` +
+      `> | One good answer, as part of the wiki | ${ICON_SAVE_TO_WIKI} **Save to wiki** under that message → lands in \`answers/\`, and **becomes grounding for future questions**. |\n`,
+  ],
+  [
+    () => `${wikiConceptsDir()}/README.md`,
+    `# concepts\n\n` +
+      `**Pages built *across* other pages.** Everything in \`sources/\` is about one note. A concept page is about a *theme*: pick a tag or a mention that two or more pages share, and the plugin writes a page above them that links down into each one.\n\n` +
+      `> [!info] Why this folder exists\n` +
+      `> A pile of summaries is still a pile.\n` +
+      `>\n` +
+      `> **This is where the wiki grows a second storey** — the layer where you can ask what you think about a subject, rather than what one note said about it.\n\n` +
+      `> [!info] How they differ from ingested pages\n` +
+      `> | | \`sources/\` | \`concepts/\` |\n` +
+      `> |---|---|---|\n` +
+      `> | Made from | One note | Every page sharing a tag |\n` +
+      `> | Named after | The note | The tag |\n` +
+      `> | Frontmatter | \`source\`, \`source_hash\` | \`kind: concept\` |\n` +
+      `> | Retag touches it | Yes | No — it is named by its tag |\n`,
+  ],
+];
+
+// Runs on every layout-ready, not just before the first write: an empty
+// plugin that has created nothing is unreadable — you cannot tell what it
+// intends to do with your vault until it has already done it. Every call is
+// a no-op once the folders exist.
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [wikiDir(), wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir()]) {
+  for (const dir of [wikiDir(), wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir(), wikiSkillsDir()]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
@@ -187,6 +348,19 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   }
   if (!vault.getAbstractFileByPath(logPath())) {
     await vault.create(logPath(), LOG_HEADER);
+  }
+  // schema.md used to appear only after "Organize tags", so the rules the
+  // retag pass obeys were invisible until you went looking for them.
+  if (!vault.getAbstractFileByPath(schemaPath())) {
+    await vault.create(schemaPath(), buildSchemaFile([])).catch(() => {});
+  }
+  // Never overwrites: if you have edited a README, or deleted one on purpose
+  // and it came back, that is create-if-absent doing exactly what it says.
+  for (const [pathOf, body] of FOLDER_READMES) {
+    const path = normalizePath(pathOf());
+    if (!vault.getAbstractFileByPath(path)) {
+      await vault.create(path, body).catch(() => {});
+    }
   }
 }
 
@@ -463,6 +637,29 @@ export interface WikiSkill {
 // as the body. We parse only the handful of keys we use and treat everything
 // after the closing fence as the prompt, so a user can write the prompt as
 // ordinary markdown (lists, bold) without escaping anything.
+// A skill file's body is sent to the model verbatim, which left nowhere to
+// explain what the skill is for — the file could not document itself the way
+// index.md and schema.md do. So one rule: a "> [!info]" callout is
+// documentation and is stripped before the prompt is assembled. Plain
+// blockquotes are left alone; someone may well want one inside a prompt.
+function stripCalloutBlocks(body: string): string {
+  const out: string[] = [];
+  let inCallout = false;
+  for (const line of body.split('\n')) {
+    if (/^>\s*\[!/.test(line)) {
+      inCallout = true;
+      continue;
+    }
+    if (inCallout) {
+      // The block runs until the first line that is not a quote line.
+      if (/^>/.test(line) || line.trim() === '') continue;
+      inCallout = false;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 function parseSkillFile(name: string, content: string): WikiSkill | null {
   const fm = content.match(/^---\n([\s\S]*?)\n---\n?/);
   const front: Record<string, string> = {};
@@ -473,7 +670,7 @@ function parseSkillFile(name: string, content: string): WikiSkill | null {
       front[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
     }
   }
-  const prompt = content.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+  const prompt = stripCalloutBlocks(content.replace(/^---\n[\s\S]*?\n---\n?/, '')).trim();
   if (!prompt) return null;
   const mode = front.mode === 'wiki' ? 'wiki' : front.mode === 'note' ? 'note' : undefined;
   return {
@@ -502,26 +699,50 @@ export async function readSkills(vault: Vault): Promise<WikiSkill[]> {
   return skills;
 }
 
-function buildSkillFile(name: string, icon: string, mode: 'note' | 'wiki' | undefined, prompt: string): string {
+function buildSkillFile(
+  name: string,
+  icon: string,
+  mode: 'note' | 'wiki' | undefined,
+  prompt: string,
+  doc?: string
+): string {
   const modeLine = mode ? `mode: ${mode}\n` : '';
-  return `---\nname: ${name}\nicon: ${icon}\n${modeLine}---\n\n${prompt}\n`;
+  // The callout goes above the prompt so the file reads as documentation first;
+  // stripCalloutBlocks() removes it again on the way to the model.
+  const docBlock = doc ? `${doc}\n\n` : '';
+  return `---\nname: ${name}\nicon: ${icon}\n${modeLine}---\n\n${docBlock}${prompt}\n`;
 }
 
 const SKILLS_README =
-  `# Skills\n\n` +
-  `Each \`.md\` file in this folder is a custom skill — a one-shot prompt that shows up in\n` +
-  `the ⚡ menu of the chat panel. This is the same "config as a note" idea as \`schema.md\`:\n` +
-  `the rules live as plain notes you can read, edit, and version, not as a hidden setting.\n\n` +
-  `A skill file is frontmatter + a prompt body:\n\n` +
-  `\`\`\`\n---\nname: ELI5\nicon: wand-2\nmode: note\n---\n\nExplain this material like I am five.\n\`\`\`\n\n` +
-  `- **name** — what shows in the menu (defaults to the filename).\n` +
-  `- **icon** — any Obsidian (Lucide) icon name; defaults to \`wand-2\`.\n` +
-  `- **mode** — optional, \`note\` or \`wiki\`. If set, running the skill switches the chat to\n` +
-  `  that grounding first (use \`wiki\` for skills that need the catalog or activity log).\n` +
-  `- **body** — everything after the closing \`---\` is the prompt, written as ordinary markdown.\n\n` +
-  `Each skill is one structured ask against the current chat context (mode + attachments) —\n` +
-  `not a multi-step agent. Add a file, and it appears in the menu; delete it, and it is gone.\n` +
-  `Files named \`README\` (this one) are ignored.\n`;
+  `# skills\n\n` +
+  `**Each \`.md\` file in this folder is a custom skill** — a one-shot prompt that appears in the ⚡ menu of the chat panel. Add a file, get a menu item; delete it, and it is gone. Same "config as a note" idea as \`schema.md\`: the rules live as plain notes you can read, edit and version, not as a hidden setting.\n\n` +
+  `> [!info] The file format\n` +
+  `> Frontmatter, then the prompt as ordinary markdown:\n` +
+  `>\n` +
+  `> \`\`\`\n` +
+  `> ---\n` +
+  `> name: Feynman\n` +
+  `> icon: lightbulb\n` +
+  `> mode: note\n` +
+  `> ---\n` +
+  `>\n` +
+  `> Explain this in plain words, then say what you had to be vague about.\n` +
+  `> \`\`\`\n` +
+  `>\n` +
+  `> | Key | Meaning |\n` +
+  `> |---|---|\n` +
+  `> | \`name\` | What shows in the menu. Defaults to the filename. |\n` +
+  `> | \`icon\` | Any Obsidian (Lucide) icon name. Defaults to \`wand-2\`. |\n` +
+  `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, running the skill switches the chat to that grounding first — use \`wiki\` for anything that needs the catalog or the activity log. |\n` +
+  `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
+  `> [!info] Documenting a skill\n` +
+  `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`feynman.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
+  `>\n` +
+  `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
+  `> [!info] What a skill is not\n` +
+  `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools.\n` +
+  `>\n` +
+  `> Files named \`README\` (this one) are ignored.\n`;
 
 // Seed the skills folder with a README and two example skills, the first time
 // the user asks for it. Never overwrites an existing file, so re-running is safe.
@@ -532,13 +753,47 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
   }
   const seeds: Array<[string, string]> = [
     [`${wikiSkillsDir()}/README.md`, SKILLS_README],
+    // The Feynman technique rather than "explain like I'm five": the second
+    // half — naming what you could not explain — is the part that is actually
+    // useful on a knowledge base, and it is a different question from the
+    // built-in "Find gaps" (that one looks for holes in the material; this one
+    // looks for holes in your grasp of it).
     [
-      `${wikiSkillsDir()}/eli5.md`,
-      buildSkillFile('ELI5', 'baby', 'note', 'Explain this material like I am five, in plain language and short sentences.'),
+      `${wikiSkillsDir()}/feynman.md`,
+      buildSkillFile(
+        'Feynman',
+        'lightbulb',
+        'note',
+        'Explain this material to someone clever who has never met the topic: plain words, short ' +
+          'sentences, every piece of jargon either dropped or defined the first time it appears.\n\n' +
+          'Then, under a heading "Where I had to be vague", list the points you could not explain ' +
+          'without hand-waving, and say what would have to be in the material for you to explain ' +
+          'them properly.',
+        `> [!info] What this skill is\n` +
+          `> The Feynman technique, not "explain like I am five". The first half is the plain-words explanation; **the second half is the useful part** — naming what you could not explain without hand-waving.\n` +
+          `>\n` +
+          `> | | Looks for |\n` +
+          `> |---|---|\n` +
+          `> | This skill | Holes in **your grasp** of the material |\n` +
+          `> | Built-in *Find gaps* | Holes in **the material itself** |\n` +
+          `>\n` +
+          `> Everything below this box is the prompt. **Callouts are documentation and are stripped before the model sees it** — edit the prompt freely, and delete this box if you want.`
+      ),
     ],
     [
       `${wikiSkillsDir()}/action-items.md`,
-      buildSkillFile('Action items', 'list-checks', 'note', 'List the concrete next actions this material implies, as a checklist. One action per line, each starting with a verb.'),
+      buildSkillFile(
+        'Action items',
+        'list-checks',
+        'note',
+        'List the concrete next actions this material implies, as a checklist. One action per line, each starting with a verb.',
+        `> [!info] What this skill is\n` +
+          `> Turns a note you have been sitting on into a checklist you can act from. **One action per line, each starting with a verb** — so "email the PI about the waitlist", not "waitlist situation".\n` +
+          `>\n` +
+          `> Runs against whatever the chat is grounded in: the open note, or the pages the wiki retrieved. Switch it to \`mode: wiki\` in the frontmatter if you want it over the whole wiki instead.\n` +
+          `>\n` +
+          `> Everything below this box is the prompt. **Callouts are documentation and are stripped before the model sees it.**`
+      ),
     ],
   ];
   for (const [path, content] of seeds) {

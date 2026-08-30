@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { ConfirmModal, IngestPreviewModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
+import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
   appendLog,
@@ -15,6 +15,8 @@ import {
   conceptPagePath,
   ensureSkillsScaffold,
   ensureWikiScaffold,
+  isWikiPage,
+  wikiScaffoldPaths,
   indexPath,
   readSchema,
   schemaPath,
@@ -97,6 +99,162 @@ async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
 
 // Model download/caching moved to src/model-store.ts (resumable, on-disk).
 
+// Rough token cost per script: CJK (Han/kana/Hangul/fullwidth) runs ~1.5
+// tokens per character, everything else ~4 characters per token. Deliberately
+// pessimistic — overshooting the context window truncates the rewrite
+// silently, which is the worst failure mode we have.
+const CJK_RE = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
+function estimateTokens(text: string): number {
+  const cjk = (text.match(CJK_RE) ?? []).length;
+  return Math.ceil(cjk * 1.5 + (text.length - cjk) / 4);
+}
+
+// One unit of work for Improve. `raw` keeps its own trailing newlines so that
+// concatenating every chunk's raw text reproduces the source byte for byte —
+// that is what lets us stitch the rewritten pieces back together without
+// inventing or eating blank lines. `verbatim` chunks are passed through
+// untouched (an over-budget fenced code block: it must be preserved exactly
+// anyway, so there is nothing for the copy editor to do).
+interface ImproveChunk {
+  raw: string;
+  verbatim: boolean;
+}
+
+// Split markdown into blocks that are safe to send separately: fenced code
+// blocks stay whole, headings start a new block, and blank lines end one.
+// Every block carries its trailing newlines, so blocks.join('') === src.
+function splitMarkdownBlocks(src: string): string[] {
+  const lines = src.split('\n');
+  const blocks: string[] = [];
+  let buf: string[] = [];
+  let fence: string | null = null;
+  const flush = () => {
+    // Each entry already carries its own line break, so this is a plain
+    // concatenation — joining on '\n' here would duplicate every newline.
+    if (buf.length) blocks.push(buf.join(''));
+    buf = [];
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const last = i === lines.length - 1;
+    const withNl = last ? line : line + '\n';
+    if (fence) {
+      buf.push(withNl);
+      if (new RegExp(`^\\s{0,3}${fence}\\s*$`).test(line)) {
+        fence = null;
+        flush();
+      }
+      continue;
+    }
+    const open = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    if (open) {
+      flush();
+      fence = open[1];
+      buf.push(withNl);
+      continue;
+    }
+    if (/^\s{0,3}#{1,6}\s/.test(line)) {
+      flush();
+      buf.push(withNl);
+      continue;
+    }
+    if (line.trim() === '') {
+      // Blank lines belong to the block they close, so the separator
+      // survives the round trip.
+      if (buf.length) {
+        buf.push(withNl);
+        // Keep consuming a run of blank lines, then end the block.
+        while (i + 1 < lines.length && lines[i + 1].trim() === '') {
+          i++;
+          buf.push(i === lines.length - 1 ? lines[i] : lines[i] + '\n');
+        }
+        flush();
+      } else {
+        blocks.push(withNl);
+      }
+      continue;
+    }
+    buf.push(withNl);
+  }
+  flush();
+  return blocks;
+}
+
+// Break one over-budget block into pieces that fit. Prefers line boundaries,
+// then sentence-ending punctuation (CJK notes routinely hold a 1500-character
+// paragraph on a single line), and only then a hard character cut.
+function splitOversizedBlock(block: string, budget: number): string[] {
+  const out: string[] = [];
+  const flushable = (piece: string) => {
+    if (piece) out.push(piece);
+  };
+  let rest = block;
+  while (estimateTokens(rest) > budget) {
+    // Binary-search the longest prefix that fits, then walk back to the
+    // nearest natural boundary inside it.
+    let lo = 1;
+    let hi = rest.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (estimateTokens(rest.slice(0, mid)) <= budget) lo = mid;
+      else hi = mid - 1;
+    }
+    const head = rest.slice(0, lo);
+    const nl = head.lastIndexOf('\n');
+    const sentence = Math.max(
+      head.lastIndexOf('。'),
+      head.lastIndexOf('！'),
+      head.lastIndexOf('？'),
+      head.lastIndexOf('. '),
+      head.lastIndexOf('! '),
+      head.lastIndexOf('? ')
+    );
+    let cut = lo;
+    if (nl > lo * 0.4) cut = nl + 1;
+    else if (sentence > lo * 0.4) cut = sentence + 1;
+    flushable(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  flushable(rest);
+  return out;
+}
+
+// Pack a note into chunks that each fit the per-pass input budget. Chunk
+// boundaries land on headings or blank lines wherever possible, so rejoining
+// the rewritten pieces is a plain concatenation.
+function chunkForImprove(content: string, budget: number): ImproveChunk[] {
+  if (estimateTokens(content) <= budget) return [{ raw: content, verbatim: false }];
+  const chunks: ImproveChunk[] = [];
+  let buf = '';
+  const flush = () => {
+    if (buf) chunks.push({ raw: buf, verbatim: false });
+    buf = '';
+  };
+  for (const block of splitMarkdownBlocks(content)) {
+    if (estimateTokens(block) > budget) {
+      flush();
+      // A single fenced block over budget has to be preserved verbatim
+      // anyway; cutting it would corrupt the code.
+      if (/^\s{0,3}(`{3,}|~{3,})/.test(block)) {
+        chunks.push({ raw: block, verbatim: true });
+      } else {
+        for (const piece of splitOversizedBlock(block, budget)) {
+          chunks.push({ raw: piece, verbatim: false });
+        }
+      }
+      continue;
+    }
+    // Prefer to break in front of a heading once the current chunk is
+    // half full: a pass that starts at a section head reads as a section,
+    // not as a fragment cut mid-argument.
+    if (buf && /^\s{0,3}#{1,6}\s/.test(block) && estimateTokens(buf) >= budget * 0.5) flush();
+    if (buf && estimateTokens(buf + block) > budget) flush();
+    buf += block;
+  }
+  flush();
+  return chunks;
+}
+
 // Tag picker for concept-page building (issue #19): only tags shared by two
 // or more pages are offered, since a concept page over a single page is
 // pointless.
@@ -160,21 +318,43 @@ export default class LiteRtSpikePlugin extends Plugin {
     setWikiDir(this.settings.wikiDir);
     this.addSettingTab(new GemmaWikiSettingTab(this.app, this));
 
-    // Brand mark (concept: a note card with a folded corner and a spark —
-    // "a note, with local AI inside"), registered as a reusable icon.
+    // Brand mark. It used to be a note card with a folded corner and a spark,
+    // and in the ribbon that reads as "new file" — three separate people looked
+    // at it and asked what the button did. The ribbon icon IS the entry point
+    // to the whole plugin, so it has to name the affordance, not the brand: a
+    // speech bubble (you can talk to this), two lines of text inside (about
+    // your notes), and the spark kept from the old mark (a model is doing it).
     // addIcon expects inner SVG content sized for a 0 0 100 100 viewBox.
     addIcon(
       'gemma-wiki-logo',
-      '<path d="M58.3 12.5 H27.1 a10.4 10.4 0 0 0 -10.4 10.4 v54.2 a10.4 10.4 0 0 0 10.4 10.4 h45.8 ' +
-        'a10.4 10.4 0 0 0 10.4 -10.4 V37.5 Z" stroke="currentColor" stroke-width="8.3" ' +
-        'stroke-linejoin="round" fill="none"/>' +
-        '<path d="M58.3 12.5 v25 h25" stroke="currentColor" stroke-width="8.3" stroke-linejoin="round" fill="none"/>' +
-        '<path d="M41.7 45.8 l4.8 10.8 10.8 4.8 -10.8 4.8 -4.8 10.8 -4.8 -10.8 -10.8 -4.8 10.8 -4.8 Z" fill="currentColor"/>'
+      '<path d="M27.1 18.8 H72.9 a14.6 14.6 0 0 1 14.6 14.6 v22.9 a14.6 14.6 0 0 1 -14.6 14.6 ' +
+        'H45.8 L27.1 85.4 V70.8 a14.6 14.6 0 0 1 -14.6 -14.6 V33.3 a14.6 14.6 0 0 1 14.6 -14.6 Z" ' +
+        'stroke="currentColor" stroke-width="8.3" stroke-linejoin="round" stroke-linecap="round" fill="none"/>' +
+        '<path d="M31.3 39.6 H56.3" stroke="currentColor" stroke-width="8.3" stroke-linecap="round"/>' +
+        '<path d="M31.3 54.2 H45.8" stroke="currentColor" stroke-width="8.3" stroke-linecap="round"/>' +
+        '<path d="M68.8 39.6 l3.4 7.7 7.7 3.4 -7.7 3.4 -3.4 7.7 -3.4 -7.7 -7.7 -3.4 7.7 -3.4 Z" fill="currentColor"/>'
+    );
+
+    // Follow the folder if it is renamed or moved from the file explorer.
+    // Without this the setting kept pointing at the old path: every folder read
+    // as missing, and "Create missing" built a second, empty knowledge base
+    // beside the real one — the plugin fighting the user instead of following.
+    this.registerEvent(
+      this.app.vault.on('rename', (file, oldPath) => {
+        if (!(file instanceof TFolder) || oldPath !== wikiDir()) return;
+        void (async () => {
+          this.settings.wikiDir = file.path;
+          await this.saveSettings();
+          setWikiDir(file.path);
+          this.refreshIngestBadges();
+          new Notice(`ℹ️ Knowledge folder is now "${file.path}" — Gemma Wiki followed the rename.`, 6000);
+        })();
+      })
     );
 
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
 
-    this.addRibbonIcon('gemma-wiki-logo', 'Chat with note (Gemma, local)', () => {
+    this.addRibbonIcon('gemma-wiki-logo', 'Gemma Wiki — ask your notes (local, free)', () => {
       void this.activateChatView();
     });
 
@@ -184,6 +364,58 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.scanStatusEl.addClass('mod-clickable');
     this.scanStatusEl.hide();
     this.scanStatusEl.addEventListener('click', () => void this.scanAndReviewIngest());
+    // Build the wiki folders on first load rather than on first write. Until
+    // this ran, a freshly installed plugin had created nothing at all, so
+    // there was no way to see what it was going to do with the vault — and
+    // schema.md and skills/ only appeared if you happened to run the right
+    // command. Seeding skills/ also means the panel's menu is not empty on
+    // day one. Both calls are no-ops once the files exist.
+    // Build the wiki folders on load rather than on first write, then say so.
+    // The folder is created unconditionally — asking permission to make an
+    // empty working directory is a dialog with one sensible answer. What the
+    // user does need is to be told it happened, once, in a form they cannot
+    // miss and can act on. Both calls are no-ops once the files exist.
+    this.app.workspace.onLayoutReady(() => {
+      void (async () => {
+        const existedBefore = !!this.app.vault.getAbstractFileByPath(wikiDir());
+        const gone = wikiScaffoldPaths()
+          .filter((e) => !this.app.vault.getAbstractFileByPath(e.path.replace(/\/$/, '')))
+          .map((e) => e.path);
+        await ensureWikiScaffold(this.app.vault);
+        await ensureSkillsScaffold(this.app.vault);
+        log('scaffold check:', { dir: wikiDir(), existedBefore, restored: gone });
+
+        // First ever run in this vault: one card explaining what just appeared.
+        if (!existedBefore && !this.settings.scaffoldNoticeShown) {
+          this.settings.scaffoldNoticeShown = true;
+          await this.saveSettings();
+          // Open index.md *before* the card. Obsidian expands and highlights the
+          // parent folders of whatever file is active, so this is what actually
+          // makes the new folder visible — an emoji in its name would be seen
+          // once and then live in every path and every wikilink forever.
+          // Dismissing the card then leaves the folder open in the explorer,
+          // index.md in the editor, and the chat panel on the right.
+          await this.app.workspace.openLinkText(indexPath().replace(/\.md$/, ''), '', false);
+          this.showSetupCard();
+          return;
+        }
+
+        // Otherwise: say something only if something was actually put back.
+        // Silently repairing is worse than it sounds — a folder does not go
+        // missing on its own, so the user deleted it, and they should know it
+        // returned rather than discover it later and think the delete failed.
+        // A notice, not a dialog: there is nothing to decide, and it is already
+        // fixed by the time they read it.
+        if (existedBefore && gone.length) {
+          new Notice(
+            `ℹ️ Restored ${gone.length} missing item${gone.length === 1 ? '' : 's'} in ${wikiDir()}/:\n` +
+              gone.join('\n') +
+              '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.',
+            12000
+          );
+        }
+      })();
+    });
     this.app.workspace.onLayoutReady(() => this.rescheduleAutoScan());
 
     this.addCommand({
@@ -872,19 +1104,40 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Open schema.md so the user can read/edit the config-as-a-note directly.
   // Seeds a default (empty-vocab) schema first if the file does not exist yet,
   // so the button always lands on a real, self-documenting file.
-  async openSchemaFile() {
-    await ensureWikiScaffold(this.app.vault);
-    const path = schemaPath();
-    let file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) {
-      await this.app.vault.create(path, buildSchemaFile([]));
-      file = this.app.vault.getAbstractFileByPath(path);
-    }
-    if (file instanceof TFile) await this.app.workspace.getLeaf(true).openFile(file);
-  }
 
   // Seed <wiki>/skills/ with a README and two example skills, then open the
   // README. Shared by the command and the settings button.
+  // The first-run card, on demand. Shown automatically once; this is how you
+  // get it back. Repeating it on every launch would be nagging — after the
+  // first time there is nothing new in it, and Obsidian restores the panel with
+  // the rest of the workspace anyway.
+  showSetupCard() {
+    new ScaffoldCreatedModal(
+      this.app,
+      wikiDir(),
+      wikiScaffoldPaths(),
+      () => void this.app.workspace.openLinkText(indexPath().replace(/\.md$/, ''), '', false),
+      () => void this.activateChatView()
+    ).open();
+  }
+
+  // One button for "put the folders back". The scaffold runs on load, so this
+  // is for the cases load cannot cover: a folder deleted by hand, a sync that
+  // dropped an empty directory, or a knowledge-folder rename. Idempotent —
+  // it reports what was missing rather than claiming to have done work.
+  async repairWikiFolders() {
+    const missing = wikiScaffoldPaths()
+      .filter((e) => !this.app.vault.getAbstractFileByPath(e.path.replace(/\/$/, '')))
+      .map((e) => e.path);
+    await ensureWikiScaffold(this.app.vault);
+    await ensureSkillsScaffold(this.app.vault);
+    if (!missing.length) {
+      new Notice(`✅ Everything is already in place under ${wikiDir()}/.`, 4000);
+      return;
+    }
+    new Notice(`✅ Created ${missing.length} missing item${missing.length === 1 ? '' : 's'}:\n${missing.join('\n')}`, 8000);
+  }
+
   async createSkillsFolder() {
     await ensureSkillsScaffold(this.app.vault);
     const path = `${wikiDir()}/skills`;
@@ -901,7 +1154,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const SKIP = new Set(['concept', 'answer', 'chat']);
     const counts = new Map<string, number>();
     for (const f of this.app.vault.getMarkdownFiles()) {
-      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      if (!isWikiPage(f)) continue;
       const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
       const tags = Array.isArray(raw)
         ? raw.map((t) => String(t))
@@ -1084,7 +1337,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   private async pruneDeadRelatedLinks(): Promise<void> {
     const LINK = /^- \[\[([^\]|]+)\|/;
     for (const f of this.app.vault.getMarkdownFiles()) {
-      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      if (!isWikiPage(f)) continue;
       const content = await this.app.vault.read(f);
       // Same repair for both generated link lists: a source page's
       // "## Related" and a concept page's "## Pages" member list.
@@ -1284,7 +1537,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const pages: { file: TFile; tags: string[] }[] = [];
     const offVocab = new Set<string>();
     for (const f of this.app.vault.getMarkdownFiles()) {
-      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      if (!isWikiPage(f)) continue;
       const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
       if (fm?.kind === 'concept') continue; // concept pages are named BY their tag
       const raw = fm?.tags;
@@ -1441,7 +1694,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       clusters.set(key, list);
     };
     for (const f of this.app.vault.getMarkdownFiles()) {
-      if (!f.path.startsWith(`${wikiDir()}/`)) continue;
+      if (!isWikiPage(f)) continue;
       const entry = byLinkPath.get(f.path.replace(/\.md$/, ''));
       if (!entry) continue;
       const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
@@ -1925,22 +2178,27 @@ export default class LiteRtSpikePlugin extends Plugin {
   // The one write operation that touches a raw note — and therefore the
   // most tightly constrained call in the plugin: structure, formatting,
   // and typos only, wording and voice preserved, full result shown in the
-  // preview gate before a single byte is written. The input cap is
+  // preview gate before a single byte is written. The per-pass input cap is
   // token-estimated per script, not a flat char count: English runs
   // ~4 chars/token but CJK runs ~1-1.5 tokens/char, so the old flat
   // 5000-char cap (calibrated on English ≈ 1250 tokens) overflowed the
-  // 4096-token context on Chinese notes and guaranteed a 2048-token
+  // context window on Chinese notes and guaranteed a 2048-token
   // output truncation — the same failure mode that bit the V1 grammar
   // tests twice.
+  //
+  // A note over that cap is no longer a dead end. It used to stop at "select
+  // a section and run Improve again" — i.e. do the splitting by hand. Now it
+  // is split on heading and blank-line boundaries into passes that each fit,
+  // rewritten one pass at a time with a fresh conversation, and stitched back
+  // together before the preview gate.
   async improveActiveNote() {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
       new Notice('⚠️ Open a note first.');
       return;
     }
-    // With a selection active, improve just the selection — the escape
-    // hatch for notes over the whole-note cap: work through them piece by
-    // piece.
+    // With a selection active, improve just the selection — still the way to
+    // aim Improve at one section instead of the whole note.
     const mdView = this.app.workspace
       .getLeavesOfType('markdown')
       .map((l) => l.view)
@@ -1948,107 +2206,174 @@ export default class LiteRtSpikePlugin extends Plugin {
     const editor = mdView?.editor;
     const selection = editor?.getSelection() ?? '';
     const usingSelection = !!selection.trim();
+    // A multi-pass run takes minutes and the cursor will have moved by the
+    // time the user approves — pin the range now, not at approval time.
+    const selFrom = usingSelection ? editor?.getCursor('from') : undefined;
+    const selTo = usingSelection ? editor?.getCursor('to') : undefined;
     const content = usingSelection ? selection : await this.app.vault.read(file);
     if (!content.trim()) {
       new Notice('ℹ️ Note is empty — nothing to improve.');
       return;
     }
-    // Estimate tokens per script: CJK (Han/kana/Hangul/fullwidth) ≈ 1.5
-    // tokens per char, everything else ≈ 4 chars per token. Budget:
-    // input (≤1750) + same-sized rewrite (≤2048) + system prompt (~150)
-    // stays under the 4096-token context.
-    const cjkChars = (content.match(
-      /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g
-    ) ?? []).length;
-    const estTokens = Math.ceil(cjkChars * 1.5 + (content.length - cjkChars) / 4);
-    const MAX_INPUT_TOKENS = this.budget('improve');
-    if (estTokens > MAX_INPUT_TOKENS) {
-      new Notice(
-        `ℹ️ ${usingSelection ? 'Selection' : `"${file.basename}"`} is ~${estTokens} tokens — over the ` +
-          `${MAX_INPUT_TOKENS} limit (input plus a same-sized rewrite must fit the model's context window; ` +
-          'CJK text costs ~1.5 tokens per character, so the char budget is smaller for Chinese/Japanese notes). ' +
-          (usingSelection
-            ? 'Select a smaller passage.'
-            : 'Select a section and run Improve again to work through long notes piece by piece.'),
-        10000
-      );
+
+    // Frontmatter is metadata, not prose: hand it back untouched rather than
+    // ask the model to retype it, and keep a chunk boundary from landing
+    // inside it.
+    let frontmatter = '';
+    let body = content;
+    if (!usingSelection) {
+      const fm = /^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/.exec(content);
+      if (fm) {
+        frontmatter = fm[0];
+        body = content.slice(fm[0].length);
+      }
+    }
+    if (!body.trim()) {
+      new Notice('ℹ️ Note is only frontmatter — nothing to improve.');
       return;
     }
 
+    // Budget per pass, derived from the configured context window: the input
+    // plus a same-sized rewrite plus the system prompt all have to fit.
+    const MAX_INPUT_TOKENS = this.budget('improve');
+    const chunks = chunkForImprove(body, MAX_INPUT_TOKENS);
+    const passes = chunks.filter((c) => !c.verbatim && c.raw.trim()).length;
+    if (passes === 0) {
+      new Notice('ℹ️ Nothing to improve — this note is one oversized code block, which is preserved as-is.', 8000);
+      return;
+    }
+    // Each pass is roughly half a minute of GPU time. Past a couple of them
+    // the user should get to decide before it starts, not discover it after.
+    if (passes >= 3) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        new ConfirmModal(this.app, {
+          title: 'Improve a long note',
+          body:
+            `${usingSelection ? 'The selection' : `"${file.basename}"`} is ~${estimateTokens(body)} tokens — ` +
+            "more than one pass fits in the model's context window, so Improve will work through it in " +
+            `${passes} passes, split on headings and blank lines, and stitch the result back together.\n\n` +
+            'Budget roughly half a minute per pass. You still review the whole result before anything is written.',
+          confirmText: `Run ${passes} passes`,
+          onResult: resolve,
+        }).open();
+      });
+      if (!proceed) return;
+    }
+
+    const systemPrompt =
+      'You are a careful copy editor for Obsidian markdown notes. Improve ONLY ' +
+      'structure and formatting: headings, list markers, blank-line spacing, and ' +
+      'obvious spelling mistakes.\n\n' +
+      'PRESERVE exactly, character for character:\n' +
+      "- The author's wording, voice, ideas, and language (never translate)\n" +
+      '- YAML frontmatter\n' +
+      '- [[wikilinks]], ![[embeds]], #tags, > [!callouts]\n' +
+      '- Code blocks, tables, and any ASCII/box-drawing diagrams\n\n' +
+      'Never add, remove, summarize, or rephrase content. When unsure whether ' +
+      'something is a typo, leave it as written. If the note is already well ' +
+      'formatted, return it unchanged.\n\n' +
+      (passes > 1
+        ? 'You are given ONE SECTION of a longer note, not the whole note. Return that ' +
+          'section only — never add a title, an introduction, a conclusion, or a remark ' +
+          'that text appears to be missing. Do not renumber headings.\n\n'
+        : '') +
+      'Return ONLY the markdown, no explanation.';
+
     this.status(`Improving "${file.basename}"…`);
-    let conversation: import('@litert-lm/core').Conversation | undefined;
+    const pieces: string[] = [];
+    let failed = 0;
     try {
       const engine = await this.ensureEngine((t) => this.status(`Improving "${file.basename}" — ${t}`));
       const { SamplerType } = await import('@litert-lm/core');
-      conversation = await engine.createConversation({
-        preface: {
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are a careful copy editor for Obsidian markdown notes. Improve ONLY ' +
-                'structure and formatting: headings, list markers, blank-line spacing, and ' +
-                'obvious spelling mistakes.\n\n' +
-                'PRESERVE exactly, character for character:\n' +
-                "- The author's wording, voice, ideas, and language (never translate)\n" +
-                '- YAML frontmatter\n' +
-                '- [[wikilinks]], ![[embeds]], #tags, > [!callouts]\n' +
-                '- Code blocks, tables, and any ASCII/box-drawing diagrams\n\n' +
-                'Never add, remove, summarize, or rephrase content. When unsure whether ' +
-                'something is a typo, leave it as written. If the note is already well ' +
-                'formatted, return it unchanged.\n\n' +
-                'Return ONLY the full note in markdown, no explanation.',
+      let pass = 0;
+      for (const chunk of chunks) {
+        // Chunks carry their own surrounding whitespace so that rejoining is
+        // a plain concatenation; the model only ever sees the text between.
+        // It matters down to the single space: an English paragraph cut at a
+        // sentence boundary leaves the following space on the next chunk, and
+        // the model's answer comes back trimmed.
+        const leading = /^\s*/.exec(chunk.raw)![0];
+        const trailing = /\s*$/.exec(chunk.raw)![0];
+        const text = chunk.raw.slice(leading.length, chunk.raw.length - trailing.length);
+        if (chunk.verbatim || !text.trim()) {
+          pieces.push(chunk.raw);
+          continue;
+        }
+        pass++;
+        const label = passes > 1 ? ` — pass ${pass}/${passes}` : '';
+        this.status(`Improving "${file.basename}"${label}…`);
+        // A fresh conversation per pass: the previous section must not sit in
+        // context, or the budget the chunking just enforced means nothing.
+        let conversation: import('@litert-lm/core').Conversation | undefined;
+        try {
+          conversation = await engine.createConversation({
+            preface: { messages: [{ role: 'system', content: systemPrompt }] },
+            sessionConfig: {
+              samplerParams: { type: SamplerType.GREEDY },
+              // Output is a same-sized rewrite of the input; cap it just above
+              // the input estimate instead of a flat 2048 so short passes can't
+              // run away and long CJK passes aren't silently truncated.
+              maxOutputTokens: Math.min(2048, estimateTokens(text) + 300),
             },
-          ],
-        },
-        sessionConfig: {
-          samplerParams: { type: SamplerType.GREEDY },
-          // Output is a same-sized rewrite of the input; cap it just above
-          // the input estimate instead of a flat 2048 so short notes can't
-          // run away and long CJK notes aren't silently truncated.
-          maxOutputTokens: Math.min(2048, estTokens + 300),
-        },
-      });
-      const message = await conversation.sendMessage(content);
-      let raw = '';
-      const c = message.content;
-      if (typeof c === 'string') raw = c;
-      else if (Array.isArray(c)) {
-        for (const part of c) {
-          if (part.type === 'text' && part.text) raw += part.text;
+          });
+          const message = await conversation.sendMessage(text);
+          let raw = '';
+          const c = message.content;
+          if (typeof c === 'string') raw = c;
+          else if (Array.isArray(c)) {
+            for (const part of c) {
+              if (part.type === 'text' && part.text) raw += part.text;
+            }
+          }
+          const improved = raw
+            .trim()
+            .replace(/^```(?:markdown|md)?\s*/i, '')
+            .replace(/```\s*$/i, '')
+            .trim();
+          if (!improved) throw new Error('Model returned an empty result.');
+          pieces.push(leading + improved + trailing);
+        } catch (err) {
+          // One bad pass must not cost the user the other twenty: keep the
+          // author's text for that section and say so at the end.
+          console.error(`[gemma4-litert-wiki] improve pass ${pass}/${passes} failed`, err);
+          failed++;
+          pieces.push(chunk.raw);
+        } finally {
+          await conversation?.delete().catch(() => {});
         }
       }
       this.statusEnd();
-      const improved = raw
-        .trim()
-        .replace(/^```(?:markdown|md)?\s*/i, '')
-        .replace(/```\s*$/i, '')
-        .trim();
-      if (!improved) throw new Error('Model returned an empty result.');
+      if (failed === passes) {
+        throw new Error(`all ${passes} pass${passes === 1 ? '' : 'es'} failed — see the console`);
+      }
+      const improved = frontmatter + pieces.join('');
 
-      new IngestPreviewModal(
-        this.app,
-        usingSelection ? `${file.path} (selected text only)` : file.path,
-        improved,
-        true,
-        () => {
-          void (async () => {
-            if (usingSelection && editor) {
-              editor.replaceSelection(improved);
-            } else {
-              await this.app.vault.modify(file, improved);
-            }
-            await appendLog(this.app.vault, 'improve', file.basename);
-            new Notice(`ℹ️ Note updated: ${file.basename}`, 3000);
-          })();
-        }
-      ).open();
+      const source =
+        (usingSelection ? `${file.path} (selected text only)` : file.path) +
+        (passes > 1 ? ` — ${passes} passes` : '') +
+        (failed > 0 ? `, ${failed} left unchanged (failed)` : '');
+      if (failed > 0) {
+        new Notice(
+          `⚠️ ${failed} of ${passes} passes failed; those sections are unchanged in the preview. ` +
+            'See the console for why.',
+          8000
+        );
+      }
+      new IngestPreviewModal(this.app, source, improved, true, () => {
+        void (async () => {
+          if (usingSelection && editor && selFrom && selTo) {
+            editor.replaceRange(improved, selFrom, selTo);
+          } else {
+            await this.app.vault.modify(file, improved);
+          }
+          await appendLog(this.app.vault, 'improve', file.basename);
+          new Notice(`✅ Note updated: ${file.basename}`, 3000);
+        })();
+      }).open();
     } catch (err) {
       console.error('[gemma4-litert-wiki] improve failed', err);
       this.status(`Improve FAILED — ${err instanceof Error ? err.message : String(err)}`);
       this.statusEnd(undefined, 8000);
-    } finally {
-      await conversation?.delete().catch(() => {});
     }
   }
 
@@ -2360,7 +2685,8 @@ export default class LiteRtSpikePlugin extends Plugin {
   // source: frontmatter points at raw notes (untouched); only the layer's
   // own paths (index links, Related links, path-prefixed wikilinks) move.
   async renameWikiDir(prev: string, next: string) {
-    const notice = new Notice(`ℹ️ Renaming ${prev} → ${next}…`, 0);
+    const notice = new Notice(`⏳ Renaming ${prev} → ${next}…`, 0);
+    let skipped = 0;
     try {
       const prevFolder = this.app.vault.getAbstractFileByPath(prev);
       if (prevFolder instanceof TFolder) {
@@ -2384,6 +2710,14 @@ export default class LiteRtSpikePlugin extends Plugin {
             if (!this.app.vault.getAbstractFileByPath(destDir)) {
               await this.app.vault.createFolder(destDir).catch(() => {});
             }
+            // Merging into a folder that already has a file of this name:
+            // renameFile would throw and leave the move half-finished. Keep
+            // what is already there — the destination is the wiki the user is
+            // moving *to*, so its copy is the one they meant to keep.
+            if (this.app.vault.getAbstractFileByPath(dest)) {
+              skipped++;
+              continue;
+            }
             await this.app.fileManager.renameFile(child, dest);
           }
         } else {
@@ -2393,9 +2727,21 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.settings.wikiDir = next;
       await this.saveSettings();
       setWikiDir(next);
+      // Build the scaffold at the new name before returning. Without this the
+      // setting could point at a location that does not exist — most visibly
+      // when the old folder had already been deleted, so there was nothing to
+      // move: the folder map then read "8 of 8 missing" until the next restart,
+      // because the scaffold otherwise only runs on layout-ready.
+      await ensureWikiScaffold(this.app.vault);
+      await ensureSkillsScaffold(this.app.vault);
       this.refreshIngestBadges();
-      notice.setMessage(`Wiki folder is now "${next}".`);
-      setTimeout(() => notice.hide(), 4000);
+      notice.setMessage(
+        skipped
+          ? `⚠️ Wiki folder is now "${next}". ${skipped} file${skipped === 1 ? '' : 's'} already existed there ` +
+            `and were left as they were — the originals are still in "${prev}/".`
+          : `✅ Wiki folder is now "${next}".`
+      );
+      setTimeout(() => notice.hide(), skipped ? 10000 : 4000);
     } catch (err) {
       console.error('[gemma4-litert-wiki] rename wiki dir failed', err);
       notice.setMessage(`Rename failed — ${err instanceof Error ? err.message : String(err)}`);
@@ -2449,7 +2795,9 @@ export default class LiteRtSpikePlugin extends Plugin {
     const dir = this.pluginAbsDir();
     const report = (p: { receivedBytes: number; totalBytes: number; resumed: boolean }) => {
       const mb = (p.receivedBytes / 1e6).toFixed(0);
-      const total = p.totalBytes ? ` / ${(p.totalBytes / 1e6).toFixed(0)} MB` : '';
+      // `total` already carries its own unit; appending another produced
+      // "1240 / 2970 MB MB" in the download notice.
+      const total = p.totalBytes ? ` / ${(p.totalBytes / 1e6).toFixed(0)}` : '';
       onProgress(`${p.resumed ? 'Resuming' : 'Downloading'} model… ${mb}${total} MB`);
     };
     // Users who already downloaded under the old Cache-API scheme: move it

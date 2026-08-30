@@ -3,7 +3,7 @@
   "name": "Gemma 4 LiteRT Wiki",
   "version": "0.0.1",
   "minAppVersion": "1.11.4",
-  "description": "Local-first LLM wiki plugin. Runs Gemma 4 E4B entirely inside Obsidian via LiteRT-LM and WebGPU — no Ollama, no API key, no server. Currently a validated technical proof-of-concept; wiki features (ingest/query/lint) are on the roadmap.",
+  "description": "Free, private, offline AI for your notes — no API key, no subscription, no tokens ever billed. Gemma 4 runs inside Obsidian itself via LiteRT-LM and WebGPU: there is no server to upload your notes to, and nothing touches the network after the one-time model download. Follows Andrej Karpathy’s LLM-wiki pattern: your notes stay untouched, and a cross-linked wiki grows above them. Ingest one note, or scan a folder in a single pass — every page is shown to you in full before it is written. It links related pages to each other, builds concept pages from any tag two notes share, and marks a page outdated the moment you edit the note behind it: a wiki that stays alive, not a folder of one-off summaries. Chat with one note, several, or the whole wiki. Quiz yourself, make flashcards, find the gaps in what you have written, and save any answer worth keeping back into the wiki. Sources are listed by the plugin, never cited by the model — and lint, provenance and contradiction checks tell you where the wiki has drifted from your notes, or from itself. Everything is plain markdown you can edit: your own tag vocabulary and naming rules, an append-only log of every operation, and your own commands as files in skills/.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true

@@ -1,5 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
-import { contentHash, indexPath, logPath, wikiDir } from './wiki-store';
+import { contentHash, isWikiPage, wikiDir } from './wiki-store';
 
 // Review board: turns "you should periodically review the wiki" from a
 // vague chore into a concrete list. Model-free signals from page frontmatter
@@ -35,7 +35,7 @@ function ageInDays(created: unknown): number | null {
 export async function buildReviewBoard(app: App, staleDays: number): Promise<ReviewBoard> {
   const files = app.vault
     .getMarkdownFiles()
-    .filter((f) => f.path.startsWith(`${wikiDir()}/`) && f.path !== indexPath() && f.path !== logPath());
+    .filter(isWikiPage);
 
   const items: ReviewItem[] = [];
   for (const f of files) {
