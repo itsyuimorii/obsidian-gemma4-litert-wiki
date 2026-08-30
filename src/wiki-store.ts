@@ -301,7 +301,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | **Chat with active note** | Answers grounded in the note you have open — and nothing else. It says "not in the note" instead of guessing. |` + `\n` +
       `> | **Ask your wiki** | The other half of the same panel. Reads \`index.md\` to pick the pages worth opening, then answers from those, citing them. A question about the *collection* — *Find connections*, *What's still open?* — grounds in **every page instead**, because "what links my pages" is not a question retrieval can find an answer to. |` + `\n` +
-      `> | **Skills** | Saved prompts — quiz me, flashcards, find gaps. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
+      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus the two that ship as files. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
       `> [!info] File notes into the wiki` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
