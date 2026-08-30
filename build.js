@@ -1,7 +1,13 @@
 import { build } from 'esbuild';
 import { cpSync, existsSync, rmSync } from 'node:fs';
 
+// Stamped into the bundle so the console can say which build Obsidian is
+// actually running. Obsidian caches main.js until the plugin is toggled off
+// and on, so "I rebuilt it" and "the app is running it" are different facts.
+const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+
 await build({
+  define: { BUILD_STAMP: JSON.stringify(stamp) },
   entryPoints: ['src/main.ts'],
   outfile: 'main.js',
   bundle: true,
@@ -25,4 +31,4 @@ if (existsSync(wasmSrc)) {
   console.warn('WARNING: @litert-lm/core wasm/ folder not found — run npm install first.');
 }
 
-console.log('Build done.');
+console.log(`Build done — stamp ${stamp}`);
