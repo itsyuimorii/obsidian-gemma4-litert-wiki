@@ -306,7 +306,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
       `> | **Ingest active note** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. |` + `\n` +
-      `> | **Scan notes for wiki** | The same thing over whole folders. Drafts everything first and shows you the batch — **nothing is written until you approve it.** |` + `\n` +
+      `> | **Scan a folder into the wiki** | The same thing over whole folders. It asks which folders and **shows how many new or changed notes each one holds** before it starts, then drafts them all and shows you the batch — **nothing is written until you approve it.** |` + `\n` +
       `> | **Suggest tags & links** | Proposes frontmatter tags and links to related pages, for one note. You review before it writes. |` + `\n\n` +
       `> [!info] Build on top of what is filed` + `\n` +
       `> | | What it does |` + `\n` +
@@ -377,7 +377,8 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Setting | Why you would touch it |` + `\n` +
       `> |---|---|` + `\n` +
       `> | **Context window** | How much the model holds at once. Bigger = longer notes fit whole and answers ground on more; costs GPU memory and time to the first word. **If the model fails to load or answers get worse after raising it, lower it.** Takes effect after the plugin reloads. |` + `\n` +
-      `> | **Scan these folders** | Scan looks *only* here. Leave it blank and **Scan refuses to run** rather than sweeping your whole vault — this is opt-in on purpose. |` + `\n` +
+      `> | **Default folders** | Pre-ticked in the scan dialog, and the scope the status-bar count uses. A default, not a limit — the dialog lets you pick anything and can save your pick back. |` + `\n` +
+      `> | **Never scan these** | Folders that are not notes: templates, attachments, an archive. Skipped by every scan whatever you tick. |` + `\n` +
       `> | **Stale after (days)** | How old a page gets before the review board asks you to look at it again. |` + `\n` +
       `> | **Default chat mode** | Whether the panel opens on *This note* or *Wiki*. |` + `\n` +
       `> | **Knowledge folder name** | Renames this folder and rewrites every internal link. Asks first. |` + `\n` +

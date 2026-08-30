@@ -209,3 +209,165 @@ export class AutoIngestReviewModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+/**
+ * Which folders to scan — asked, not assumed.
+ *
+ * "Scan a folder into the wiki" used to scan whichever folders happened to be
+ * typed into a settings field, and refuse outright when that field was blank
+ * ("go to Settings and name a folder"). A command that names a folder in its
+ * own title should ask you which one, and a first run should not bounce you
+ * into a settings pane to answer a question the command could have asked.
+ *
+ * Counts are exact and free: the candidate sweep is deterministic — no model,
+ * no GPU — so the dialog can tell you what each folder would actually cost
+ * before you commit to it.
+ */
+export class ScanFolderModal extends Modal {
+  private chosen: Set<string>;
+  private remember: boolean;
+  private maxThisRun: number;
+  private readonly folders: { path: string; count: number }[];
+  private readonly totalCandidates: number;
+  private readonly maxPerRun: number;
+  private readonly onConfirm: (prefixes: string[], maxThisRun: number, remember: boolean) => void;
+  private countEl: HTMLElement | null = null;
+  private goBtn: HTMLButtonElement | null = null;
+
+  constructor(
+    app: App,
+    opts: {
+      folders: { path: string; count: number }[];
+      preselected: string[];
+      maxPerRun: number;
+      onConfirm: (prefixes: string[], maxThisRun: number, remember: boolean) => void;
+    }
+  ) {
+    super(app);
+    this.folders = opts.folders;
+    this.chosen = new Set(opts.preselected);
+    // Pre-ticking what settings already says, and defaulting "remember" to
+    // off, means the common case is one click and nothing is changed behind
+    // your back.
+    this.remember = false;
+    this.maxPerRun = opts.maxPerRun;
+    this.maxThisRun = opts.maxPerRun;
+    this.totalCandidates = opts.folders.reduce((n, f) => n + f.count, 0);
+    this.onConfirm = opts.onConfirm;
+  }
+
+  private selectedCount(): number {
+    let n = 0;
+    for (const f of this.folders) if (this.chosen.has(f.path)) n += f.count;
+    return n;
+  }
+
+  private syncFooter() {
+    const n = Math.min(this.selectedCount(), this.maxThisRun);
+    const over = this.selectedCount() - n;
+    if (this.countEl) {
+      this.countEl.setText(
+        this.chosen.size === 0
+          ? 'Pick at least one folder.'
+          : over > 0
+            ? `${n} note${n === 1 ? '' : 's'} this run — ${over} more left for the next one (cap is ${this.maxThisRun}).`
+            : `${n} note${n === 1 ? '' : 's'}, about one model call each.`
+      );
+    }
+    if (this.goBtn) {
+      this.goBtn.disabled = n === 0;
+      this.goBtn.setText(n === 0 ? 'Scan' : `Scan ${n} note${n === 1 ? '' : 's'}`);
+    }
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('gemma4-scan-modal');
+    contentEl.createEl('h3', { text: 'Scan a folder into the wiki' });
+    contentEl.createDiv({
+      cls: 'gemma4-scan-lede',
+      text:
+        'Sweeps the folders you pick for new or changed notes and drafts a page for each. ' +
+        'One model call per note, so it takes a while — you can close this and keep working. ' +
+        'Progress runs in the status bar, and the review list waits for you there if you moved on. ' +
+        'Nothing is written without your tick.',
+    });
+
+    if (!this.folders.length) {
+      contentEl.createDiv({
+        cls: 'gemma4-scan-empty',
+        text:
+          this.totalCandidates === 0
+            ? 'Nothing new to file — every note outside the wiki is already ingested and unchanged.'
+            : 'No folders found to scan.',
+      });
+      const only = contentEl.createDiv({ cls: 'gemma4-scan-buttons' });
+      only.createEl('button', { text: 'Close' }).addEventListener('click', () => this.close());
+      return;
+    }
+
+    const list = contentEl.createDiv({ cls: 'gemma4-scan-list' });
+    for (const f of this.folders) {
+      const row = list.createEl('label', { cls: 'gemma4-scan-row' });
+      const box = row.createEl('input', { type: 'checkbox' });
+      box.checked = this.chosen.has(f.path);
+      box.addEventListener('change', () => {
+        if (box.checked) this.chosen.add(f.path);
+        else this.chosen.delete(f.path);
+        this.syncFooter();
+      });
+      row.createSpan({ cls: 'gemma4-scan-row-path', text: f.path });
+      row.createSpan({
+        cls: 'gemma4-scan-row-count',
+        text: f.count === 0 ? 'nothing new' : `${f.count} new or changed`,
+      });
+    }
+
+    this.countEl = contentEl.createDiv({ cls: 'gemma4-scan-count' });
+
+    // The cap belongs here, not in Settings: it is a decision about THIS run,
+    // and this is the only screen that tells you what the run costs. Seeing
+    // "12 notes, cap is 10" and being able to raise it on the spot is the
+    // whole point — in a settings pane the number was abstract.
+    const adv = contentEl.createEl('details', { cls: 'gemma4-scan-advanced' });
+    adv.createEl('summary', { text: 'Just this run' });
+    const capRow = adv.createDiv({ cls: 'gemma4-scan-cap' });
+    capRow.createSpan({ text: 'Most notes to draft this run' });
+    const capInput = capRow.createEl('input', { type: 'number' });
+    capInput.value = String(this.maxThisRun);
+    capInput.min = '1';
+    capInput.addEventListener('input', () => {
+      const v = parseInt(capInput.value, 10);
+      this.maxThisRun = Number.isFinite(v) && v > 0 ? v : 1;
+      this.syncFooter();
+    });
+    adv.createDiv({
+      cls: 'gemma4-scan-cap-hint',
+      text: 'A cap so a large backlog does not run the GPU through dozens of notes at once. Whatever is left over is offered on the next scan.',
+    });
+
+    const rememberRow = contentEl.createEl('label', { cls: 'gemma4-scan-remember' });
+    const rememberBox = rememberRow.createEl('input', { type: 'checkbox' });
+    rememberBox.checked = this.remember;
+    rememberBox.addEventListener('change', () => {
+      this.remember = rememberBox.checked;
+    });
+    rememberRow.createSpan({
+      text: 'Remember these folders and this cap as my defaults',
+    });
+
+    const buttons = contentEl.createDiv({ cls: 'gemma4-scan-buttons' });
+    buttons.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
+    this.goBtn = buttons.createEl('button', { cls: 'mod-cta', text: 'Scan' });
+    this.goBtn.addEventListener('click', () => {
+      const prefixes = [...this.chosen];
+      this.close();
+      this.onConfirm(prefixes, this.maxThisRun, this.remember);
+    });
+    this.syncFooter();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
