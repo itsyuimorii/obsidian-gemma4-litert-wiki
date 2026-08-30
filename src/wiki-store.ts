@@ -351,7 +351,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | ${ICON_ATTACH} | Attach another note as extra context, on top of whatever the current mode already sends. |` + `\n` +
       `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. |` + `\n` +
-      `> | The chips above it | Three one-press starters for the current mode, and **the only part of this panel that never disappears** — which is why the way out of an empty wiki lives here. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* With nothing filed yet they become *Scan a folder* and *File this note*, because every wiki question would fail against an empty wiki. Chips marked as writes (*Formatting*, *Scan*, *File*) do something rather than ask something — always behind their own preview. |` + `\n` +
+      `> | The chips above it | Three one-press starters, fixed — the row you learn is the row you keep. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* **While a scan is running, the first one becomes *Stop scan*.** Chips marked as writes (*Formatting*, *Scan*) do something rather than ask something, always behind their own preview. |` + `\n` +
       `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n` +
       `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
       `## While something is running` + `\n\n` +

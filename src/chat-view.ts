@@ -106,7 +106,7 @@ export interface SuggestionSpec {
  * WIKI stays empty until you file something. Two different emptinesses; the
  * remedy belongs to the one that persists.
  */
-export function suggestionsFor(mode: 'note' | 'wiki', wikiEmpty: boolean): SuggestionSpec[] {
+export function suggestionsFor(mode: 'note' | 'wiki'): SuggestionSpec[] {
   if (mode === 'note') {
     return [
       { label: 'Summarize', ask: 'Summarize this note' },
@@ -114,22 +114,22 @@ export function suggestionsFor(mode: 'note' | 'wiki', wikiEmpty: boolean): Sugge
       { label: 'Formatting', action: 'improve' },
     ];
   }
-  // Scan leads in both states. Filing a folder is not a first-run chore you
-  // do once — a wiki grows, and the folder you want next is usually not the
-  // folder you scanned first.
-  if (wikiEmpty) {
-    return [
-      { label: 'Scan a folder', action: 'scan' },
-      { label: 'File this note', action: 'ingest' },
-    ];
-  }
-  // Three, and no more: the row is permanent screen space, and a fourth wraps
-  // on a narrow panel. Scan takes one slot because it is an action and the
-  // skills menu structurally cannot hold one — a skill file is frontmatter
-  // plus a prompt, with no way to express "do this". The other two are the
-  // questions whose answers are not already sitting in a file you could open.
-  // What went: "What's in my wiki?" (that is index.md) and "Added recently"
-  // (that is log.md, and it duplicated a skills-menu entry besides).
+  // Three, fixed, and the same whatever state the wiki is in.
+  //
+  // An earlier version swapped these out for "Scan a folder / File this note"
+  // when nothing was filed yet. It meant the row you learned was not the row
+  // you kept, and it hid Find connections from the person most likely to be
+  // wondering what this thing does. Asking a wiki question against an empty
+  // wiki now simply answers "there is nothing here", and that answer carries
+  // the buttons to fix it — the remedy travels with the problem instead of
+  // rearranging the furniture in advance.
+  //
+  // Three because the row is permanent screen space and a fourth wraps on a
+  // narrow panel. Scan takes one because it is an action, and a skill file is
+  // frontmatter plus a prompt with no way to express "do this". The other two
+  // are the questions whose answers are not already sitting in a file you
+  // could open — which is what ruled out "What's in my wiki?" (index.md) and
+  // "Added recently" (log.md, and it duplicated a skills-menu entry).
   return [
     { label: 'Scan a folder', action: 'scan' },
     {
@@ -254,39 +254,17 @@ export class ChatView extends ItemView {
     const icon = el.createDiv({ cls: 'gemma4-chat-empty-icon' });
     setIcon(icon, 'gemma-wiki-logo');
 
+    // Kept, because knowing the wiki is empty before you ask is worth a file
+    // read. Not kept: the two buttons that used to be here. The chip row above
+    // the input carries Scan permanently now, and a screen with the same two
+    // buttons twice is a screen that has not decided where they live.
     if (this.mode === 'wiki' && this.wikiEmpty) {
       el.createDiv({ cls: 'gemma4-chat-empty-title', text: 'Your wiki is empty' });
       el.createDiv({
         cls: 'gemma4-chat-empty-hint',
-        text: 'Wiki mode answers from pages you have filed here. Nothing is filed yet.',
-      });
-
-      const actions = el.createDiv({ cls: 'gemma4-chat-empty-actions' });
-      const batch = actions.createEl('button', {
-        cls: 'gemma4-chat-empty-action mod-cta',
-        text: 'Scan a folder',
-      });
-      setTooltip(batch, 'Pick folders, see how many notes each holds, then draft a page for each');
-      batch.addEventListener('click', () => void this.plugin.scanAndReviewIngest());
-
-      const one = actions.createEl('button', { cls: 'gemma4-chat-empty-action', text: 'File this note' });
-      setTooltip(one, 'Draft one page from the note you have open');
-      one.addEventListener('click', () => void this.plugin.ingestActiveNote());
-
-      // This explanation used to be the description of a "Scan now" button
-      // buried in Settings — good copy in a place a new user had no reason to
-      // open. It belongs where the decision is: next to the button, on the
-      // screen you land on with an empty wiki.
-      el.createDiv({
-        cls: 'gemma4-chat-empty-hint',
         text:
-          'Scanning sweeps the folders you pick for new or changed notes and drafts a page for ' +
-          'each. It is one model call per note, so it takes a while — keep working while it runs; ' +
-          'progress is in the status bar and the review list waits for you there.',
-      });
-      el.createDiv({
-        cls: 'gemma4-chat-empty-hint gemma4-chat-empty-emphasis',
-        text: 'Nothing is ever written without your tick.',
+          'Wiki mode answers from pages you have filed here, and nothing is filed yet. ' +
+          'Press Scan a folder below to fill it.',
       });
       el.createDiv({
         cls: 'gemma4-chat-empty-hint',
@@ -333,11 +311,26 @@ export class ChatView extends ItemView {
       ingest: 'Draft one page from the note you have open',
       improve: 'Edits this note — you review before anything is written',
     };
-    for (const spec of suggestionsFor(this.mode, this.wikiEmpty)) {
+    const scanning = this.plugin.isScanning();
+    for (const spec of suggestionsFor(this.mode)) {
+      // The scan chip doubles as the stop control while a scan runs. Pressing
+      // it and getting "a scan is already running — use the other command" was
+      // the button refusing to be the thing it obviously is.
+      const isScanChip = spec.action === 'scan';
+      const label = isScanChip && scanning ? 'Stop scan' : spec.label;
       const chip = this.suggestionRow.createEl('button', {
         cls: spec.action ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
-        text: spec.label,
+        text: label,
       });
+      if (isScanChip && scanning) {
+        chip.addClass('gemma4-chat-suggestion-running');
+        setTooltip(chip, 'Stop after the note being drafted right now finishes');
+        chip.addEventListener('click', () => {
+          this.plugin.cancelScan();
+          notify('info', 'Stopping — the note being drafted right now will finish first.');
+        });
+        continue;
+      }
       if (spec.action) setTooltip(chip, TIP[spec.action]);
       chip.addEventListener('click', () => this.runSuggestion(spec));
     }
@@ -592,6 +585,9 @@ export class ChatView extends ItemView {
     // redraws only when the answer flips.
     void this.refreshWikiEmpty();
     this.registerEvent(this.app.metadataCache.on('resolved', () => void this.refreshWikiEmpty()));
+    // The scan chip is also the stop button, so it has to know when a scan
+    // starts and ends — including scans started from the command palette.
+    this.register(this.plugin.onScanState(() => this.renderSuggestions()));
   }
 
   private setMode(mode: 'note' | 'wiki') {
