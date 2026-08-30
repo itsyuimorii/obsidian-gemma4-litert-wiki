@@ -65,7 +65,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 
 ## 💬 Chat with your notes — entirely offline
 
-Click the message-circle ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
+Click the book-and-spark ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
 
 - **This note** — answers strictly from the currently open note.
 - **Wiki** — the Karpathy Query path: reads the `gemma-wiki/index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
@@ -74,18 +74,17 @@ Either way: answers stream in from a model running inside Obsidian's own process
 
 ## 📑 Contents
 
-- [🧠 Gemma 4 LiteRT Wiki for Obsidian](#-gemma-4-litert-wiki-for-obsidian)
-  - [� Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
-  - [📑 Contents](#-contents)
-  - [🤔 Why this exists](#-why-this-exists)
-  - [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
-  - [📋 Requirements](#-requirements)
-  - [⌨️ Current commands](#️-current-commands)
-  - [🔧 How it works](#-how-it-works)
-  - [📊 Benchmarks](#-benchmarks)
-  - [🗺️ Roadmap](#️-roadmap)
-  - [🔒 Privacy](#-privacy)
-  - [💖 Credits](#-credits)
+- [✨ Features at a glance](#-features-at-a-glance)
+- [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
+- [🤔 Why this exists](#-why-this-exists)
+- [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
+- [📋 Requirements](#-requirements)
+- [⌨️ Current commands](#️-current-commands)
+- [🔧 How it works](#-how-it-works)
+- [📊 Benchmarks](#-benchmarks)
+- [🗺️ Roadmap](#️-roadmap)
+- [🔒 Privacy](#-privacy)
+- [💖 Credits](#-credits)
 
 ## 🤔 Why this exists
 
@@ -125,17 +124,57 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 
 ## ⌨️ Current commands
 
+All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) under *Gemma Wiki*.
+
+**Ask**
+
 | Command | What it does |
 |---|---|
-| **Chat with active note (local Gemma)** | Opens the chat panel — This-note / Wiki modes, attachments, skills, save-to-wiki. See [above](#-chat-with-your-notes--entirely-offline). |
-| **Ingest active note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3-5 key points, confidence) plus a related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a small badge in the file explorer. |
-| **Relink wiki pages (fill missing Related sections)** | Backfills cross-links on pages ingested before related-links existed, through one aggregated review modal. |
-| **Lint wiki (orphans and index health)** | Model-free report: orphan pages, index entries pointing at missing files, pages missing from the index. |
-| **LiteRT spike: check WebGPU** | Debug: confirms a usable WebGPU adapter is available. |
-| **LiteRT spike: load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without downloading the model — isolates runtime issues from model issues. |
-| **LiteRT spike: download Gemma 4 E4B model (one-time, ~3GB)** | Downloads and caches the model; shows live progress. |
-| **LiteRT spike: fix grammar of selection** | Runs a real generation on the selected text and replaces it with a grammar-corrected version, logging prefill/decode speed and time-to-first-token to the console. |
-| **LiteRT spike: JSON reliability test (5 runs)** | Runs 5 independent structured-JSON-output generations against the selection and reports a pass rate — this is the risk test for whether the model can reliably drive an ingest pipeline. |
+| **Chat with active note (local Gemma)** | Opens the chat panel — This-note / Wiki modes, `+` attachments, ⚡ skills, save-to-wiki. See [above](#-chat-with-your-notes--entirely-offline). |
+
+**File notes into the wiki**
+
+| Command | What it does |
+|---|---|
+| **Ingest active note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3–5 key points, salient mentions, self-rated confidence) plus a validated related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a badge in the file explorer. |
+| **Scan notes for wiki (semi-automatic ingest)** | The same extraction across the folders named in settings, for new or changed notes only. Drafts everything first, then one review list **sorted low-confidence first**. Refuses to run with a blank folder list rather than sweeping the vault. |
+| **Suggest tags & links for active note (local Gemma)** | Proposes frontmatter tags and links to related wiki pages for one note, behind a preview. |
+
+**Build the layer above**
+
+| Command | What it does |
+|---|---|
+| **Build a concept page from a tag or mention (local Gemma)** | Pick a tag or mention two or more pages share; writes a page *above* them that links down into each. Member lists self-heal in both directions. |
+| **Relink wiki pages (fill or re-sync Related sections)** | Backfills or refreshes cross-links on existing pages through one aggregated review modal. |
+| **Organize tags (schema.md, local Gemma)** | Folds every tag your ingests produced into one vocabulary in `schema.md`, honouring the rejected list. |
+| **Retag wiki pages to vocabulary (local Gemma)** | Rewrites existing pages onto that vocabulary so near-duplicates collapse. Preview before writing. |
+
+**Keep it honest**
+
+| Command | What it does |
+|---|---|
+| **Review board (low-confidence, drifted, and stale pages)** | One queue for the three ways a page goes bad: low self-rated confidence, source drift caught by `source_hash`, and staleness. |
+| **Find contradictions in wiki (local Gemma)** | Checks pages sharing a tag for claims that disagree, recently-changed pairs first. Flags with the reason quoted and **never edits**. |
+| **Provenance spot-check (local Gemma)** | Traces each key point on a page back to a sentence in the raw note, and flags what cannot be traced. |
+| **Lint wiki (orphans and index health)** | Model-free: orphan pages, index entries pointing at missing files, pages missing from the index. |
+| **Reconcile wiki (drop links to deleted pages)** | Drops index entries and cross-links pointing at pages you deleted. |
+
+**Write into your own note — the only one that does**
+
+| Command | What it does |
+|---|---|
+| **Improve formatting of active note (local Gemma)** | Structure, lists and typos only; wording and voice preserved. Long notes are split on headings and blank lines into passes that each fit the context window, rewritten one pass at a time and stitched back byte-exactly; you are told the pass count before it starts. A selection narrows it to one section. Full-result preview before anything is written. |
+
+**Setup and diagnostics**
+
+| Command | What it does |
+|---|---|
+| **Download model (one-time, ~3GB)** | Downloads and caches the model with live progress, instead of waiting for the first command to trigger it. |
+| **Create skills folder with examples** | Creates `skills/` with a README and two working examples. |
+| **[Test] Check WebGPU** | Confirms a usable WebGPU adapter is available. |
+| **[Test] Load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without the model — isolates runtime issues from model issues. |
+| **[Test] Fix grammar of selection** | Runs a real generation on the selection, logging prefill/decode speed and time-to-first-token to the console. |
+| **[Test] JSON reliability test (5 runs)** | Five independent structured-JSON generations against the selection, reported as a pass rate — the risk test for whether the model can reliably drive the ingest pipeline. |
 
 ## 🔧 How it works
 

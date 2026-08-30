@@ -288,6 +288,9 @@ export default class LiteRtSpikePlugin extends Plugin {
   private serverBaseUrl: string | null = null;
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
+  // What the engine actually granted, read back from LiteRT-LM after
+  // Engine.create — not what we asked for. null until the model loads.
+  private effectiveContextTokens: number | null = null;
   private statusNotice: Notice | null = null;
   private scanStatusEl: HTMLElement | null = null;
   private autoScanIntervalId: number | null = null;
@@ -2888,7 +2891,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   // would not give it to the model. The ceilings now scale with the window, so
   // the setting does what it says while still keeping a single call bounded.
   budget(kind: 'chat' | 'ingest' | 'improve' | 'provenance'): number {
-    const ctx = this.settings.contextTokens || 4096;
+    const ctx = this.effectiveContextTokens ?? this.settings.contextTokens ?? 4096;
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     switch (kind) {
       case 'chat':
@@ -2927,6 +2930,24 @@ export default class LiteRtSpikePlugin extends Plugin {
           benchmarkEnabled: true,
           mainExecutorSettings: { maxNumTokens: this.settings.contextTokens || 4096 },
         });
+        // Read the window back out of the engine instead of trusting the
+        // request. LiteRT-LM is free to clamp maxNumTokens to what the model
+        // and the GPU can actually hold, and if it does, every budget derived
+        // from the setting would overshoot and the call would fail deep inside
+        // generation with nothing the user could act on.
+        const granted = engine.settings?.mainExecutorSettings?.maxNumTokens;
+        if (typeof granted === 'number' && granted > 0) {
+          this.effectiveContextTokens = granted;
+          const asked = this.settings.contextTokens || 4096;
+          log('context window:', { asked, granted });
+          if (granted < asked) {
+            new Notice(
+              `\u2139\uFE0F Context window: asked for ${asked.toLocaleString()} tokens, the model ` +
+                `granted ${granted.toLocaleString()}. Gemma Wiki is using the real number.`,
+              8000
+            );
+          }
+        }
         onProgress('Ready.');
         return engine;
       })().catch((err) => {
