@@ -318,21 +318,25 @@ export default class LiteRtSpikePlugin extends Plugin {
     setWikiDir(this.settings.wikiDir);
     this.addSettingTab(new GemmaWikiSettingTab(this.app, this));
 
-    // Brand mark. It used to be a note card with a folded corner and a spark,
-    // and in the ribbon that reads as "new file" — three separate people looked
-    // at it and asked what the button did. The ribbon icon IS the entry point
-    // to the whole plugin, so it has to name the affordance, not the brand: a
-    // speech bubble (you can talk to this), two lines of text inside (about
-    // your notes), and the spark kept from the old mark (a model is doing it).
+    // Brand mark: a note card with a folded corner and a spark — "a note, with
+    // local AI inside". Same shape as assets/logo.svg, so the ribbon, the
+    // README and the store listing are one mark rather than three.
+    //
+    // A speech-bubble version was tried, on the theory that the ribbon icon
+    // should name the affordance rather than the brand. It did read as chat,
+    // and it was worse: the mark stops being the product's and becomes any
+    // AI plugin's. Discoverability is handled by things that can afford to be
+    // literal — the setup card draws this icon inline next to "click here",
+    // the panel opens by itself on first run, and the tooltip says what it
+    // opens.
     // addIcon expects inner SVG content sized for a 0 0 100 100 viewBox.
     addIcon(
       'gemma-wiki-logo',
-      '<path d="M27.1 18.8 H72.9 a14.6 14.6 0 0 1 14.6 14.6 v22.9 a14.6 14.6 0 0 1 -14.6 14.6 ' +
-        'H45.8 L27.1 85.4 V70.8 a14.6 14.6 0 0 1 -14.6 -14.6 V33.3 a14.6 14.6 0 0 1 14.6 -14.6 Z" ' +
-        'stroke="currentColor" stroke-width="8.3" stroke-linejoin="round" stroke-linecap="round" fill="none"/>' +
-        '<path d="M31.3 39.6 H56.3" stroke="currentColor" stroke-width="8.3" stroke-linecap="round"/>' +
-        '<path d="M31.3 54.2 H45.8" stroke="currentColor" stroke-width="8.3" stroke-linecap="round"/>' +
-        '<path d="M68.8 39.6 l3.4 7.7 7.7 3.4 -7.7 3.4 -3.4 7.7 -3.4 -7.7 -7.7 -3.4 7.7 -3.4 Z" fill="currentColor"/>'
+      '<path d="M58.3 12.5 H27.1 a10.4 10.4 0 0 0 -10.4 10.4 v54.2 a10.4 10.4 0 0 0 10.4 10.4 h45.8 ' +
+        'a10.4 10.4 0 0 0 10.4 -10.4 V37.5 Z" stroke="currentColor" stroke-width="8.3" ' +
+        'stroke-linejoin="round" fill="none"/>' +
+        '<path d="M58.3 12.5 v25 h25" stroke="currentColor" stroke-width="8.3" stroke-linejoin="round" fill="none"/>' +
+        '<path d="M41.7 45.8 l4.8 10.8 10.8 4.8 -10.8 4.8 -4.8 10.8 -4.8 -10.8 -10.8 -4.8 10.8 -4.8 Z" fill="currentColor"/>'
     );
 
     // Follow the folder if it is renamed or moved from the file explorer.
