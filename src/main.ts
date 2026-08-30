@@ -1,11 +1,11 @@
-import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
+import { DURATION, failureText, logNotice, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
@@ -292,47 +292,130 @@ export default class LiteRtSpikePlugin extends Plugin {
   // What the engine actually granted, read back from LiteRT-LM after
   // Engine.create — not what we asked for. null until the model loads.
   private effectiveContextTokens: number | null = null;
-  private statusNotice: Notice | null = null;
   private scanStatusEl: HTMLElement | null = null;
+  // What is running right now, if anything — the status bar's first duty.
+  private runningText: string | null = null;
+  // A finished run whose dialog is waiting for you to ask for it.
+  private parked: { label: string; open: () => void } | null = null;
+  // How many notes the background count last found worth reviewing.
+  private reviewCount = 0;
+  // Did attention leave while the current run was going? Decides whether the
+  // result opens itself or waits.
+  private userMovedOn = false;
   private autoScanIntervalId: number | null = null;
   settings: GemmaWikiSettings = { ...DEFAULT_SETTINGS };
 
-  // One shared status Notice for the whole plugin: later messages update
-  // the same toast instead of stacking a new one per operation — repeated
-  // ingests were piling up popups.
+  // ---------------------------------------------------------------------
+  // Where a running operation lives.
   //
-  // It now speaks the same vocabulary as every other notification (see
-  // src/notify.ts). It used to speak none: all 56 calls through here were
-  // unmarked, including all 8 failures, so the one channel that reported
-  // things going wrong was the one channel with no way to say so.
+  // It used to be a Notice pinned open for the whole run. That is the wrong
+  // surface for it three ways over: a toast covers the note you are reading,
+  // it vanishes for good if you click it (there is no way to ask for it
+  // back), and during the 20-40 seconds of an actual generation it does not
+  // move — a frozen box in the corner reads as a bug, not as work.
+  //
+  // A run belongs in the status bar. It is always visible, it is never in
+  // front of anything, it cannot be dismissed by accident, and it survives
+  // you switching notes — which is what you will do, because these
+  // operations take minutes.
+  //
+  // Toasts keep what they are good at: moments. The result of a run is a
+  // moment. The run itself is not.
+  // ---------------------------------------------------------------------
+
   private status(text: string) {
-    const body = mark('progress', text);
-    if (this.statusNotice) {
-      this.statusNotice.setMessage(body);
-    } else {
-      this.statusNotice = new Notice(body, 0);
-    }
+    this.runningText = text;
+    this.renderStatusBar();
   }
 
   /**
-   * Close the running status toast, optionally with a final word.
+   * Finish the running operation.
    *
-   * The kind decides the mark and the dwell time, so a caller never picks a
-   * millisecond count again. Warnings and failures are also written to
+   * The kind decides the mark and how long the result stays up, so a caller
+   * never picks a millisecond count. Warnings and failures also go to
    * `log.md`, because a toast is not a record.
    */
   private statusEnd(text?: string, kind: NoticeKind = 'done', durationMs?: number) {
-    const n = this.statusNotice;
-    this.statusNotice = null;
-    if (!n) return;
-    if (!text) {
-      n.hide();
+    this.runningText = null;
+    this.renderStatusBar();
+    if (!text) return;
+    notify(kind, text, durationMs);
+    void logNotice(this.app.vault, kind, text);
+  }
+
+  /**
+   * The one status-bar slot, shared by three things that are never true at
+   * once, in priority order: something is running, a finished run is waiting
+   * to be looked at, or there are notes worth reviewing.
+   */
+  private renderStatusBar() {
+    const el = this.scanStatusEl;
+    if (!el) return;
+    if (this.runningText !== null) {
+      el.setText(`⏳ ${this.runningText}`);
+      el.setAttr('aria-label', `${this.runningText} — click for detail`);
+      el.show();
       return;
     }
-    n.setMessage(mark(kind, text));
-    void logNotice(this.app.vault, kind, text);
-    const ms = durationMs ?? (kind === 'error' || kind === 'warn' ? DURATION.LONG : DURATION.SHORT);
-    setTimeout(() => n.hide(), ms);
+    if (this.parked) {
+      el.setText(`✅ ${this.parked.label}`);
+      el.setAttr('aria-label', `${this.parked.label} — click to open`);
+      el.show();
+      return;
+    }
+    if (this.reviewCount > 0 && this.settings.autoScanEnabled) {
+      el.setText(`📥 ${this.reviewCount} to review`);
+      el.setAttr('aria-label', 'New or changed notes — click to scan and review');
+      el.show();
+      return;
+    }
+    el.hide();
+  }
+
+  /** Clicking the status bar does whatever its current state means. */
+  private onStatusBarClick() {
+    if (this.runningText !== null) {
+      // You looked away, the line scrolled past, you want the whole sentence.
+      // The old pinned toast could not be asked for a second time.
+      notify('progress', this.runningText, DURATION.NORMAL);
+      return;
+    }
+    const parked = this.parked;
+    if (parked) {
+      this.parked = null;
+      this.renderStatusBar();
+      parked.open();
+      return;
+    }
+    void this.scanAndReviewIngest();
+  }
+
+  /**
+   * Show a result dialog — but only as an interruption if you are still here
+   * for it.
+   *
+   * A dialog that opens by itself minutes after you started something is an
+   * ambush: by then your attention has moved, and the first you hear of the
+   * whole operation is a modal stealing focus out of a note you were typing
+   * in. So if you did anything else while it ran, the dialog waits on the
+   * status bar instead and opens when you ask for it.
+   *
+   * If you never looked away, you are waiting on this, and making you click
+   * again would be its own small insult.
+   */
+  private presentResult(label: string, open: () => void) {
+    if (!this.userMovedOn) {
+      open();
+      return;
+    }
+    this.parked = { label, open };
+    this.renderStatusBar();
+    notify('done', `${label} — click "${label}" in the status bar when you are ready.`, DURATION.NORMAL);
+  }
+
+  /** Begin watching whether the user's attention leaves during a run. */
+  private beginRun() {
+    this.userMovedOn = false;
   }
 
   /** Report a thrown error through the status toast, in the house style. */
@@ -393,7 +476,16 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.scanStatusEl = this.addStatusBarItem();
     this.scanStatusEl.addClass('mod-clickable');
     this.scanStatusEl.hide();
-    this.scanStatusEl.addEventListener('click', () => void this.scanAndReviewIngest());
+    this.scanStatusEl.addEventListener('click', () => this.onStatusBarClick());
+
+    // "Did you look away?" — the signal that decides whether a finished run
+    // opens its dialog or waits for you. Switching notes or typing in one is
+    // the whole of it; a run you sat and watched fires neither.
+    const movedOn = () => {
+      if (this.runningText !== null) this.userMovedOn = true;
+    };
+    this.registerEvent(this.app.workspace.on('active-leaf-change', movedOn));
+    this.registerEvent(this.app.workspace.on('editor-change', movedOn));
     // Build the wiki folders on first load rather than on first write. Until
     // this ran, a freshly installed plugin had created nothing at all, so
     // there was no way to see what it was going to do with the vault — and
@@ -554,6 +646,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           );
         }
 
+        this.beginRun();
         this.status(`Ingesting "${file.basename}"…`);
         try {
           const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
@@ -576,7 +669,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           const pageContent = buildWikiPage(file.basename, file.path, extraction, related, sourceHash);
           const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
 
-          new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
+          const previewModal = new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
             void (async () => {
               await ensureWikiScaffold(this.app.vault);
               await writeWikiPage(this.app.vault, pagePath, pageContent);
@@ -589,7 +682,8 @@ export default class LiteRtSpikePlugin extends Plugin {
               this.statusEnd(`Wiki page written: ${pagePath}`);
               this.refreshIngestBadges();
             })();
-          }).open();
+          });
+          this.presentResult(`"${file.basename}" is drafted — review it`, () => previewModal.open());
         } catch (err) {
           this.statusFail('Ingest', err);
         }
@@ -777,15 +871,16 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-download-model',
       name: 'Download model (one-time, ~3GB)',
       callback: async () => {
-        const p = new Progress('Preparing model download…');
+        this.beginRun();
+        this.status('Preparing model download…');
         try {
           const blob = await this.ensureModelBlob((text) => {
             log(text);
-            p.update(text);
+            this.status(text);
           });
-          p.done(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
+          this.statusEnd(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
         } catch (err) {
-          p.fail('Downloading the model', err, this.app.vault);
+          this.statusFail('Downloading the model', err);
         }
       },
     });
@@ -2007,7 +2102,8 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.autoScanIntervalId = null;
     }
     if (!this.settings.autoScanEnabled) {
-      this.scanStatusEl?.hide();
+      this.reviewCount = 0;
+      this.renderStatusBar();
       return;
     }
     void this.refreshScanBadge();
@@ -2026,17 +2122,12 @@ export default class LiteRtSpikePlugin extends Plugin {
         maxPerRun: this.settings.scanMaxPerRun,
         excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
       });
-      const total = result.eligible.length + result.cappedOut;
-      if (total > 0) {
-        this.scanStatusEl.setText(`📥 ${total} to review`);
-        this.scanStatusEl.setAttr('aria-label', 'New or changed notes — click to scan and review');
-        this.scanStatusEl.show();
-      } else {
-        this.scanStatusEl.hide();
-      }
+      this.reviewCount = result.eligible.length + result.cappedOut;
+      this.renderStatusBar();
     } catch (err) {
       console.error('[gemma4-litert-wiki] scan badge refresh failed', err);
-      this.scanStatusEl.hide();
+      this.reviewCount = 0;
+      this.renderStatusBar();
     }
   }
 
@@ -2090,6 +2181,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
     this.setScanRunning(true);
     this.scanCancelled = false;
+    this.beginRun();
     try {
       await this.runScanAndReview(includePrefixes);
     } finally {
@@ -2162,9 +2254,9 @@ export default class LiteRtSpikePlugin extends Plugin {
     // a dialog they could have closed, unsure whether closing would cancel.
     notify(
       'progress',
-      `Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each. You can close Settings ` +
-        'and keep working; the review dialog opens here when it is done. ' +
-        '(To stop early, reopen Settings and click "Stop scan".)',
+      `Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each, so this takes a while. ` +
+        'Close Settings and keep working: progress runs in the status bar, and the review dialog ' +
+        'waits for you there rather than interrupting. (To stop early, reopen Settings → "Stop scan".)',
       DURATION.LONG
     );
     // Pages drafted earlier in THIS batch are valid link targets for later
@@ -2226,9 +2318,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       : cappedOut
         ? ` (${cappedOut} more left for the next scan)`
         : '';
-    notify('done', `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}.`);
-
-    new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
+    const reviewModal = new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
       if (!approved.length) return;
       await ensureWikiScaffold(this.app.vault);
       // Track Pending across the whole batch so the nudge fires once for the
@@ -2252,7 +2342,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.refreshIngestBadges();
       void this.refreshScanBadge();
       notify('done', `Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`);
-    }).open();
+    });
+    // Drafting a batch takes minutes. If you went back to your notes while it
+    // ran, this dialog waits on the status bar rather than jumping in front
+    // of whatever you are typing.
+    const label = `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}`;
+    this.presentResult(label, () => reviewModal.open());
   }
 
   // The one write operation that touches a raw note — and therefore the
@@ -2359,6 +2454,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         : '') +
       'Return ONLY the markdown, no explanation.';
 
+    this.beginRun();
     this.status(`Improving "${file.basename}"…`);
     const pieces: string[] = [];
     let failed = 0;
@@ -2439,7 +2535,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             'Press Cmd/Ctrl+Opt+I for the full error.'
         );
       }
-      new IngestPreviewModal(this.app, source, improved, true, () => {
+      const previewModal = new IngestPreviewModal(this.app, source, improved, true, () => {
         void (async () => {
           if (usingSelection && editor && selFrom && selTo) {
             editor.replaceRange(improved, selFrom, selTo);
@@ -2449,7 +2545,11 @@ export default class LiteRtSpikePlugin extends Plugin {
           await appendLog(this.app.vault, 'improve', file.basename);
           notify('done', `Note updated: ${file.basename}`);
         })();
-      }, 'Review your note before it is rewritten').open();
+      }, 'Review your note before it is rewritten');
+      // A multi-pass rewrite is minutes of GPU time. Same rule as scan: if you
+      // walked away, the preview waits on the status bar instead of taking the
+      // window back.
+      this.presentResult(`"${file.basename}" is rewritten — review it`, () => previewModal.open());
     } catch (err) {
       this.statusFail('Improve', err);
     }
@@ -2850,12 +2950,13 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Trigger the (resumable) download from the settings page — same gated
   // path used on first use, so re-download and resume both work here.
   async downloadModelFromSettings() {
-    const p = new Progress('Preparing model download…');
+    this.beginRun();
+    this.status('Preparing model download…');
     try {
-      const blob = await this.ensureModelBlob((t) => p.update(t));
-      p.done(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
+      const blob = await this.ensureModelBlob((t) => this.status(t));
+      this.statusEnd(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
     } catch (err) {
-      p.fail('Downloading the model', err, this.app.vault);
+      this.statusFail('Downloading the model', err);
     }
   }
 

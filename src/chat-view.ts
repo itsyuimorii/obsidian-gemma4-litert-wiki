@@ -4,7 +4,6 @@ import {
   ItemView,
   Menu,
   MarkdownRenderer,
-  Notice,
   setIcon,
   setTooltip,
   TFile,
