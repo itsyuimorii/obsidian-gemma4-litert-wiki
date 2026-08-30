@@ -95,6 +95,18 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 - ~3 GB free disk space for the [`litert-community/gemma-4-E4B-it-litert-lm`](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) model, downloaded once and cached via the browser Cache API
 - Network access for the one-time model download only — no network calls after that
 
+> **If you sync this vault, exclude the model file.** It is downloaded to
+> `<vault>/.obsidian/plugins/gemma4-litert-wiki/gemma-4-E4B-it-web.litertlm` — Obsidian gives a
+> plugin nowhere outside the vault to write — so iCloud, Dropbox, and Obsidian Sync with
+> "community plugins" enabled will all replicate ~3 GB to every machine. Each machine can download
+> it once for itself in a fraction of that time. The wiki folder itself is ordinary markdown and
+> should sync normally.
+>
+> Note that `data.json` (which holds your knowledge-folder name) often does *not* sync. If you
+> rename the folder on one machine, the other will not know — it now notices a folder that looks
+> like a wiki and asks before creating a second one, but the cleanest fix is to rename it the same
+> way on both.
+
 ## ⌨️ Current commands
 
 | Command | What it does |
