@@ -25,20 +25,35 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
-- **Ingest** — one strict JSON extraction per note (summary, 3 tags, 3-5 key points, a self-rated confidence written to frontmatter), plus a validated multiple-choice pick of up to 3 related pages from the index catalog. Everything previews in a review modal; nothing is written without approval. Ingested notes get a small badge in the file explorer — pure UI decoration, the note file is untouched.
+- **Ingest** — one strict JSON extraction per note (summary, tags, key points, salient mentions, and a self-rated `high`/`med`/`low` confidence written to frontmatter), plus a validated multiple-choice pick of related pages from the index catalog. Everything previews in a review modal; nothing is written without approval. Ingested notes get a badge in the file explorer — pure UI decoration, the note file is untouched.
+- **Scan (semi-automatic ingest)** — sweep the folders you named for new or changed notes, draft a card for each, and review them all in one list **sorted low-confidence first**, so the pages most in need of a human eye are the ones you read first. Untick anything that should not have become a page. Opt-in by scope: leave the folder list blank and scan refuses to run rather than sweeping your vault.
 - **index.md / log.md** — a one-line-per-page catalog the query path reads first, and an append-only, grep-friendly activity log.
 - **Query (Wiki mode)** — index-first retrieval with stopword filtering; the catalog and recent log always ride along, so meta-questions ("what did I add today?") work; answers are grounded only in retrieved material with honest refusals otherwise.
-- **Save answers back** — every reply has a save-to-wiki action (same review gate), so explorations compound instead of vanishing with the chat.
-- **Relink** — backfills Related cross-links on older pages through one aggregated review modal.
-- **Lint v1** — model-free report of orphan pages, dead index entries, and unindexed pages.
+- **Save answers back** — every reply has a save-to-wiki action (same review gate), so explorations compound instead of vanishing with the chat. Whole conversations can be archived to `chats/`.
+- **Concept pages** — pick a tag or mention two or more pages share, and the plugin writes a page *above* them that links down into each one. Ingest ripples into them, and member lists self-heal in both directions.
+
+**Keeping it honest** — a wiki nobody reviews is the failure mode this is built against:
+
+- **Review board** — three ways a page goes bad, in one queue: low self-rated confidence, **source drift** (the raw note changed since ingest, caught by `source_hash`), and staleness. Concept overviews are checked too.
+- **Provenance spot-check** — takes a page's key points back to the raw note to find the sentence each came from, and flags the ones that cannot be traced.
+- **Contradiction sweep** — checks pairs of pages that share a tag for claims that disagree, recently-changed pairs first. It flags with the model's reason quoted and **never edits** — you decide which one was wrong.
+- **Lint** — model-free report of orphan pages, dead index entries, and unindexed pages. **Reconcile** drops links to pages you deleted.
+- **Relink** — backfills or re-syncs Related cross-links on older pages through one aggregated review modal.
+- **Background count** (off by default) — periodically *counts* new or changed notes into a status-bar chip. Counting never runs the model; drafting only happens when you click.
+
+**Config as notes** — the rules live as plain markdown you can read, edit and version:
+
+- **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. *Organize tags* has local Gemma merge near-synonyms into one vocabulary; *Retag* applies it to existing pages, both behind a preview.
+- **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. Ships with a README and two examples.
+- **Every folder has a README** explaining what belongs in it, and the layout is shown in Settings with per-row state, generated from the same list the scaffold builds from.
 
 **Chat panel** — shadcn-inspired monochrome, theme-variable driven:
 
 - **Two grounding modes**: *This note* (the open file) and *Wiki* (your ingested pages).
 - **Deterministic Sources row** on every answer — the plugin lists exactly what was used, clickable; citation is never left to the model.
 - **`+` attachments** — fuzzy-pick any notes as removable context pills, in either mode.
-- **⚡ Skills** — canned single-task prompts: quiz, flashcards, gap-finding, recent-activity digest (auto-switches to Wiki mode).
-- **✨ Improve formatting** — the one write action on raw notes, and the most constrained call in the plugin: structure/formatting/typos only, wording and voice preserved, full-result preview before anything is written. Long notes are split on headings and blank lines into passes that each fit the model's 4096-token context, rewritten one pass at a time and stitched back together; a selection still narrows it to one section.
+- **⚡ Skills** — canned single-task prompts: quiz, flashcards, gap-finding, recent-activity digest (auto-switches to Wiki mode), plus anything in `skills/`.
+- **✨ Improve formatting** — the one write action on raw notes, and the most constrained call in the plugin: structure/formatting/typos only, wording and voice preserved, full-result preview before anything is written. Long notes are split on headings and blank lines into passes that each fit the context window, rewritten one pass at a time and stitched back together; a selection still narrows it to one section.
 - Streaming replies with a typing spinner, stop button, copy/regenerate actions, persistent starter chips, auto-growing + expandable input, clear-chat, hover tooltips everywhere.
 
 **Engineering rules the whole plugin follows**:
@@ -46,6 +61,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - Every model operation is **one structured ask** — no tool loops, no multi-step planning; small local models are unreliable at chaining and reliable at filling one schema.
 - Every write goes through a **preview-approve gate**. Raw notes are modified by exactly one feature (Improve), always previewed.
 - Grounded-or-refuse: the model answers from provided material or says it can't — in both modes.
+- Per-feature input budgets are derived from the configured context window, so raising it makes each call see more rather than requiring anything to be re-tuned.
 
 ## 💬 Chat with your notes — entirely offline
 
