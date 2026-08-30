@@ -653,7 +653,10 @@ export class ChatView extends ItemView {
         this.plugin.budget('chat')
       );
       if (clampedWiki.truncated) {
-        this.appendInfoMessage('Context was longer than the local model can hold — answering from the first part only.');
+        this.appendInfoMessage(
+          `Only the first ~${Math.round(this.plugin.budget('chat') / 1000)}k tokens of the retrieved ` +
+            'material were sent — the rest was cut to keep one answer fast.'
+        );
       }
       return {
         systemPrompt:
@@ -697,8 +700,13 @@ export class ChatView extends ItemView {
     sources.push(...attachments.sources);
     const clamped = clampToTokens(noteBlock + attachments.blocks, this.plugin.budget('chat'));
     if (clamped.truncated) {
+      // Say whose limit this is. "Longer than the model can hold" blamed the
+      // model for a cap the plugin sets, and left the reader with nothing to
+      // do about it.
       this.appendInfoMessage(
-        'This note is longer than the local model can hold — answering from the first part only.'
+        `Only the first ~${Math.round(this.plugin.budget('chat') / 1000)}k tokens of this note were ` +
+          'sent — the rest was cut to keep one answer fast. Raise Context window in settings to ' +
+          'send more, or select a section and ask about that.'
       );
     }
     return {
