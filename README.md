@@ -45,7 +45,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 **Config as notes** — the rules live as plain markdown you can read, edit and version:
 
 - **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. *Organize tags* has local Gemma merge near-synonyms into one vocabulary; *Retag* applies it to existing pages, both behind a preview.
-- **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. Ships with a README and two examples.
+- **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. `fill: true` puts the prompt in the input box and waits rather than sending, for a skill that has to be aimed at something — end the prompt with the blank and the cursor lands there. Ships with a README and two examples.
 - **Every folder has a README** explaining what belongs in it, and the layout is shown in Settings with per-row state, generated from the same list the scaffold builds from.
 
 **Chat panel** — shadcn-inspired monochrome, theme-variable driven:
@@ -141,7 +141,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 
 | Command | What it does |
 |---|---|
-| **Ingest active note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3–5 key points, salient mentions, self-rated confidence) plus a validated related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a badge in the file explorer. |
+| **Ingest this note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3–5 key points, salient mentions, self-rated confidence) plus a validated related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a badge in the file explorer. |
 | **Scan a folder into the wiki (batch, local Gemma)** | The same extraction across whole folders, for new or changed notes only. Opens a dialog that **counts what each folder holds and estimates the run time before you commit**, remembers your last pick, drafts everything first, then shows one review list **sorted low-confidence first**. Scope is opt-in: it never sweeps the vault without you ticking a folder. |
 | **Stop the running scan** | Only in the palette while a scan is running; the *Scan a folder* chip becomes *Stop scan* at the same time. A model call cannot be interrupted, so **the note in flight finishes and is kept** — everything drafted so far still goes to the review list, and the rest is offered on the next scan. Stopping never loses work and never writes anything. |
 | **Suggest tags & links for active note (local Gemma)** | Proposes frontmatter tags and links to related wiki pages for one note, behind a preview. |
