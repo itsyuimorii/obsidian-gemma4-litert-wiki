@@ -194,7 +194,10 @@ const INDEX_HEADER =
   `# Wiki Index\n\n` +
   `One line per page: a link, then a one-sentence summary. **Wiki-mode chat reads this file first** to decide which pages to open. It repairs itself — entries for deleted pages are dropped automatically — so you should not need to hand-edit it.\n\n` +
   `> [!info]- What this folder is\n` +
-  `> Everything the plugin writes lives here; your own notes are never modified. Full layout and rules: [[README]].\n\n` +
+  // Full path, not [[README]]: six files now share that basename (this folder
+  // and each of the five below it), and Obsidian resolved the bare link to
+  // whichever it liked — in practice chats/README.
+  `> Everything the plugin writes lives here; your own notes are never modified. Full layout and rules: [[${_wikiDir}/README|${_wikiDir}/README]].\n\n` +
   `## Pages\n\n`;
 
 const LOG_HEADER =
