@@ -354,11 +354,24 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | The chips above it | One-press starting questions for the current mode. **Formatting** is marked as a write — it runs *Improve formatting*, still behind its preview. |` + `\n` +
       `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n` +
       `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
-      `> [!info] Two places it shows state outside the panel` + `\n` +
-      `> | Where | What it means |` + `\n` +
+      `## While something is running` + `\n\n` +
+      `Ingesting a note is half a minute. Scanning a folder, or reformatting a long note, is minutes. You are not meant to sit and watch.` + `\n\n` +
+      `> [!info] Progress lives in the status bar, not in a popup` + `\n` +
+      `> Bottom-right corner of the window. It is always visible, it never covers what you are reading, and **you cannot dismiss it by accident** — click it and it repeats the current step instead of disappearing.` + `\n` +
+      `>` + `\n` +
+      `> The same one line shows three things, whichever is true:` + `\n` +
+      `>` + `\n` +
+      `> | Looks like | Means |` + `\n` +
       `> |---|---|` + `\n` +
-      `> | A small mark on a note in the file explorer | That note already has a page in \`sources/\`. Decoration only — **the note file is untouched**. |` + `\n` +
-      `> | A count in the status bar | How many pages are waiting on the review board. **Off by default**, and turning it on only *counts* — it never runs the model behind your back. |` + `\n\n` +
+      `> | ⏳ *Drafting 7/30 — …* | Working. Click to repeat the message. |` + `\n` +
+      `> | ✅ *30 drafts ready to review* | **Finished, and waiting for you.** Click to open it. |` + `\n` +
+      `> | 📥 *4 to review* | Notes have changed since you filed them. Click to scan. **Off by default**, and when on it only *counts* — it never runs the model behind your back. |` + `\n\n` +
+      `> [!info] A dialog will not jump in front of you` + `\n` +
+      `> If you stayed and waited, the result opens by itself — you are waiting on it, and making you click again would be silly.` + `\n` +
+      `>` + `\n` +
+      `> **If you went back to your notes while it ran, it does not open.** It waits on the status bar as ✅ until you ask for it. A dialog that steals the window minutes after you started something is an ambush: by then you are typing somewhere else, and it is the first you hear of the whole operation.` + `\n\n` +
+      `> [!info] One more mark, in the file explorer` + `\n` +
+      `> A small mark next to a note means it already has a page in \`sources/\`. Decoration only — **the note file itself is untouched**.` + `\n\n` +
       `## Settings worth knowing about` + `\n\n` +
       `> [!info] The five that change what happens` + `\n` +
       `> | Setting | Why you would touch it |` + `\n` +
