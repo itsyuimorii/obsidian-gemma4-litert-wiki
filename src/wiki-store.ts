@@ -301,7 +301,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | **Chat with active note** | Answers grounded in the note you have open — and nothing else. It says "not in the note" instead of guessing. |` + `\n` +
       `> | **Ask your wiki** | The other half of the same panel. Reads \`index.md\` to pick the pages worth opening, then answers from those, citing them. |` + `\n` +
-      `> | **Skills** | Saved prompts — quiz me, flashcards, find gaps. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** |` + `\n\n` +
+      `> | **Skills** | Saved prompts — quiz me, flashcards, find gaps. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
       `> [!info] File notes into the wiki` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -351,7 +351,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | ${ICON_ATTACH} | Attach another note as extra context, on top of whatever the current mode already sends. |` + `\n` +
       `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. |` + `\n` +
-      `> | The chips above it | One-press starting questions for the current mode. **Formatting** is marked as a write — it runs *Improve formatting*, still behind its preview. |` + `\n` +
+      `> | The chips above it | Three one-press starters for the current mode, and **the only part of this panel that never disappears** — which is why the way out of an empty wiki lives here. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* With nothing filed yet they become *Scan a folder* and *File this note*, because every wiki question would fail against an empty wiki. Chips marked as writes (*Formatting*, *Scan*, *File*) do something rather than ask something — always behind their own preview. |` + `\n` +
       `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n` +
       `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
       `## While something is running` + `\n\n` +
