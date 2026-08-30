@@ -1,0 +1,918 @@
+/* ============================================================
+   Gemma Wiki — styles for the recording deck.
+
+   Two worlds, deliberately kept apart:
+
+     - The page around the window is deep violet. The plugin lives inside
+       Obsidian and Obsidian's own accent is violet; the plugin itself ships no
+       colour at all (its stylesheet uses only theme variables), so any brand
+       colour has to be borrowed from the host.
+
+     - Inside .ob-window it is Obsidian's light theme, using Obsidian's real
+       variable names. A light window on a dark ground reads as a lit sample:
+       the product is the bright part and the background recedes. (The plugin
+       is theme-native, so a dark-window variant would be one set of values.)
+
+   Green has exactly one job here: success, ready, done. Brand and interaction
+   are always violet.
+
+   Standalone file; it does not affect the user guide site in ../.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+:root {
+    /* ---- The page around the window ---- */
+    --bg-base: #0C0916;
+    --bg-raise: #14102260;
+    --violet: #A78BFA;
+    --violet-deep: #7C5CFF;
+    --violet-soft: rgba(124, 92, 255, 0.16);
+    --violet-glow: rgba(139, 109, 255, 0.45);
+
+    /* Green is reserved for success; it is no longer the brand colour. */
+    --energy-core: #4ADE80;
+    --energy-glow: rgba(74, 222, 128, 0.45);
+    --energy-dark: #34C36B;
+    --energy-soft: rgba(74, 222, 128, 0.14);
+
+    --amber: #E0A063;
+    --amber-soft: rgba(224, 160, 99, 0.14);
+    --red: #F0708A;
+    --red-soft: rgba(240, 112, 138, 0.12);
+
+    --glass-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.018) 100%);
+    --glass-border-light: rgba(167, 139, 250, 0.17);
+    --glass-border-dark: rgba(167, 139, 250, 0.06);
+    --panel-shadow: 0 34px 70px -22px rgba(0, 0, 0, 0.78), 0 2px 10px -4px rgba(0, 0, 0, 0.5);
+
+    --text-main: #EBE8F5;
+    --text-muted: #8F87AD;
+    --text-dim: #6A6386;
+    --bubble-bg: rgba(255, 255, 255, 0.07);
+
+    --font-sans: 'Inter', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    /* ---- Inside the window: Obsidian's light theme, real variable names ---- */
+    --background-primary: #ffffff;
+    --background-primary-alt: #fafafa;
+    --background-secondary: #f6f6f7;
+    --background-secondary-alt: #eceef0;
+    --background-modifier-border: #e2e3e6;
+    --background-modifier-hover: rgba(0, 0, 0, 0.045);
+    --text-normal: #222428;
+    --text-muted-ob: #6e7079;
+    --text-faint: #9ea0a8;
+    --text-accent: #705dcf;
+    --interactive-accent: #7b6cd9;
+    --text-error: #c0392b;
+    --tag-bg: rgba(112, 93, 207, 0.12);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body, html {
+    height: 100%; width: 100%;
+    background-color: var(--bg-base);
+    font-family: var(--font-sans);
+    color: var(--text-main);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+
+/* ---------- Ambient background ----------
+   The window is the only bright thing on the page; the background exists only
+   to hold it up. So: a very faint violet wash and a fine dot grid, nothing
+   with a presence of its own. */
+.environment {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+        radial-gradient(900px 620px at 50% 34%, rgba(124, 92, 255, 0.20) 0%, transparent 68%),
+        radial-gradient(720px 520px at 12% 88%, rgba(88, 70, 190, 0.14) 0%, transparent 70%),
+        radial-gradient(680px 480px at 92% 8%, rgba(150, 110, 255, 0.10) 0%, transparent 72%);
+}
+/* A masked dot grid: no perspective, no competing for attention. */
+.grid-floor {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: radial-gradient(rgba(167, 139, 250, 0.14) 1px, transparent 1px);
+    background-size: 26px 26px;
+    mask-image: radial-gradient(760px 560px at 50% 42%, #000 0%, transparent 76%);
+    -webkit-mask-image: radial-gradient(760px 560px at 50% 42%, #000 0%, transparent 76%);
+}
+/* The glow behind the window, so the light panel reads as lit rather than pasted on. */
+.ambient-blob { position: fixed; border-radius: 50%; pointer-events: none; z-index: 1; }
+.blob-a {
+    width: 640px; height: 300px; left: 50%; top: 46%;
+    transform: translate(-50%, -50%);
+    background: rgba(124, 92, 255, 0.26); filter: blur(90px);
+}
+.blob-b {
+    width: 320px; height: 180px; left: 50%; top: 78%;
+    transform: translate(-50%, -50%);
+    background: rgba(74, 222, 128, 0.07); filter: blur(80px);
+}
+
+.stage {
+    position: relative; z-index: 10; height: 100vh; width: 100%;
+    display: flex; align-items: center; justify-content: center; perspective: 2000px;
+}
+
+/* ============================================================
+   The mock Obsidian window
+   ============================================================ */
+
+.ob-window {
+    /* The palette, modals and toasts are absolutely positioned inside the
+       window, so the window has to be their containing block — otherwise they
+       escape to the viewport. */
+    position: relative;
+    width: 1120px; height: 700px;
+    display: flex; flex-direction: column;
+    background: var(--background-primary);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: var(--panel-shadow);
+    border: 1px solid rgba(16, 24, 40, 0.08);
+    font-size: 14px; color: var(--text-normal);
+    transition: filter 0.4s ease;
+}
+.ob-window.dimmed { filter: saturate(0.75) brightness(0.99); }
+
+.ob-titlebar {
+    height: 38px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 8px; padding: 0 14px;
+    background: var(--background-secondary-alt);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.ob-titlebar .tl { width: 11px; height: 11px; border-radius: 50%; }
+.ob-titlebar .tl.r { background: #ff5f57; }
+.ob-titlebar .tl.y { background: #febc2e; }
+.ob-titlebar .tl.g { background: #28c840; }
+.ob-titlebar .vault {
+    flex: 1; text-align: center; font-size: 12px; color: var(--text-faint);
+    margin-right: 46px; /* offset the traffic lights so the title is truly centred */
+}
+
+.ob-body { flex: 1; display: flex; min-height: 0; }
+
+/* ---------- The left ribbon ---------- */
+.ob-ribbon {
+    width: 44px; flex-shrink: 0; padding: 10px 0;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    background: var(--background-secondary-alt);
+    border-right: 1px solid var(--background-modifier-border);
+}
+.ob-ribbon .rb {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-faint); transition: all 0.2s ease;
+}
+.ob-ribbon .rb svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ob-ribbon .rb.gemma { color: var(--text-muted-ob); }
+/* The plugin's ribbon icon, lit. */
+.ob-ribbon .rb.lit {
+    color: var(--interactive-accent);
+    background: var(--background-modifier-hover);
+    box-shadow: 0 0 0 2px rgba(123, 108, 217, 0.16);
+}
+.ob-ribbon .spacer { flex: 1; }
+
+/* ---------- File explorer ---------- */
+.ob-sidebar {
+    width: 208px; flex-shrink: 0; padding: 10px 6px;
+    background: var(--background-secondary);
+    border-right: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+}
+.ob-sb-head {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--text-faint); padding: 4px 8px 10px 8px;
+}
+.ob-tree { display: flex; flex-direction: column; gap: 1px; }
+.ob-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px; border-radius: 5px;
+    font-size: 13px; color: var(--text-muted-ob); white-space: nowrap;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.ob-row.folder { color: var(--text-normal); font-weight: 500; }
+.ob-row.indent { padding-left: 22px; }
+.ob-row.indent2 { padding-left: 34px; }
+.ob-row.active { background: var(--background-modifier-hover); color: var(--text-normal); }
+.ob-row .ic { width: 13px; height: 13px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.8; opacity: 0.75; }
+.ob-row .nm { overflow: hidden; text-overflow: ellipsis; }
+/* The ingested badge: decoration in the explorer only. The note file itself
+   was opened, read and closed. */
+.ob-row .badge {
+    margin-left: auto; width: 13px; height: 13px; flex-shrink: 0;
+    stroke: var(--interactive-accent); fill: none; stroke-width: 2;
+    opacity: 0; transform: scale(0.6); transition: all 0.35s cubic-bezier(.2,1,.3,1);
+}
+.ob-row .badge.on { opacity: 1; transform: scale(1); }
+/* A new file arriving in the tree. */
+.ob-row.appearing { animation: rowIn 0.45s cubic-bezier(.2,1,.3,1) both; }
+@keyframes rowIn {
+    from { opacity: 0; transform: translateX(-8px); background: var(--energy-soft); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ---------- Editor pane ---------- */
+.ob-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--background-primary); }
+.ob-tabbar {
+    height: 36px; flex-shrink: 0; display: flex; align-items: stretch;
+    background: var(--background-secondary-alt);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.ob-tab {
+    display: flex; align-items: center; gap: 7px; padding: 0 14px;
+    font-size: 12.5px; color: var(--text-faint);
+    border-right: 1px solid var(--background-modifier-border);
+}
+.ob-tab.active { background: var(--background-primary); color: var(--text-normal); }
+.ob-tab svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+.ob-editor {
+    flex: 1; overflow: hidden; padding: 26px 40px;
+    line-height: 1.62; font-size: 14.5px;
+}
+.ob-editor h1 { font-size: 24px; font-weight: 700; margin-bottom: 14px; letter-spacing: -0.3px; }
+.ob-editor h2 { font-size: 18px; font-weight: 600; margin: 20px 0 8px; }
+.ob-editor h3 { font-size: 15.5px; font-weight: 600; margin: 16px 0 6px; }
+.ob-editor p { margin-bottom: 11px; color: var(--text-normal); }
+.ob-editor ul { margin: 0 0 11px 20px; }
+.ob-editor li { margin-bottom: 5px; }
+.ob-editor .muted { color: var(--text-muted-ob); }
+.ob-editor .wl { color: var(--text-accent); }
+.ob-editor .tag {
+    color: var(--text-accent); background: var(--tag-bg);
+    border-radius: 4px; padding: 1px 6px; font-size: 12.5px;
+}
+.ob-editor code {
+    font-family: var(--font-mono); font-size: 12.5px;
+    background: var(--background-secondary); border-radius: 4px; padding: 1px 5px;
+}
+.ob-editor .fm {
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-muted-ob);
+    background: var(--background-secondary); border: 1px solid var(--background-modifier-border);
+    border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; white-space: pre; line-height: 1.55;
+}
+/* A selected passage in the editor. */
+.ob-editor .sel { background: transparent; border-radius: 3px; transition: background 0.3s ease; }
+.ob-editor .sel.active { background: rgba(123, 108, 217, 0.2); }
+/* A rewritten paragraph: old struck through, new highlighted. */
+.ob-editor .was { text-decoration: line-through; color: var(--text-faint); }
+.ob-editor .now { background: var(--energy-soft); border-radius: 4px; padding: 0 3px; }
+
+/* ---------- The plugin panel ----------
+   Copied from a screenshot of the real thing. "shadcn-inspired monochrome" in
+   the README is meant literally: the active pill is black, the send button is a
+   black circle, and there is no brand colour anywhere. Violet appears only
+   where Obsidian itself draws it (wikilinks, tags). */
+.ob-right {
+    width: 322px; flex-shrink: 0; display: flex; flex-direction: column;
+    background: var(--background-primary);
+    border-left: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+}
+.ob-right.hidden { display: none; }
+.ob-right.entering { animation: panelIn 0.4s cubic-bezier(.2,1,.3,1) both; }
+@keyframes panelIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+
+.gw-header { padding: 13px 14px 11px; border-bottom: 1px solid var(--background-modifier-border); }
+.gw-title-row { display: flex; align-items: center; gap: 8px; }
+.gw-logo { width: 16px; height: 16px; stroke: var(--text-normal); fill: none; stroke-width: 1.7; }
+.gw-title { font-size: 13.5px; font-weight: 600; }
+.gw-badge {
+    font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase; font-weight: 500;
+    color: var(--text-muted-ob); background: var(--background-secondary-alt);
+    border-radius: 5px; padding: 2.5px 6px;
+}
+.gw-actions { margin-left: auto; display: flex; gap: 5px; }
+.gw-actions .b {
+    width: 24px; height: 24px; border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    display: flex; align-items: center; justify-content: center; color: var(--text-muted-ob);
+}
+.gw-actions .b svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+/* The note the panel is grounded in: no border, just a line of context. */
+.gw-note-chip {
+    margin-top: 10px; display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-muted-ob);
+}
+.gw-note-chip svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; flex-shrink: 0; }
+.gw-note-chip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Empty state: icon, one line of title, two of explanation, centred. */
+.gw-messages { flex: 1; overflow: hidden; padding: 14px; display: flex; flex-direction: column; gap: 13px; }
+.gw-empty {
+    margin: auto; text-align: center; padding: 0 18px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.gw-empty .ic {
+    width: 42px; height: 42px; border-radius: 10px;
+    border: 1px solid var(--background-modifier-border);
+    display: flex; align-items: center; justify-content: center;
+}
+.gw-empty .ic svg { width: 18px; height: 18px; stroke: var(--text-muted-ob); fill: none; stroke-width: 1.6; }
+.gw-empty .t { font-size: 13px; font-weight: 500; color: var(--text-normal); }
+.gw-empty .d { font-size: 12px; color: var(--text-muted-ob); line-height: 1.6; }
+
+.gw-msg { font-size: 12.8px; line-height: 1.62; }
+.gw-msg.user {
+    align-self: flex-end; max-width: 86%;
+    background: var(--background-secondary); border-radius: 11px; padding: 8px 12px;
+}
+.gw-msg.bot { color: var(--text-normal); }
+.gw-msg.hidden { display: none; }
+.gw-msg .b { font-weight: 600; }
+.gw-msg ul { margin: 6px 0 0 16px; }
+.gw-msg li { margin-bottom: 3px; }
+
+/* The deterministic Sources row: listed by the plugin, never cited by the model. */
+.gw-sources {
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--background-modifier-border);
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.gw-sources .lb {
+    font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--text-faint); width: 100%; margin-bottom: 3px;
+}
+.gw-src {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11.5px; color: var(--text-normal);
+    background: var(--background-secondary); border-radius: 6px; padding: 3px 8px;
+}
+.gw-src svg { width: 11px; height: 11px; stroke: var(--text-muted-ob); fill: none; stroke-width: 1.8; }
+
+.gw-msg-actions { display: flex; gap: 5px; margin-top: 9px; }
+.gw-msg-actions .a {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--text-muted-ob);
+    border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 4px 9px;
+}
+.gw-msg-actions .a svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.gw-msg-actions .a.lit { color: var(--background-primary); background: var(--text-normal); border-color: var(--text-normal); }
+
+/* Starter chips: Summarize / Key points / Formatting. */
+.gw-suggestions { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 14px 10px; }
+.gw-chip {
+    font-size: 12px; color: var(--text-normal);
+    background: var(--background-secondary); border-radius: 999px; padding: 5px 12px;
+}
+/* Formatting writes to your note, so it never looks like the two that only read. */
+.gw-chip.write { background: transparent; border: 1px solid var(--background-modifier-border); }
+
+/* Composer: the textarea is its own box and the toolbar sits below it, not
+   wrapped together in one card. */
+.gw-composer { padding: 0 14px 12px; }
+.gw-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.gw-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--text-muted-ob);
+    background: var(--background-secondary); border-radius: 6px; padding: 4px 8px;
+}
+.gw-pill .x { color: var(--text-faint); }
+.gw-input {
+    font-size: 12.8px; color: var(--text-normal); min-height: 52px;
+    border: 1px solid var(--background-modifier-border); border-radius: 9px;
+    padding: 10px 12px;
+}
+.gw-input .ph { color: var(--text-faint); }
+.gw-bar { display: flex; align-items: center; gap: 6px; margin-top: 9px; }
+.gw-mode {
+    font-size: 12px; border-radius: 999px; padding: 5px 13px;
+    color: var(--text-normal); background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    transition: all 0.25s ease;
+}
+.gw-mode.on { color: var(--background-primary); background: var(--text-normal); border-color: var(--text-normal); }
+.gw-bar .sp { flex: 1; }
+.gw-bar .ib {
+    width: 28px; height: 28px; border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+    display: flex; align-items: center; justify-content: center; color: var(--text-normal);
+}
+.gw-bar .ib svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.gw-bar .ib.send {
+    border-radius: 50%; background: var(--text-normal); border-color: var(--text-normal);
+    color: var(--background-primary);
+}
+
+/* ---------- Status bar ---------- */
+.ob-statusbar {
+    height: 26px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 0 14px;
+    background: var(--background-secondary-alt);
+    border-top: 1px solid var(--background-modifier-border);
+    font-size: 11px; color: var(--text-faint);
+}
+.ob-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--text-muted-ob); border-radius: 5px; padding: 2px 8px;
+    transition: all 0.3s ease;
+}
+.ob-chip.hidden { opacity: 0; }
+.ob-chip.lit { color: var(--energy-dark); background: var(--energy-soft); }
+.ob-chip .d { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+/* The status line the plugin occupies while the model runs. */
+.ob-status-run { margin-right: auto; display: flex; align-items: center; gap: 7px; color: var(--text-muted-ob); }
+.ob-status-run.hidden { display: none; }
+.ob-status-run .d { width: 5px; height: 5px; border-radius: 50%; background: var(--energy-core); box-shadow: 0 0 7px var(--energy-glow); animation: pulse 1s infinite ease-in-out; }
+@keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+/* ---------- Command palette ---------- */
+.ob-palette-scrim {
+    position: absolute; inset: 0; z-index: 50;
+    background: rgba(20, 22, 28, 0.28); backdrop-filter: blur(1.5px);
+    display: flex; justify-content: center; padding-top: 82px;
+}
+.ob-palette-scrim.hidden { display: none; }
+.ob-palette {
+    width: 540px; height: fit-content;
+    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+    border-radius: 10px; overflow: hidden;
+    box-shadow: 0 30px 60px -18px rgba(16,24,40,0.4);
+    animation: modalIn 0.26s cubic-bezier(.2,1,.3,1) both;
+}
+.ob-palette .q {
+    padding: 13px 15px; font-size: 14px; color: var(--text-normal);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.ob-palette .q .ph { color: var(--text-faint); }
+.ob-palette .hits { padding: 5px; max-height: 232px; overflow: hidden; }
+.ob-palette .hit {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--text-normal);
+}
+.ob-palette .hit.sel { background: var(--background-modifier-hover); }
+.ob-palette .hit .k {
+    margin-left: auto; font-family: var(--font-mono); font-size: 9.5px;
+    color: var(--text-faint); background: var(--background-secondary);
+    border-radius: 4px; padding: 2px 6px;
+}
+.ob-palette .hit svg { width: 13px; height: 13px; stroke: var(--text-faint); fill: none; stroke-width: 1.8; }
+
+/* ---------- The review gate, and modals generally ---------- */
+.ob-modal-scrim {
+    position: absolute; inset: 0; z-index: 60;
+    background: rgba(20, 22, 28, 0.34); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+}
+.ob-modal-scrim.hidden { display: none; }
+.ob-modal {
+    width: 620px; max-height: 88%;
+    display: flex; flex-direction: column;
+    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+    border-radius: 11px; overflow: hidden;
+    box-shadow: 0 34px 70px -20px rgba(16,24,40,0.45);
+    animation: modalIn 0.28s cubic-bezier(.2,1,.3,1) both;
+}
+.ob-modal.narrow { width: 460px; }
+.ob-modal.wide { width: 720px; }
+@keyframes modalIn { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+.ob-modal .head { padding: 15px 18px 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.ob-modal .head h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.ob-modal .head .path { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
+/* Content should fit exactly when recording; auto is the safety net. A
+   scrollbar is better than the first version, which silently clipped the whole
+   Related block with no sign anything was missing. */
+.ob-modal .scroll { padding: 15px 18px; overflow-y: auto; font-size: 13px; line-height: 1.6; }
+.ob-modal .foot {
+    display: flex; align-items: center; gap: 9px; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+.ob-modal .foot .note { margin-right: auto; font-size: 11px; color: var(--text-faint); }
+.ob-btn {
+    font-size: 12.5px; border-radius: 6px; padding: 6px 14px;
+    border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+    color: var(--text-normal);
+}
+.ob-btn.cta { background: var(--interactive-accent); border-color: var(--interactive-accent); color: #fff; }
+.ob-btn.pressed { transform: translateY(1px); filter: brightness(0.94); }
+
+/* One extracted field per row, inside the review gate. */
+.kv { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--background-modifier-border); }
+.kv:last-child { border-bottom: none; }
+.kv .k {
+    width: 96px; flex-shrink: 0;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase;
+    color: var(--text-faint); padding-top: 3px;
+}
+.kv .v { flex: 1; min-width: 0; }
+.kv .v ul { margin-left: 15px; }
+.kv .v li { margin-bottom: 3px; }
+.kv-row { opacity: 0; transform: translateY(5px); transition: all 0.4s cubic-bezier(.2,1,.3,1); }
+.kv-row.on { opacity: 1; transform: none; }
+
+.conf { display: inline-flex; align-items: center; gap: 7px; }
+.conf .track { display: block; width: 92px; height: 5px; border-radius: 3px; background: var(--background-secondary-alt); overflow: hidden; }
+/* display:block is required: these fills are often written as <span>, and an
+   inline element ignores width. */
+.conf .fill { display: block; height: 100%; width: 0; background: var(--energy-core); border-radius: 3px; transition: width 0.8s cubic-bezier(.2,1,.3,1); }
+.conf .fill.mid { background: var(--amber); }
+.conf .fill.low { background: var(--red); }
+.conf .n { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted-ob); }
+
+/* Generic result list. */
+.rlist { display: flex; flex-direction: column; gap: 8px; }
+.ritem {
+    border: 1px solid var(--background-modifier-border); border-radius: 8px;
+    padding: 10px 12px; background: var(--background-primary);
+    opacity: 0; transform: translateY(6px); transition: all 0.42s cubic-bezier(.2,1,.3,1);
+}
+.ritem.on { opacity: 1; transform: none; }
+.ritem .t { font-size: 12.8px; font-weight: 600; margin-bottom: 3px; display: flex; align-items: center; gap: 8px; }
+.ritem .d { font-size: 12px; color: var(--text-muted-ob); line-height: 1.55; }
+.ritem .why { font-size: 11.5px; color: var(--text-muted-ob); margin-top: 6px; padding-left: 9px; border-left: 2px solid var(--background-modifier-border); line-height: 1.55; }
+.ritem.warn { border-color: rgba(201, 117, 94, 0.45); background: var(--amber-soft); }
+.ritem.bad { border-color: rgba(209, 73, 91, 0.4); background: var(--red-soft); }
+.ritem.good { border-color: rgba(60, 218, 107, 0.42); background: var(--energy-soft); }
+
+.pill {
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.9px; text-transform: uppercase;
+    border-radius: 999px; padding: 2px 8px; color: var(--text-muted-ob); background: var(--background-secondary-alt);
+}
+.pill.amber { color: #A85639; background: var(--amber-soft); }
+.pill.red { color: #A32A3B; background: var(--red-soft); }
+.pill.green { color: var(--energy-dark); background: var(--energy-soft); }
+.pill.violet { color: var(--text-accent); background: var(--tag-bg); }
+
+/* The quote a key point was traced back to. */
+.quote { font-size: 12px; line-height: 1.6; color: var(--text-muted-ob); border-left: 2px solid var(--background-modifier-border); padding-left: 10px; }
+.quote em { color: var(--text-normal); font-style: normal; background: var(--energy-soft); border-radius: 3px; padding: 0 3px; }
+
+/* Progress bar: model download, and the multi-pass rewrite. */
+.prog { display: block; height: 7px; border-radius: 4px; background: var(--background-secondary-alt); overflow: hidden; }
+.prog .bar { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--interactive-accent); transition: width 0.5s linear; }
+.prog .bar.green { background: var(--energy-core); }
+.prog-meta { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); margin-top: 7px; }
+
+/* Network indicator: the proof that nothing goes out after the download. */
+.netline { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-faint); }
+.netline .d { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); }
+.netline.busy { color: var(--amber); }
+.netline.busy .d { background: var(--amber); animation: pulse 0.9s infinite ease-in-out; }
+.netline.idle { color: var(--energy-dark); }
+.netline.idle .d { background: var(--energy-core); box-shadow: 0 0 8px var(--energy-glow); }
+
+/* Obsidian's black toast, top right. */
+.ob-notices { position: absolute; z-index: 70; top: 50px; right: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.ob-notice {
+    max-width: 340px; font-size: 12.3px; line-height: 1.55; color: #f2f3f5;
+    background: #23262c; border-radius: 9px; padding: 10px 13px;
+    box-shadow: 0 12px 28px -10px rgba(0,0,0,0.45);
+    animation: noticeIn 0.3s cubic-bezier(.2,1,.3,1) both;
+}
+.ob-notice.leaving { animation: noticeOut 0.3s ease forwards; }
+@keyframes noticeIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes noticeOut { to { opacity: 0; transform: translateX(10px); } }
+
+/* Typewriter cursor. */
+.blink-cursor {
+    display: inline-block; width: 2px; height: 15px; background: var(--energy-core);
+    vertical-align: middle; margin-left: 2px; animation: blink 1.4s infinite ease-in-out;
+}
+.blink-cursor.done { display: none; }
+@keyframes blink {
+    0%, 100% { opacity: 0.2; transform: scaleY(0.8); }
+    50% { opacity: 1; transform: scaleY(1.1); box-shadow: 0 0 10px var(--energy-glow); }
+}
+
+/* ============================================================
+   Recording chrome. Not part of the product UI.
+   ============================================================ */
+
+.keycap-overlay {
+    position: fixed; z-index: 100; left: 50%; bottom: 12%; transform: translateX(-50%);
+    display: flex; gap: 8px; opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
+}
+.keycap-overlay.flash { animation: keyFlash 1s ease forwards; }
+@keyframes keyFlash {
+    0% { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.96); }
+    12% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    70% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-4px) scale(0.99); }
+}
+.keycap {
+    font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--text-main);
+    background: rgba(28, 22, 48, 0.92); backdrop-filter: blur(10px);
+    border: 1px solid rgba(167, 139, 250, 0.22);
+    border-radius: 10px; padding: 10px 16px; min-width: 46px; text-align: center;
+    box-shadow: 0 12px 30px -10px rgba(0,0,0,0.8), inset 0 -2px 0 rgba(0,0,0,0.35);
+}
+
+/* Shared dark pill: the corner badges below all sit on this. */
+.proto-badge, .hint-bar, .scene-nav a, .scene-nav span, .start-cue {
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid var(--glass-border-light);
+    backdrop-filter: blur(14px);
+    color: var(--text-muted);
+}
+
+.proto-badge {
+    position: fixed; z-index: 90; left: 20px; bottom: 20px;
+    display: flex; align-items: center; gap: 7px;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase;
+    border-radius: 999px; padding: 6px 12px;
+    transition: opacity 0.25s ease;
+}
+.proto-badge.hidden { opacity: 0; }
+.proto-badge .d { width: 5px; height: 5px; border-radius: 50%; background: var(--amber); }
+
+.hint-bar {
+    position: fixed; z-index: 90; right: 20px; bottom: 20px;
+    font-family: var(--font-mono); font-size: 10px;
+    border-radius: 10px; padding: 8px 12px; line-height: 1.7;
+    transition: opacity 0.25s ease;
+}
+.hint-bar.hidden { opacity: 0; }
+.hint-bar kbd {
+    background: var(--bubble-bg); border-radius: 4px; padding: 1px 5px; color: var(--text-main); font-weight: 700;
+}
+
+.scene-title {
+    position: fixed; z-index: 95; top: 30px; left: 50%; transform: translateX(-50%);
+    text-align: center; transition: opacity 0.4s ease;
+}
+.scene-title.hidden { opacity: 0; }
+.scene-title .num {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--violet);
+}
+.scene-title .txt { font-size: 15px; font-weight: 600; color: var(--text-main); margin-top: 4px; }
+
+.scene-nav {
+    position: fixed; z-index: 90; left: 20px; top: 20px;
+    display: flex; align-items: center; gap: 6px;
+    transition: opacity 0.25s ease;
+}
+.scene-nav.hidden { opacity: 0; pointer-events: none; }
+.scene-nav a, .scene-nav span {
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase;
+    text-decoration: none; border-radius: 999px; padding: 7px 13px;
+    transition: all 0.22s ease;
+}
+.scene-nav a:hover {
+    color: var(--text-main);
+    border-color: rgba(167, 139, 250, 0.42);
+    background: var(--violet-soft);
+}
+.scene-nav .count { background: transparent; border-color: transparent; padding: 7px 4px; color: var(--text-dim); }
+.scene-nav a.disabled { opacity: 0.3; pointer-events: none; }
+
+.start-cue {
+    position: fixed; z-index: 88; left: 50%; bottom: 8%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 9px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.3px; text-transform: uppercase;
+    border-radius: 999px; padding: 9px 16px;
+    transition: opacity 0.3s ease;
+    animation: cuePulse 2.4s ease-in-out infinite;
+}
+.start-cue.gone { opacity: 0; pointer-events: none; animation: none; }
+.start-cue kbd {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--text-main);
+    background: var(--bubble-bg); border-radius: 5px; padding: 2px 7px;
+}
+@keyframes cuePulse { 0%,100% { opacity: .7; } 50% { opacity: 1; } }
+
+/* Scene narration: what this step is demonstrating. Hidden with H. */
+.beat {
+    position: fixed; z-index: 88; left: 50%; bottom: 7%; transform: translateX(-50%);
+    max-width: 640px; text-align: center;
+    font-size: 13.5px; line-height: 1.65; color: var(--text-main);
+    background: rgba(20, 15, 36, 0.82);
+    border: 1px solid var(--glass-border-light);
+    border-radius: 14px; padding: 13px 22px; backdrop-filter: blur(18px);
+    box-shadow: 0 20px 46px -20px rgba(0,0,0,0.8);
+    opacity: 0; transition: opacity 0.35s ease;
+}
+.beat.on { opacity: 1; }
+.beat.hidden { opacity: 0 !important; }
+.beat b { font-weight: 600; color: #fff; }
+.beat i { color: var(--violet); font-style: normal; }
+.beat code { font-family: var(--font-mono); font-size: 11.5px; color: var(--violet); background: var(--violet-soft); border-radius: 4px; padding: 1px 5px; }
+
+/* A column of source chips: a flex column stretches inline-flex children to
+   full width, so the container has to align them left explicitly. */
+.srcstack { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.srcrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.hintline { font-size: 11.5px; color: var(--text-faint); line-height: 1.55; }
+.hintline code { font-family: var(--font-mono); font-size: 11px; background: var(--background-secondary); border-radius: 3px; padding: 0 4px; }
+
+/* The retrieval trace in the panel: read the index first, then decide which
+   pages to open. */
+.gw-trace {
+    font-family: var(--font-mono); font-size: 10px; line-height: 1.9;
+    color: var(--text-faint);
+    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+    border-radius: 8px; padding: 8px 10px;
+}
+.gw-trace .ln { display: flex; gap: 7px; opacity: 0; transition: opacity 0.3s ease; }
+.gw-trace .ln.on { opacity: 1; }
+.gw-trace .ok { color: var(--energy-dark); }
+.gw-trace b { color: var(--text-muted-ob); font-weight: 700; }
+
+/* Refusal: if it is not in the material, say so rather than invent it. */
+.gw-refuse {
+    border-left: 2px solid var(--amber); padding-left: 10px;
+    color: var(--text-normal);
+}
+
+/* Per-pass progress for Improve. */
+.passlist { display: flex; flex-direction: column; gap: 7px; }
+.passrow {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 12.3px; color: var(--text-faint);
+    border: 1px solid var(--background-modifier-border); border-radius: 7px; padding: 7px 10px;
+    transition: all 0.3s ease;
+}
+.passrow .n { font-family: var(--font-mono); font-size: 10px; min-width: 30px; }
+.passrow .sp { flex: 1; }
+.passrow.run { color: var(--text-normal); border-color: rgba(123,108,217,0.5); background: rgba(123,108,217,0.06); }
+.passrow.done { color: var(--text-normal); border-color: rgba(60,218,107,0.45); background: var(--energy-soft); }
+.passrow .tick { width: 13px; height: 13px; stroke: var(--energy-dark); fill: none; stroke-width: 2.4; opacity: 0; transition: opacity 0.3s; }
+.passrow.done .tick { opacity: 1; }
+
+/* Side by side: original and rewritten. */
+.sxs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.sxs .col h4 {
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase;
+    color: var(--text-faint); font-weight: 400; margin-bottom: 7px;
+}
+.sxs .col .body { font-size: 12.2px; line-height: 1.65; }
+.sxs .col .body h5 { font-size: 12.5px; font-weight: 700; margin: 8px 0 4px; }
+.sxs .col .body p { margin-bottom: 7px; }
+.sxs .col .body ul { margin: 0 0 7px 15px; }
+
+/* ---------- Rendered markdown inside a modal ----------
+   The real IngestPreviewModal calls MarkdownRenderer.render and shows you the
+   whole wiki page as it will be written — not a table of fields. Drawn to
+   match. */
+.md { font-size: 13px; line-height: 1.62; color: var(--text-normal); }
+.md hr { border: none; border-top: 1px solid var(--background-modifier-border); margin: 10px 0; }
+.md h1 { font-size: 20px; font-weight: 700; margin: 12px 0 10px; }
+.md h2 { font-size: 15.5px; font-weight: 600; margin: 16px 0 7px; }
+.md p { margin-bottom: 9px; }
+.md ul { margin: 0 0 9px 19px; }
+.md li { margin-bottom: 4px; }
+.md strong { font-weight: 700; }
+.md a.wl { color: var(--text-accent); text-decoration: none; }
+.md code { font-family: var(--font-mono); font-size: 12px; background: var(--background-secondary); border-radius: 4px; padding: 1px 5px; }
+/* Through MarkdownRenderer, frontmatter is a rule, plain text, and another rule. */
+.md .fmtext { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted-ob); white-space: pre; line-height: 1.6; margin-bottom: 0; }
+
+/* ---------- AutoIngestReviewModal: the batch review list ---------- */
+.lint-summary { font-size: 12.3px; color: var(--text-muted-ob); line-height: 1.55; margin-bottom: 12px; }
+.draftlist { display: flex; flex-direction: column; gap: 2px; }
+.draftrow {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 9px 8px; border-radius: 7px;
+    opacity: 0; transform: translateY(5px); transition: all 0.38s cubic-bezier(.2,1,.3,1);
+}
+.draftrow.on { opacity: 1; transform: none; }
+.draftrow + .draftrow { border-top: 1px solid var(--background-modifier-border); }
+.draftrow .cb {
+    width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; border-radius: 3px;
+    border: 1.5px solid var(--text-faint); background: var(--interactive-accent);
+    position: relative; transition: all 0.2s ease;
+}
+.draftrow .cb::after {
+    content: ''; position: absolute; left: 3.5px; top: 0.5px; width: 4px; height: 8px;
+    border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.draftrow.off .cb { background: transparent; border-color: var(--text-faint); }
+.draftrow.off .cb::after { display: none; }
+.draftrow.off { opacity: 0.45; }
+.draftrow .body { flex: 1; min-width: 0; }
+.draftrow .titlerow { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.draftrow .title { font-size: 12.8px; font-weight: 600; color: var(--text-accent); }
+.draftrow .reasons { font-size: 11px; color: var(--text-faint); }
+.draftrow .sum { font-size: 12px; color: var(--text-normal); line-height: 1.55; margin-top: 3px; }
+.draftrow .tags { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); margin-top: 4px; }
+
+/* ============================================================
+   Obsidian's settings pane.
+   Real structure: a modal covering the window, navigation on the left and the
+   settings on the right. In Obsidian 1.13 each setting is a rounded grey card,
+   with the section heading above it.
+   ============================================================ */
+.ob-settings {
+    position: absolute; inset: 0; z-index: 55;
+    display: flex; background: var(--background-primary);
+    animation: modalIn 0.26s cubic-bezier(.2,1,.3,1) both;
+}
+.ob-settings.hidden { display: none; }
+
+.set-nav {
+    width: 210px; flex-shrink: 0; padding: 14px 8px;
+    background: var(--background-secondary);
+    border-right: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+}
+.set-nav .grp {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--text-faint); padding: 10px 10px 6px;
+}
+.set-nav .it {
+    font-size: 13px; color: var(--text-muted-ob);
+    padding: 5px 10px; border-radius: 6px;
+}
+.set-nav .it.on { background: var(--background-modifier-hover); color: var(--text-normal); font-weight: 500; }
+
+.set-pane { flex: 1; min-width: 0; overflow: hidden; padding: 18px 26px 26px; position: relative; }
+.set-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.set-sub { font-size: 12px; color: var(--text-faint); margin-bottom: 18px; }
+
+.set-head {
+    font-size: 15px; font-weight: 600; color: var(--text-normal);
+    margin: 22px 0 10px;
+}
+.set-head:first-of-type { margin-top: 0; }
+
+.set-item {
+    display: flex; align-items: center; gap: 20px;
+    background: var(--background-secondary);
+    border-radius: 10px; padding: 13px 16px; margin-bottom: 9px;
+    transition: box-shadow 0.3s ease, background 0.3s ease;
+}
+/* Light whichever setting is being narrated. */
+.set-item.lit {
+    background: rgba(123, 108, 217, 0.07);
+    box-shadow: 0 0 0 1.5px rgba(123, 108, 217, 0.4);
+}
+.set-item.fresh { animation: rowIn 0.45s cubic-bezier(.2,1,.3,1) both; }
+.set-item .info { flex: 1; min-width: 0; }
+.set-item .nm { font-size: 13.5px; color: var(--text-normal); margin-bottom: 3px; }
+.set-item .ds { font-size: 12px; color: var(--text-muted-ob); line-height: 1.5; }
+.set-item .ds code { font-family: var(--font-mono); font-size: 11px; }
+.set-item .ctl { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+
+.set-btn {
+    font-size: 12.5px; color: var(--text-normal);
+    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+    border-radius: 6px; padding: 5px 13px; white-space: nowrap;
+}
+.set-btn.cta { background: var(--interactive-accent); border-color: var(--interactive-accent); color: #fff; }
+.set-btn.off { opacity: 0.4; }
+.set-btn.pressed { transform: translateY(1px); filter: brightness(0.94); }
+
+.set-text {
+    font-size: 12.5px; color: var(--text-normal);
+    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+    border-radius: 6px; padding: 5px 10px; min-width: 168px;
+}
+.set-text .ph { color: var(--text-faint); }
+
+.set-drop {
+    font-size: 12.5px; color: var(--text-normal);
+    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+    border-radius: 6px; padding: 5px 26px 5px 10px; position: relative;
+}
+.set-drop::after {
+    content: ''; position: absolute; right: 10px; top: 50%; width: 5px; height: 5px;
+    border: solid var(--text-faint); border-width: 0 1.5px 1.5px 0;
+    transform: translateY(-70%) rotate(45deg);
+}
+
+.set-slider { display: flex; align-items: center; gap: 10px; }
+.set-slider .track {
+    display: block; width: 118px; height: 4px; border-radius: 3px;
+    background: var(--background-modifier-border); position: relative;
+}
+.set-slider .knob {
+    position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--interactive-accent); transform: translate(-50%, -50%);
+    transition: left 0.5s cubic-bezier(.2,1,.3,1);
+}
+.set-slider .val { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted-ob); min-width: 20px; }
+
+.set-toggle {
+    display: block; width: 34px; height: 19px; border-radius: 11px;
+    background: var(--background-modifier-border); position: relative;
+    transition: background 0.25s ease;
+}
+.set-toggle::after {
+    content: ''; position: absolute; top: 2.5px; left: 2.5px;
+    width: 14px; height: 14px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: left 0.25s cubic-bezier(.2,1,.3,1);
+}
+.set-toggle.on { background: var(--interactive-accent); }
+.set-toggle.on::after { left: 17.5px; }
+
+/* The folder health table in settings, with per-row state. */
+.folder-map { display: flex; flex-direction: column; gap: 2px; }
+.fm-row { display: flex; align-items: baseline; gap: 14px; padding: 3px 0; }
+.fm-path {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--text-normal);
+    min-width: 178px; flex-shrink: 0;
+}
+.fm-what { font-size: 11.5px; color: var(--text-muted-ob); }
+.fm-state { margin-left: auto; font-size: 11.5px; color: var(--energy-dark); flex-shrink: 0; }
+
+/* The .md paths in the map open the file they name. */
+.fm-path.is-link {
+    text-decoration: underline;
+    text-decoration-color: var(--background-modifier-border);
+    text-underline-offset: 3px;
+}

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 02 · Scan — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='10' fill='%233CDA6B'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+<div class="ambient-blob blob-b"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 02 — Scan</div>
+    <div class="txt">A pile of notes becomes a library, one review at a time.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, clearNotices, status, reveal } = GemmaDemo;
+
+const EMPTY_INDEX = `
+<h1>Wiki Index</h1>
+<div class="fm" style="white-space:normal;line-height:1.7;">
+    <b>ⓘ What this file is</b> — The wiki's directory: one line per page, a link then a one-sentence
+    summary. Wiki-mode chat reads this file FIRST to decide which pages to open.
+</div>
+<p class="muted">No entries yet — nothing has been ingested.</p>
+`;
+
+const FILLED_INDEX = `
+<h1>Wiki Index</h1>
+<div class="fm" style="white-space:normal;line-height:1.7;">
+    <b>ⓘ What this file is</b> — The wiki's directory: one line per page, a link then a one-sentence
+    summary. Wiki-mode chat reads this file FIRST to decide which pages to open.
+</div>
+<ul>
+    <li><span class="wl">[[Agent interfaces]]</span> — how a page exposes callable tools to an agent, and why identity is out of scope in every current spec.</li>
+    <li><span class="wl">[[Browser APIs]]</span> — what ships in Chromium today versus what is still behind a flag.</li>
+    <li><span class="wl">[[Embedding models in the browser]]</span> — EmbeddingGemma through LiteRT.js, and why it competes for the same GPU.</li>
+    <li><span class="wl">[[LiteRT on device]]</span> — running LiteRT-LM inside a renderer over WebGPU; cold start is shader compilation, not load.</li>
+    <li><span class="wl">[[WebMCP notes]]</span> — in-page tool declaration through document.modelContext, with no transport.</li>
+</ul>
+`;
+
+const NOTES = [
+    { name: 'webmcp notes', id: 'webmcp' },
+    { name: 'agent interfaces', id: 'agentif' },
+    { name: 'litert on device', id: 'litert' },
+    { name: 'browser apis', id: 'browserapi' },
+    { name: 'embedding models in the browser', id: 'embed' },
+    { name: 'reading queue', id: 'queue' },
+];
+
+OB.render({
+    vault: 'itsyuimorii2026',
+    tab: { name: 'Wiki Index', icon: 'library' },
+    words: '27 notes · 0 pages',
+    tree: [
+        { name: 'research', kind: 'folder' },
+        ...NOTES.map((n) => ({ name: n.name, kind: 'file', indent: 1, badge: true, id: n.id })),
+        { name: 'gemma-wiki', kind: 'folder' },
+        { name: 'sources', kind: 'folder', indent: 1, id: 'gw-sources' },
+        { name: 'index.md', kind: 'file', indent: 1, active: true, id: 'gw-index' },
+        { name: 'log.md', kind: 'file', indent: 1, id: 'gw-log' },
+        { name: 'schema.md', kind: 'file', indent: 1, id: 'gw-schema' },
+    ],
+    editor: EMPTY_INDEX,
+});
+
+/* Drafts sorted by confidence, lowest first — those most in need of a human eye. */
+const DRAFTS = [
+    { id: 'queue', title: 'reading queue', reason: 'new · low confidence', conf: 'low',
+      sum: 'A list of note titles the author means to return to. Contains no claims of its own.',
+      tags: '#reading  #backlog', off: true },
+    { id: 'embed', title: 'embedding models in the browser', reason: 'new · med confidence', conf: 'med',
+      sum: 'EmbeddingGemma runs through LiteRT.js in the browser, but competes with the chat model for the same WebGPU device.',
+      tags: '#embeddings  #webgpu  #litert' },
+    { id: 'webmcp', title: 'webmcp notes', reason: 'new · high confidence', conf: 'high',
+      sum: 'WebMCP lets a page declare callable tools in-page through document.modelContext, with no transport and no agent identity.',
+      tags: '#webmcp  #agent-interfaces  #browser-apis' },
+    { id: 'agentif', title: 'agent interfaces', reason: 'new · high confidence', conf: 'high',
+      sum: 'Survey of how pages expose tools to agents; every current spec leaves caller identity out of scope.',
+      tags: '#agent-interfaces  #specs' },
+    { id: 'litert', title: 'litert on device', reason: 'new · high confidence', conf: 'high',
+      sum: 'LiteRT-LM runs in a renderer process over WebGPU; the first call pays a one-time shader compilation cost.',
+      tags: '#litert  #webgpu  #on-device' },
+    { id: 'browserapi', title: 'browser apis', reason: 'new · high confidence', conf: 'high',
+      sum: 'What is shipping in Chromium today versus what still needs a flag, for the APIs this project depends on.',
+      tags: '#browser-apis  #chromium' },
+];
+
+const REVIEW_MODAL = `
+<div class="head">
+    <h3>Review drafts before they enter the wiki</h3>
+</div>
+<div class="scroll">
+    <div class="lint-summary">6 drafts generated. Untick anything that looks wrong, then write the rest. Nothing is saved until you do.</div>
+    <div class="draftlist">
+        ${DRAFTS.map((d) => `
+        <div class="draftrow" id="d-${d.id}">
+            <span class="cb"></span>
+            <span class="body">
+                <span class="titlerow">
+                    <span class="title">${d.title}</span>
+                    <span class="reasons">${d.reason}</span>
+                </span>
+                <div class="sum">${d.sum}</div>
+                <div class="tags">${d.tags}</div>
+            </span>
+        </div>`).join('')}
+    </div>
+</div>
+<div class="foot">
+    <button class="ob-btn">Toggle all</button>
+    <button class="ob-btn cta" id="btnWrite">Write 6 to wiki</button>
+</div>`;
+
+GemmaDemo.init([
+    { do: () => {
+        beat('The wiki exists but is empty — <code>index.md</code> has no entries. Ingesting one note at a time would take all evening; <b>Scan</b> does the pile in one pass.');
+    }},
+
+    { lock: 1300, do: () => {
+        beat('Scope is opt-in. Scan only looks at the folders you named in Settings — leave it blank and it refuses to run rather than sweeping your whole vault.');
+        flashKeys(['⌘', 'P']);
+        OB.palette('Scan notes', [
+            { name: 'Gemma Wiki: Scan notes for wiki (semi-automatic ingest)', icon: 'search' },
+            { name: 'Gemma Wiki: Ingest active note into wiki (local Gemma)', icon: 'book-check' },
+        ]);
+    }},
+
+    { lock: 1100, do: () => {
+        OB.closePalette();
+        status('Scanning for new or changed notes…');
+        beat(null);
+        notice('Scanning 6 notes — about one model call each. You can close Settings and keep working; the review dialog opens here when it is done. (To stop early, reopen Settings and click "Stop scan".)', 7000);
+    }},
+
+    { lock: 6000, do: () => {
+        beat('One structured call per note, sequentially. Each note is read, extracted, then offered the catalog to pick related pages from — and pages drafted <i>earlier in this same batch</i> are valid targets, so a fresh wiki does not come out with every Related section empty.');
+        let i = 0;
+        const t = setInterval(() => {
+            i++;
+            if (i > 6) {
+                clearInterval(t);
+                status(null);
+                return;
+            }
+            status(`Drafting ${i}/6 — ${NOTES[i - 1].name} · finding related pages…`);
+        }, 850);
+    }},
+
+    { lock: 1200, do: () => {
+        notice('6 drafts ready to review.', 3500);
+        OB.modal(REVIEW_MODAL, 'wide');
+        reveal('.draftrow', 130);
+        beat(null);
+    }},
+
+    { lock: 1400, do: () => {
+        beat('<b>Low confidence first.</b> The model rates its own extraction <code>high</code>, <code>med</code> or <code>low</code>, and the list is sorted so the ones most in need of a human eye are the ones you read first — not buried at the bottom of six.');
+    }},
+
+    { lock: 1000, do: () => {
+        beat('And the top one deserves it: <i>reading queue</i> is a list of titles, not a source of claims. It should never have become a page.');
+        $('#d-queue').classList.add('off');
+        $('#btnWrite').textContent = 'Write 5 to wiki';
+    }},
+
+    { lock: 1500, do: () => {
+        $('#btnWrite').classList.add('pressed');
+        OB.closeModal();
+        DRAFTS.filter((d) => !d.off).forEach((d, i) => {
+            setTimeout(() => {
+                OB.addRow({ name: `${d.id === 'webmcp' ? 'webmcp-notes' : d.title.replace(/ /g, '-')}.md`, kind: 'file', indent: 2, id: `p-${d.id}` }, 'gw-sources');
+                OB.badge(d.id);
+            }, i * 220);
+        });
+        notice('Wrote 5 pages to the wiki.', 4000);
+        beat('Five pages written, into <code>gemma-wiki/sources/</code>, filenames slugified. The sixth was never generated into anything — you unticked it, so it does not exist.');
+    }},
+
+    { lock: 1400, do: () => {
+        $('#editor').innerHTML = FILLED_INDEX;
+        $('#wordCount').textContent = '27 notes · 5 pages';
+        beat('<code>index.md</code> now has five lines. That catalog is the whole retrieval story — the next scenes are about what you can do once it exists.');
+    }},
+
+    { do: () => {
+        beat('Note what did <b>not</b> happen: none of the six original notes was modified. The badges in the file explorer are decoration. Your notes were read, and that is all.');
+    }},
+]);
+</script>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gemma Wiki Demo · Recording deck</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+<style>
+    body, html { overflow: auto; height: auto; }
+
+    .wrap { position: relative; z-index: 10; max-width: 940px; margin: 0 auto; padding: 96px 32px 120px; }
+
+    /* ---------- Header ---------- */
+    .home-link {
+        display: inline-flex; align-items: center; gap: 9px; text-decoration: none;
+        color: var(--text-dim); margin-bottom: 40px;
+        font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase;
+        transition: color 0.2s;
+    }
+    .home-link:hover { color: var(--text-main); }
+    .home-link .dot {
+        width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        background: var(--violet); box-shadow: 0 0 12px var(--violet-glow);
+    }
+
+    .kicker {
+        font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.6px; text-transform: uppercase;
+        color: var(--violet);
+    }
+    h1 {
+        font-size: 46px; font-weight: 600; letter-spacing: -1.2px; line-height: 1.05;
+        margin: 14px 0 18px; color: #fff;
+    }
+    .lede { font-size: 15.5px; line-height: 1.72; color: var(--text-muted); max-width: 640px; }
+    .lede b { color: var(--text-main); font-weight: 500; }
+
+    .meta {
+        display: flex; flex-wrap: wrap; gap: 8px; margin-top: 30px;
+        font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase;
+    }
+    .meta span {
+        color: var(--text-dim);
+        border: 1px solid var(--glass-border-light); border-radius: 999px; padding: 6px 13px;
+    }
+    .meta span.hot { color: var(--violet); border-color: rgba(167,139,250,0.35); background: var(--violet-soft); }
+
+    /* ---------- Acts: rail on the left, scene cards on the right ---------- */
+    .act { display: grid; grid-template-columns: 132px 1fr; gap: 28px; margin-top: 64px; }
+    .rail { position: relative; padding-top: 4px; }
+    .rail .n {
+        font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.6px;
+        color: var(--violet); display: block; margin-bottom: 8px;
+    }
+    .rail .t { font-size: 14px; font-weight: 600; color: var(--text-main); line-height: 1.4; }
+    .rail .s { font-size: 12px; color: var(--text-dim); line-height: 1.55; margin-top: 8px; }
+    /* The rule that strings an act's scenes together. */
+    .rail::after {
+        content: ''; position: absolute; right: -14px; top: 6px; bottom: 4px; width: 1px;
+        background: linear-gradient(180deg, rgba(167,139,250,0.34), rgba(167,139,250,0.03));
+    }
+
+    .cards { display: flex; flex-direction: column; gap: 10px; }
+    .card {
+        display: flex; align-items: flex-start; gap: 18px; text-decoration: none; color: inherit;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border-light); border-bottom-color: var(--glass-border-dark);
+        border-radius: 16px; padding: 18px 20px;
+        transition: transform 0.22s cubic-bezier(.2,1,.3,1), border-color 0.22s ease, background 0.22s ease;
+    }
+    .card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(167, 139, 250, 0.42);
+        background: linear-gradient(155deg, rgba(124,92,255,0.13) 0%, rgba(255,255,255,0.02) 100%);
+    }
+    .card .num {
+        font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+        color: var(--violet); opacity: 0.62; min-width: 24px; padding-top: 2px;
+    }
+    .card .body { flex: 1; min-width: 0; }
+    .card .t { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 5px; line-height: 1.4; }
+    .card .d { font-size: 13px; color: var(--text-muted); line-height: 1.62; }
+    .card .d code {
+        font-family: var(--font-mono); font-size: 11.5px; color: var(--violet);
+        background: var(--violet-soft); border-radius: 4px; padding: 1px 5px;
+    }
+    .card .cmd {
+        font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+        color: var(--text-dim); white-space: nowrap; padding-top: 4px;
+    }
+    .card.todo { opacity: 0.5; }
+    .card.todo:hover { transform: none; }
+    .card .soon {
+        font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase;
+        color: var(--text-dim); border: 1px solid var(--glass-border-light);
+        border-radius: 999px; padding: 2px 8px; margin-left: 9px; vertical-align: 2px;
+    }
+
+    /* ---------- Recording notes ---------- */
+    .note {
+        margin-top: 72px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--glass-border-light);
+        border-radius: 18px; padding: 26px 28px;
+    }
+    .note h3 {
+        font-size: 10px; font-family: var(--font-mono); letter-spacing: 1.8px; text-transform: uppercase;
+        color: var(--violet); font-weight: 400; margin-bottom: 18px;
+    }
+    .note ul { list-style: none; display: flex; flex-direction: column; gap: 11px; }
+    .note li { font-size: 13.5px; line-height: 1.62; color: var(--text-muted); display: flex; gap: 14px; align-items: baseline; }
+    .note li b { color: var(--text-main); font-weight: 500; }
+    .note kbd {
+        font-family: var(--font-mono); font-size: 10.5px; background: var(--bubble-bg);
+        border: 1px solid var(--glass-border-light);
+        border-radius: 5px; padding: 3px 9px; font-weight: 700; white-space: nowrap;
+        color: var(--text-main); min-width: 54px; text-align: center; flex-shrink: 0;
+    }
+    .warn {
+        margin-top: 20px; font-size: 12.5px; line-height: 1.65; color: var(--amber);
+        background: var(--amber-soft); border-radius: 12px; padding: 14px 16px;
+    }
+
+    @media (max-width: 720px) {
+        .act { grid-template-columns: 1fr; gap: 16px; }
+        .rail::after { display: none; }
+        h1 { font-size: 34px; }
+    }
+</style>
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+
+<div class="wrap">
+    <a class="home-link" href="../index.html"><span class="dot"></span>Gemma Wiki</a>
+
+    <div class="kicker">Gemma Wiki · Demo</div>
+    <h1>Recording deck</h1>
+    <p class="lede">
+        Thirteen scenes, one page each. Go fullscreen, press Space to step through — every take comes out
+        identical, because nothing here is random. The window is a mock of Obsidian in its
+        <b>light</b> theme; the plugin ships no colours of its own, so what it looks like is entirely
+        the host theme's decision.
+    </p>
+
+    <div class="meta">
+        <span class="hot">13 scenes</span>
+        <span>3 acts</span>
+        <span>Space to advance</span>
+        <span>H hides the chrome</span>
+    </div>
+
+    <!-- ================= ACT 0 ================= -->
+    <div class="act">
+        <div class="rail">
+            <span class="n">ACT 0</span>
+            <div class="t">What you get</div>
+            <div class="s">Before it has done anything useful, it has to be legible.</div>
+        </div>
+        <div class="cards">
+            <a class="card" href="01-first-run.html">
+                <span class="num">01</span>
+                <span class="body">
+                    <div class="t">First run — nine things, none of them in your way</div>
+                    <div class="d">The folders are built on startup, not on the first write, and each one says what it is for. Then a WebGPU check, a consent screen for the three gigabytes, and a resumable download. The biggest objection to this plugin, shown rather than buried.</div>
+                </span>
+                <span class="cmd">Download model</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- ================= ACT 1 ================= -->
+    <div class="act">
+        <div class="rail">
+            <span class="n">ACT 1</span>
+            <div class="t">A chatbot you can check</div>
+            <div class="s">Everything here works on one open note. No wiki required yet.</div>
+        </div>
+        <div class="cards">
+            <a class="card" href="02-scan.html">
+                <span class="num">02</span>
+                <span class="body">
+                    <div class="t">Scan — a pile of notes becomes a library</div>
+                    <div class="d">One model call per note, then a single review list sorted <b>low confidence first</b>. Untick what should never have become a page. Nothing is written until you press the button.</div>
+                </span>
+                <span class="cmd">Scan notes</span>
+            </a>
+            <a class="card todo" href="03-chat-note.html">
+                <span class="num">03</span>
+                <span class="body">
+                    <div class="t">This note — grounded in the file that is open<span class="soon">next</span></div>
+                    <div class="d">Streaming from a model inside Obsidian's own process. The network stays idle throughout, because there is nothing to call.</div>
+                </span>
+                <span class="cmd">Chat</span>
+            </a>
+            <a class="card todo" href="04-skills.html">
+                <span class="num">04</span>
+                <span class="body">
+                    <div class="t">Skills — drop a file in a folder, get a menu item<span class="soon">next</span></div>
+                    <div class="d">Quiz, flashcards, gap-finding, and the two that ship in <code>skills/</code>. Then a new markdown file appears in the menu on the spot. Configuration is just a note.</div>
+                </span>
+                <span class="cmd">⚡ Skills</span>
+            </a>
+            <a class="card todo" href="05-attach.html">
+                <span class="num">05</span>
+                <span class="body">
+                    <div class="t">Attach — three notes at once, as removable pills<span class="soon">next</span></div>
+                    <div class="d">The <code>+</code> button fuzzy-picks any note into the context. Same grounding rules, wider material.</div>
+                </span>
+                <span class="cmd">+ Attach</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- ================= ACT 2 ================= -->
+    <div class="act">
+        <div class="rail">
+            <span class="n">ACT 2</span>
+            <div class="t">A wiki that maintains itself</div>
+            <div class="s">Now that a library exists, it can be queried, extended, and audited.</div>
+        </div>
+        <div class="cards">
+            <a class="card todo" href="06-wiki-query.html">
+                <span class="num">06</span>
+                <span class="body">
+                    <div class="t">Wiki query — the answer comes with its receipts<span class="soon">next</span></div>
+                    <div class="d">Reads <code>index.md</code> first, loads what matched, answers only from it. The Sources row is listed by the plugin, never cited by the model. Then a question the wiki cannot answer — and it says so.</div>
+                </span>
+                <span class="cmd">Chat · Wiki</span>
+            </a>
+            <a class="card todo" href="07-save-back.html">
+                <span class="num">07</span>
+                <span class="body">
+                    <div class="t">Save back — a good answer stops being disposable<span class="soon">next</span></div>
+                    <div class="d">The reply you wanted to keep goes through the same gate and lands in <code>answers/</code>, indexed and cross-linked.</div>
+                </span>
+                <span class="cmd">Save to wiki</span>
+            </a>
+            <a class="card todo" href="08-improve.html">
+                <span class="num">08</span>
+                <span class="body">
+                    <div class="t">Improve — the only feature that writes to a raw note<span class="soon">next</span></div>
+                    <div class="d">A long Chinese note is split on headings into passes that each fit a 4096-token context, rewritten one at a time, and stitched back. Structure and typos only; the wording is yours.</div>
+                </span>
+                <span class="cmd">Improve</span>
+            </a>
+            <a class="card todo" href="09-concept-page.html">
+                <span class="num">09</span>
+                <span class="body">
+                    <div class="t">Concept page — one tag, gathered across everything<span class="soon">next</span></div>
+                    <div class="d">Pick a tag two or more pages share; the plugin writes a page above them that links down. Flat notes acquire a second storey.</div>
+                </span>
+                <span class="cmd">Concept page</span>
+            </a>
+            <a class="card todo" href="10-tag-vocab.html">
+                <span class="num">10</span>
+                <span class="body">
+                    <div class="t">Tags — a vocabulary, and a retag that respects deletions<span class="soon">next</span></div>
+                    <div class="d"><code>schema.md</code> is a note, so the rules are yours to edit. Retag proposes; a tag you deleted by hand goes on the rejected list and does not come back.</div>
+                </span>
+                <span class="cmd">Organize tags</span>
+            </a>
+            <a class="card todo" href="11-provenance.html">
+                <span class="num">11</span>
+                <span class="body">
+                    <div class="t">Provenance — the key points get checked against the note<span class="soon">next</span></div>
+                    <div class="d">Each extracted point goes back to the raw note to find the sentence it came from. The one that cannot be traced is flagged rather than quietly kept.</div>
+                </span>
+                <span class="cmd">Provenance</span>
+            </a>
+            <a class="card todo" href="12-contradictions.html">
+                <span class="num">12</span>
+                <span class="body">
+                    <div class="t">Contradictions — two pages of yours disagree<span class="soon">next</span></div>
+                    <div class="d">Recently-changed pairs are checked first. The sweep flags with the model's reason quoted, and never edits — you decide which one was wrong.</div>
+                </span>
+                <span class="cmd">Contradictions</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- ================= ACT 3 ================= -->
+    <div class="act">
+        <div class="rail">
+            <span class="n">ACT 3</span>
+            <div class="t">The loop closes</div>
+            <div class="s">The one scene that proves this is not a chat wrapper.</div>
+        </div>
+        <div class="cards">
+            <a class="card todo" href="13-loop.html">
+                <span class="num">13</span>
+                <span class="body">
+                    <div class="t">Edit the note, and watch the wiki notice<span class="soon">next</span></div>
+                    <div class="d">Change a raw note. The page's <code>source_hash</code> no longer matches, the review board reports drift, you re-ingest — and the same question you asked in scene 06 now comes back with a different answer.</div>
+                </span>
+                <span class="cmd">Review board</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="note">
+        <h3>Recording</h3>
+        <ul>
+            <li><kbd>Space</kbd><span><b>Next step.</b> <kbd style="min-width:auto;padding:1px 6px;">→</kbd> and <kbd style="min-width:auto;padding:1px 6px;">Enter</kbd> do the same; clicking anywhere also advances, which is easier on a trackpad.</span></li>
+            <li><kbd>R</kbd><span><b>Start over.</b> Every take is identical — no randomness anywhere in the scripts.</span></li>
+            <li><kbd>H</kbd><span><b>Hide the chrome</b> — hint bar, scene nav, and the narration strip. Press this before you hit record.</span></li>
+            <li><kbd>T</kbd><span>Toggle the scene title card.</span></li>
+            <li><kbd>P</kbd><span>Toggle the PROTOTYPE badge. Leave it on for anything public.</span></li>
+        </ul>
+        <div class="warn">
+            These are scripted mock-ups built for recording, not the running plugin. Layout, copy, command names,
+            folder paths and modal titles are taken from the source; the numbers are representative and no model
+            runs on this page. Nothing here is a live benchmark.
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

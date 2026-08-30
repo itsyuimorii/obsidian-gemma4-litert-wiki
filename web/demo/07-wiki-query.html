@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 02 · Wiki query — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='10' fill='%233CDA6B'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+<div class="ambient-blob blob-b"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 02 — Wiki query</div>
+    <div class="txt">The answer comes with its receipts. And when there are none, it says so.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, typeHTML, flashKeys, beat, notice, status } = GemmaDemo;
+
+/* index.md is the open file — it is the first thing the query path reads. */
+const INDEX_NOTE = `
+<h1>index</h1>
+<p class="muted">One line per page. This catalog is what the query path reads first — before any page is loaded.</p>
+<ul>
+    <li><span class="wl">[[Agent interfaces]]</span> — how pages expose callable tools to agents; identity is out of scope in every current spec.</li>
+    <li><span class="wl">[[Browser APIs]]</span> — what ships in Chromium today vs. what is behind a flag.</li>
+    <li><span class="wl">[[LiteRT on device]]</span> — running LiteRT-LM in a renderer over WebGPU; cold start is shader compilation.</li>
+    <li><span class="wl">[[WebMCP notes]]</span> — in-page tool declaration through document.modelContext, no transport.</li>
+    <li><span class="wl">[[Embedding models in the browser]]</span> — EmbeddingGemma via LiteRT.js, and why it competes for the same GPU.</li>
+    <li class="muted">…22 more</li>
+</ul>
+`;
+
+const PANEL = GW.header('index.md', { icon: 'library' })
+    + GW.messages()
+    + GW.composer('wiki', { placeholder: 'Ask your wiki… (Enter to send)' });
+
+OB.render({
+    vault: 'itsyuimorii2026',
+    tab: { name: 'index', icon: 'library' },
+    words: '27 pages',
+    tree: [
+        { name: 'research', kind: 'folder' },
+        { name: 'webmcp notes', kind: 'file', indent: 1, badge: true, id: 'webmcp' },
+        { name: 'agent interfaces', kind: 'file', indent: 1, badge: true, id: 'agentif' },
+        { name: 'litert on device', kind: 'file', indent: 1, badge: true, id: 'litert' },
+        { name: 'gemma-wiki', kind: 'folder' },
+        { name: 'index.md', kind: 'file', indent: 1, active: true, id: 'index' },
+        { name: 'log.md', kind: 'file', indent: 1, id: 'log' },
+        { name: 'Agent interfaces.md', kind: 'file', indent: 1, id: 'p-agentif' },
+        { name: 'Browser APIs.md', kind: 'file', indent: 1, id: 'p-browserapi' },
+        { name: 'LiteRT on device.md', kind: 'file', indent: 1, id: 'p-litert' },
+        { name: 'WebMCP notes.md', kind: 'file', indent: 1, id: 'p-webmcp' },
+    ],
+    editor: INDEX_NOTE,
+});
+['webmcp', 'agentif', 'litert'].forEach(OB.badge);
+
+const TRACE = `
+<div class="gw-trace" id="trace">
+    <div class="ln" id="t1"><b>1</b><span>read index.md — 27 entries</span></div>
+    <div class="ln" id="t2"><b>2</b><span>score by term overlap, stopwords dropped</span></div>
+    <div class="ln" id="t3"><b>3</b><span class="ok">load 2 pages + catalog + recent log</span></div>
+</div>`;
+
+GemmaDemo.init([
+    { do: () => {
+        beat('The wiki is 27 pages now. <code>index.md</code> is one line per page, and it is the first thing the query path reads — not an embedding store, just a catalog it can hold in context.');
+    }},
+
+    { lock: 900, do: () => {
+        beat('Open the panel from the ribbon. Two grounding modes; this scene is the <b>Wiki</b> one.');
+        OB.openRight(PANEL);
+    }},
+
+    { lock: 1600, do: () => {
+        typeHTML('#input', 'why can\'t a page tell two different agents apart?', { speed: 20 });
+        beat(null);
+    }},
+
+    { lock: 1800, do: () => {
+        $('#input').innerHTML = '<span class="ph">Ask your wiki… (Enter to send)</span>';
+        $('#messages').innerHTML =
+            `<div class="gw-msg user">why can't a page tell two different agents apart?</div>
+             <div class="gw-msg bot" id="botWrap">${TRACE}</div>`;
+        status('Reading index.md…');
+        ['t1','t2','t3'].forEach((id, i) => setTimeout(() => $('#' + id).classList.add('on'), 260 + i * 520));
+        beat('Retrieval is lexical and deterministic — you can read it. The catalog and the recent activity log always ride along, which is why “what did I add today?” also works.');
+    }},
+
+    { lock: 2200, do: () => {
+        status('Generating…');
+        const answer = document.createElement('div');
+        answer.className = 'gw-msg bot';
+        answer.id = 'ans';
+        $('#messages').appendChild(answer);
+        typeHTML(answer,
+            'Because none of the specs give it anything to tell them apart with. ' +
+            'WebMCP declares tools on the page through <code>document.modelContext</code>, and the call arrives with ' +
+            'no caller identity attached — the surface is the same no matter who is on the other end. ' +
+            'So per-agent behaviour has to be invented by the page itself: the page issues something ' +
+            'like a seat, and the agent carries it back.',
+            { speed: 13, jitter: 9, onDone: () => status(null) });
+    }},
+
+    { lock: 900, do: () => {
+        $('#ans').insertAdjacentHTML('beforeend',
+            GW.sources(['WebMCP notes', 'Agent interfaces']) + GW.actions());
+        beat('That row is not a citation the model wrote. <b>The plugin lists exactly what it put in the prompt</b>, and each chip opens the page. Getting citations wrong is the one failure a local model would never be caught at — so it is never asked to do it.');
+    }},
+
+    { lock: 1400, do: () => {
+        beat('Now ask for something the wiki does not contain.');
+        typeHTML('#input', 'what did the WebGPU spec change in the last Chrome release?', { speed: 18 });
+    }},
+
+    { lock: 1800, do: () => {
+        $('#input').innerHTML = '<span class="ph">Ask your wiki… (Enter to send)</span>';
+        $('#messages').insertAdjacentHTML('beforeend',
+            `<div class="gw-msg user">what did the WebGPU spec change in the last Chrome release?</div>`);
+        status('Reading index.md…');
+    }},
+
+    { lock: 1600, do: () => {
+        status(null);
+        const r = document.createElement('div');
+        r.className = 'gw-msg bot';
+        $('#messages').appendChild(r);
+        typeHTML(r,
+            '<div class="gw-refuse">Nothing in the wiki covers that. The closest pages ' +
+            '(<i>Browser APIs</i>, <i>LiteRT on device</i>) are about what already ships, not about ' +
+            'release-by-release spec changes — and I have no network access to check.</div>',
+            { speed: 13, jitter: 9 });
+        beat(null);
+    }},
+
+    { do: () => {
+        beat('Grounded-or-refuse, in both modes. A wiki you cannot trust is worse than no wiki, and the cheapest way to be trustworthy is to be <b>allowed to say no</b>.');
+    }},
+]);
+</script>
+</body>
+</html>
