@@ -1,11 +1,11 @@
-import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { DURATION, failureText, logNotice, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
+import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
@@ -76,6 +76,10 @@ const MIME: Record<string, string> = {
 
 const MODEL_URL =
   'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm';
+
+// Replaced with the build time by build.js. If this literal survives into
+// main.js, the bundle was produced without the stamping step.
+declare const BUILD_STAMP: string;
 
 function log(...args: unknown[]) {
   console.log('[litert-spike]', ...args);
@@ -302,6 +306,12 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Did attention leave while the current run was going? Decides whether the
   // result opens itself or waits.
   private userMovedOn = false;
+  private runStartedAt = 0;
+  // The pinned toast for the running operation, and whether the user closed
+  // it. A dismissal is respected until they ask for it back.
+  private statusNotice: Notice | null = null;
+  private runDismissed = false;
+  private tickId: number | null = null;
   private autoScanIntervalId: number | null = null;
   settings: GemmaWikiSettings = { ...DEFAULT_SETTINGS };
 
@@ -323,24 +333,67 @@ export default class LiteRtSpikePlugin extends Plugin {
   // moment. The run itself is not.
   // ---------------------------------------------------------------------
 
-  private status(text: string, announce = true) {
-    // A run STARTING is a moment, and moments are toasts. Only the ongoing
-    // detail belongs in the status bar.
+  private status(text: string) {
+    // Both surfaces, for the whole run. Two earlier attempts each fixed one
+    // half and broke the other:
     //
-    // The first version of this moved all of it to the status bar and the
-    // top-right went silent for the whole operation — which is the opposite
-    // failure to the one it was fixing: you pressed a command and nothing
-    // acknowledged it. The status bar sits at the edge of the window and is
-    // easy to miss, and a user can turn it off entirely.
+    //   A toast pinned open for the run — you cannot miss it, but clicking it
+    //   destroys it with no way back, and it does not move while the model
+    //   generates, so a frozen box reads as a hang.
     //
-    // So: pop once when the run begins, then go quiet and let the status bar
-    // carry it. Subsequent updates never open another toast.
-    const starting = this.runningText === null;
-    this.runningText = text;
-    this.renderStatusBar();
-    if (starting && announce) {
-      notify('progress', `${text} — progress in the status bar.`, DURATION.SHORT);
+    //   The status bar alone — survives everything, but the top-right went
+    //   silent for minutes, so pressing a command acknowledged nothing, and
+    //   the bar is at the edge of the window where it is easy to miss and can
+    //   be switched off entirely.
+    //
+    // So: keep the toast AND the bar, and fix what was actually wrong with
+    // the toast. It carries a running clock so it visibly moves. Dismissing
+    // it is honoured — it means "out of my way" — and the status bar is the
+    // way back: click it and the toast returns.
+    if (this.runningText === null) {
+      this.runStartedAt = Date.now();
+      this.runDismissed = false;
+      if (this.tickId === null) {
+        this.tickId = window.setInterval(() => this.paintRun(), 1000);
+        this.registerInterval(this.tickId);
+      }
     }
+    this.runningText = text;
+    this.paintRun();
+  }
+
+  /** Elapsed time, so a long generation never looks like a hang. */
+  private elapsed(): string {
+    const s = Math.floor((Date.now() - this.runStartedAt) / 1000);
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  /** Redraw both surfaces for the running operation. Called every second. */
+  private paintRun() {
+    if (this.runningText === null) return;
+    const body = mark('progress', `${this.runningText}  ·  ${this.elapsed()}`);
+    if (this.statusNotice) {
+      // Obsidian removes a dismissed Notice from the DOM. Writing to it after
+      // that is shouting into a void, and re-opening it would be overriding a
+      // decision the user just made.
+      if (this.statusNotice.noticeEl?.isConnected) {
+        this.statusNotice.setMessage(body);
+      } else {
+        this.statusNotice = null;
+        this.runDismissed = true;
+      }
+    } else if (!this.runDismissed) {
+      this.statusNotice = new Notice(body, 0);
+    }
+    this.renderStatusBar();
+  }
+
+  /** Bring back a toast the user dismissed, from the status bar. */
+  private reopenRunNotice() {
+    if (this.runningText === null) return;
+    this.runDismissed = false;
+    this.statusNotice = null;
+    this.paintRun();
   }
 
   /**
@@ -352,6 +405,13 @@ export default class LiteRtSpikePlugin extends Plugin {
    */
   private statusEnd(text?: string, kind: NoticeKind = 'done', durationMs?: number) {
     this.runningText = null;
+    if (this.tickId !== null) {
+      window.clearInterval(this.tickId);
+      this.tickId = null;
+    }
+    this.statusNotice?.hide();
+    this.statusNotice = null;
+    this.runDismissed = false;
     this.renderStatusBar();
     if (!text) return;
     notify(kind, text, durationMs);
@@ -367,8 +427,8 @@ export default class LiteRtSpikePlugin extends Plugin {
     const el = this.scanStatusEl;
     if (!el) return;
     if (this.runningText !== null) {
-      el.setText(`⏳ ${this.runningText}`);
-      el.setAttr('aria-label', `${this.runningText} — click for detail`);
+      el.setText(`⏳ ${this.runningText}  ·  ${this.elapsed()}`);
+      el.setAttr('aria-label', `${this.runningText} — click to bring the message back`);
       el.show();
       return;
     }
@@ -390,9 +450,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   /** Clicking the status bar does whatever its current state means. */
   private onStatusBarClick() {
     if (this.runningText !== null) {
-      // You looked away, the line scrolled past, you want the whole sentence.
-      // The old pinned toast could not be asked for a second time.
-      notify('progress', this.runningText, DURATION.NORMAL);
+      this.reopenRunNotice();
       return;
     }
     const parked = this.parked;
@@ -440,6 +498,13 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   async onload() {
+    // Which build is actually running. Obsidian caches a plugin's main.js
+    // until it is disabled and re-enabled, so "I rebuilt it" and "the app is
+    // running it" are two different facts — and telling them apart by
+    // watching for a notification that may or may not appear is guesswork.
+    // BUILD_STAMP is written at build time; if it does not match the file on
+    // disk, the plugin needs a toggle off and on.
+    log(`loaded — v${this.manifest.version} build ${BUILD_STAMP}`);
     await this.loadSettings();
     setWikiDir(this.settings.wikiDir);
     this.addSettingTab(new GemmaWikiSettingTab(this.app, this));
@@ -2206,7 +2271,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   private async runScanAndReview(includePrefixes: string[]) {
-    this.status('Scanning for new or changed notes…', false);
+    this.status('Scanning for new or changed notes…');
     const result = await findIngestCandidates(this.app, {
       // Manual scan ignores the quiet period (issue #42): clicking "Scan now"
       // is an explicit ask — skipping the notes you just wrote is the opposite
