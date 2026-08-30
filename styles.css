@@ -1276,3 +1276,9 @@
   gap: 8px;
   margin-top: 10px;
 }
+
+/* The scan chip while a scan is running — it is the stop control then, and
+   should not look like the thing that starts one. */
+.gemma4-chat-suggestion-running {
+  opacity: 0.85;
+}

@@ -58,11 +58,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
   // Vault listeners for the folder-state table, torn down with the pane.
   private watchers: EventRef[] = [];
 
-  // Closing the pane drops the button this callback writes to; leaving it
-  // registered would have a finishing scan poke a detached element. Same for
-  // the vault listeners below — a detached table is not worth redrawing.
+  // A detached table is not worth redrawing, so the vault listeners go.
   hide(): void {
-    this.plugin.onScanStateChange = null;
     for (const ref of this.watchers) this.app.vault.offref(ref);
     this.watchers = [];
   }
