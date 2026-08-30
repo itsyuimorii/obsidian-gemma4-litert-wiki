@@ -2355,12 +2355,11 @@ export default class LiteRtSpikePlugin extends Plugin {
       .sort((a, b) => b.count - a.count || a.path.localeCompare(b.path));
 
     return new Promise((resolve) => {
-      let answered = false;
-      const modal = new ScanFolderModal(this.app, {
+      new ScanFolderModal(this.app, {
         folders,
         preselected: configured.filter((c) => counts.has(c)),
+        onCancel: () => resolve(null),
         onConfirm: (chosen) => {
-          answered = true;
           void (async () => {
             // Remembered automatically, not behind a tick. You expect a dialog
             // to open where you left it, and the background count should watch
@@ -2371,13 +2370,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             resolve(chosen);
           })();
         },
-      });
-      const close = modal.onClose.bind(modal);
-      modal.onClose = () => {
-        close();
-        if (!answered) resolve(null);
-      };
-      modal.open();
+      }).open();
     });
   }
 
