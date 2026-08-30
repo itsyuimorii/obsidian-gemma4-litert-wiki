@@ -61,7 +61,8 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - Every model operation is **one structured ask** — no tool loops, no multi-step planning; small local models are unreliable at chaining and reliable at filling one schema.
 - Every write goes through a **preview-approve gate**. Raw notes are modified by exactly one feature (Improve), always previewed.
 - Grounded-or-refuse: the model answers from provided material or says it can't — in both modes.
-- Per-feature input budgets are derived from the configured context window, so raising it makes each call see more rather than requiring anything to be re-tuned.
+- Per-feature input budgets are derived from the context window **the engine actually granted**, read back from `Engine.create` rather than assumed from the setting — LiteRT-LM may clamp `maxNumTokens`, and every budget derived from the request would then overshoot.
+- **One notification vocabulary** (`src/notify.ts`): six kinds each with a single meaning, three durations instead of ten hand-picked numbers, and no call site choosing a millisecond count. `noop` deliberately carries no mark — a command that correctly did nothing is not an event. Failures never print a raw exception; they name the operation, give the first line of the reason, and say where the rest is. Warnings and errors are also appended to `log.md`, because a toast is not a record.
 
 ## 💬 Chat with your notes — entirely offline
 
