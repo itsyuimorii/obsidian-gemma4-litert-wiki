@@ -290,6 +290,10 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill, and save an answer back here.` + `\n` +
       `>` + `\n` +
       `> Everything else is a command: press <kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd> and type *Gemma Wiki*.` + `\n\n` +
+      `> [!info] Before it can answer anything` + `\n` +
+      `> The model is downloaded once — about 3 GB — and cached. It is not bundled with the plugin, so the first question you ask (or **Settings → Download model**) starts the download; you can keep working while it runs, and it resumes if interrupted.` + `\n` +
+      `>` + `\n` +
+      `> After that the plugin **never touches the network again**. There is no server, no API key, and no account: Gemma 4 runs inside Obsidian's own process on your GPU. Requires a desktop Obsidian with WebGPU — **Settings → [Test] Check WebGPU** confirms it in one click.` + `\n\n` +
       `## What it can do` + `\n\n` +
       `Nothing here reaches the network. Gemma 4 runs inside Obsidian on your GPU, so every command below costs GPU time rather than money, and works on a plane.` + `\n\n` +
       `> [!info] Ask` + `\n` +
@@ -324,6 +328,12 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `>` + `\n` +
       `> A long note is split on its own headings and done in several passes; you are told how many before it starts. Select a section first to aim it at just that part.` + `\n\n` +
       `## The chat panel` + `\n\n` +
+      `> [!info] Every answer ends with its Sources` + `\n` +
+      `> **The plugin lists what it put in the prompt. The model is never asked to cite anything.** Citation is exactly the thing a small local model would get wrong in a way nobody notices — an invented page name reads as well as a real one.` + `\n` +
+      `>` + `\n` +
+      `> So the Sources row under an answer is not the model's claim about where it looked. It is the plugin's record of what it sent, and every entry is clickable.` + `\n` +
+      `>` + `\n` +
+      `> If the material does not contain the answer, you get told that instead of a guess — in both modes.` + `\n\n` +
       `> [!info] Header` + `\n` +
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -342,7 +352,24 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | ${ICON_ATTACH} | Attach another note as extra context, on top of whatever the current mode already sends. |` + `\n` +
       `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. |` + `\n` +
       `> | The chips above it | One-press starting questions for the current mode. **Formatting** is marked as a write — it runs *Improve formatting*, still behind its preview. |` + `\n` +
-      `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n\n` +
+      `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n` +
+      `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
+      `> [!info] Two places it shows state outside the panel` + `\n` +
+      `> | Where | What it means |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | A small mark on a note in the file explorer | That note already has a page in \`sources/\`. Decoration only — **the note file is untouched**. |` + `\n` +
+      `> | A count in the status bar | How many pages are waiting on the review board. **Off by default**, and turning it on only *counts* — it never runs the model behind your back. |` + `\n\n` +
+      `## Settings worth knowing about` + `\n\n` +
+      `> [!info] The five that change what happens` + `\n` +
+      `> | Setting | Why you would touch it |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Context window** | How much the model holds at once. Bigger = longer notes fit whole and answers ground on more; costs GPU memory and time to the first word. **If the model fails to load or answers get worse after raising it, lower it.** Takes effect after the plugin reloads. |` + `\n` +
+      `> | **Scan these folders** | Scan looks *only* here. Leave it blank and **Scan refuses to run** rather than sweeping your whole vault — this is opt-in on purpose. |` + `\n` +
+      `> | **Stale after (days)** | How old a page gets before the review board asks you to look at it again. |` + `\n` +
+      `> | **Default chat mode** | Whether the panel opens on *This note* or *Wiki*. |` + `\n` +
+      `> | **Knowledge folder name** | Renames this folder and rewrites every internal link. Asks first. |` + `\n` +
+      `>` + `\n` +
+      `> Settings also shows a live map of this folder with a tick or *missing* per row, and a **Repair folders** button that recreates anything gone. It only ever adds.` + `\n\n` +
       `## Where things go` + `\n\n` +
       `> [!info] Folders` + `\n` +
       `> | Folder | What lands here |` + `\n` +

@@ -33,6 +33,7 @@ import {
   type ChatTurnRecord,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
+import { notify } from './notify';
 
 // Chat with the currently active note, entirely local. This is the
 // "narrow" version of Query from the wiki roadmap — grounded in one open
@@ -205,7 +206,7 @@ export class ChatView extends ItemView {
   // through the same review-gated write path as saved answers.
   private async saveConversation() {
     if (!this.turns.length) {
-      new Notice('ℹ️ Nothing to save yet — ask something first.');
+      notify('noop', 'Nothing to save yet — ask something first.');
       return;
     }
     const firstQ = this.turns.find((t) => t.role === 'user')?.content ?? 'chat';
@@ -221,7 +222,7 @@ export class ChatView extends ItemView {
         // effectively write-only.
         await upsertIndexEntry(this.app.vault, pagePath, firstQ.slice(0, 80), `Saved ${this.mode} chat: ${firstQ.slice(0, 100)}`);
         await appendLog(this.app.vault, 'chat', firstQ.slice(0, 60));
-        new Notice(`✅ Conversation saved: ${pagePath}`, 3000);
+        notify('done', `Conversation saved: ${pagePath}`);
       })();
     }).open();
   }
@@ -537,7 +538,7 @@ export class ChatView extends ItemView {
     setTooltip(copyBtn, 'Copy answer');
     copyBtn.addEventListener('click', () => {
       void navigator.clipboard.writeText(getAnswer());
-      new Notice('✅ Copied.');
+      notify('done', 'Copied.');
     });
 
     const regenBtn = actions.createEl('button', {
@@ -575,7 +576,7 @@ export class ChatView extends ItemView {
           const summary = answer.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 140) ?? question;
           await upsertIndexEntry(this.app.vault, pagePath, question, summary);
           await appendLog(this.app.vault, 'answer', question);
-          new Notice(`ℹ️ Saved to wiki: ${pagePath}`, 3000);
+          notify('done', `Saved to wiki: ${pagePath}`);
         })();
       }).open();
     });
