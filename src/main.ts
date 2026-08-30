@@ -667,113 +667,38 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.addCommand({
       id: 'litert-ingest-note',
       name: 'Ingest active note into wiki (local Gemma)',
-      callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file) {
-          notify('warn', 'Open a note first.');
-          return;
-        }
-        const content = await this.app.vault.read(file);
-        // Precheck gate (deterministic, no model call): skip empty,
-        // frontmatter-only, and unchanged notes before the 20-40s model
-        // call. "Unchanged" compares a content hash against the existing
-        // page's source_hash.
-        const pagePathForCheck = wikiPagePath(file.basename);
-        const existingHash = getIngestedSourceHashes(this.app).get(file.path);
-        const skip = precheckNote(content, existingHash);
-        if (skip === 'empty' || skip === 'frontmatter-only') {
-          notify(
-            'noop',
-            skip === 'empty' ? 'Note is empty — nothing to ingest.' : 'Note is only frontmatter — nothing to ingest.'
-          );
-          return;
-        }
-        if (skip === 'unchanged') {
-          // Not silently skipped: the note is already ingested and unchanged,
-          // but the user may want to re-ingest anyway — e.g. to regenerate its
-          // related links after the index changed, or just to refresh the page.
-          const proceed = await new Promise<boolean>((resolve) => {
-            new ConfirmModal(this.app, {
-              title: 'Already in the wiki',
-              body:
-                `"${file.basename}" is already ingested and unchanged. Re-ingest anyway? ` +
-                'This regenerates its wiki page (summary, tags, related links) and overwrites the existing one — you still review before it is written.',
-              confirmText: 'Re-ingest',
-              onResult: resolve,
-            }).open();
-          });
-          if (!proceed) return;
-        }
-        void pagePathForCheck;
-
-        // Strip web-clip boilerplate (nav menus, footers, subscribe blocks)
-        // before spending context on it — critical with a 4096-token model.
-        const cleaned = cleanClippedMarkdown(content);
-        // Clamp to the engine context (token-estimated, CJK-aware) rather
-        // than rejecting on a char count — a summary card of the first
-        // part beats nothing, and the marker tells the model the tail is
-        // missing.
-        const clamped = clampToTokens(cleaned, this.budget('ingest'));
-        if (clamped.truncated) {
-          // Same event as the chat panel's truncation message, so it says the
-          // same thing: whose limit it is, and what you can do about it. The
-          // old wording ("fits the local model context") blamed the model for
-          // a cap this plugin chose.
-          notify(
-            'warn',
-            `Only the first ~${Math.round(this.budget('ingest') / 1000)}k tokens of "${file.basename}" were ` +
-              'read — the page below is based on that much. Raise Context window in settings to read more.'
-          );
-        }
-
-        this.beginRun();
-        this.status(`Ingesting "${file.basename}"…`);
-        try {
-          const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
-            this.status(`Ingesting "${file.basename}" — ${t}`)
-          );
-          this.statusEnd();
-
-          const sourceHash = contentHash(content);
-          const pagePath = wikiPagePath(file.basename);
-          const selfLink = pagePath.replace(/\.md$/, '');
-          const candidates = (await this.liveIndexEntries()).filter(
-            (e) => e.linkPath !== selfLink
-          );
-          let related: { title: string; linkPath: string }[] = [];
-          if (candidates.length) {
-            this.status(`Ingesting "${file.basename}" — finding related pages…`);
-            related = await this.pickRelatedPages(extraction.summary, candidates);
-            this.statusEnd();
-          }
-          const pageContent = buildWikiPage(file.basename, file.path, extraction, related, sourceHash);
-          const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
-
-          const previewModal = new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
-            void (async () => {
-              await ensureWikiScaffold(this.app.vault);
-              await writeWikiPage(this.app.vault, pagePath, pageContent);
-              await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
-              const pending = await queuePendingTags(this.app.vault, extraction.tags);
-              this.notePendingGrowth(pending.before, pending.after);
-              await this.rippleConceptPages(pagePath, [...extraction.tags, ...(extraction.mentions ?? [])]);
-              await this.pruneIndex();
-              await appendLog(this.app.vault, 'ingest', file.basename);
-              this.statusEnd(`Wiki page written: ${pagePath}`);
-              this.refreshIngestBadges();
-            })();
-          });
-          this.presentResult(`"${file.basename}" is drafted — review it`, () => previewModal.open());
-        } catch (err) {
-          this.statusFail('Ingest', err);
-        }
-      },
+      callback: () => void this.ingestActiveNote(),
     });
 
     this.addCommand({
       id: 'litert-scan-ingest',
-      name: 'Scan notes for wiki (semi-automatic ingest)',
+      // Renamed from "Scan notes for wiki (semi-automatic ingest)". Nobody
+      // types "semi-automatic ingest" into a command palette — that was my
+      // word for it, not the user's. "Batch" and "folder" are what someone
+      // reaches for when they have thirty notes and do not want to file them
+      // one at a time.
+      name: 'Scan a folder into the wiki (batch, local Gemma)',
       callback: () => void this.scanAndReviewIngest(),
+    });
+
+    // Stopping used to require going back to Settings, because the only Stop
+    // control was the same button that started it. If you launched from the
+    // command palette that meant hunting through a settings pane to cancel
+    // something you started with two keystrokes.
+    //
+    // checkCallback keeps it out of the palette entirely unless a scan is
+    // actually running, so it never shows up as a command that does nothing.
+    this.addCommand({
+      id: 'litert-stop-scan',
+      name: 'Stop the running scan',
+      checkCallback: (checking: boolean) => {
+        if (!this.isScanning()) return false;
+        if (!checking) {
+          this.cancelScan();
+          notify('info', 'Stopping — the note being drafted right now will finish first.');
+        }
+        return true;
+      },
     });
 
     this.addCommand({
@@ -2242,9 +2167,115 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (this.scanRunning) this.scanCancelled = true;
   }
 
+  // File one open note as a wiki page. Extracted from the command callback
+  // so the chat panel's empty state can offer it too — the moment a user is
+  // looking straight at an empty wiki is the moment to hand them the way to
+  // fill it, and a method is reachable where a command body is not.
+  async ingestActiveNote() {
+      const file = this.app.workspace.getActiveFile();
+      if (!file) {
+        notify('warn', 'Open a note first.');
+        return;
+      }
+      const content = await this.app.vault.read(file);
+      // Precheck gate (deterministic, no model call): skip empty,
+      // frontmatter-only, and unchanged notes before the 20-40s model
+      // call. "Unchanged" compares a content hash against the existing
+      // page's source_hash.
+      const pagePathForCheck = wikiPagePath(file.basename);
+      const existingHash = getIngestedSourceHashes(this.app).get(file.path);
+      const skip = precheckNote(content, existingHash);
+      if (skip === 'empty' || skip === 'frontmatter-only') {
+        notify(
+          'noop',
+          skip === 'empty' ? 'Note is empty — nothing to ingest.' : 'Note is only frontmatter — nothing to ingest.'
+        );
+        return;
+      }
+      if (skip === 'unchanged') {
+        // Not silently skipped: the note is already ingested and unchanged,
+        // but the user may want to re-ingest anyway — e.g. to regenerate its
+        // related links after the index changed, or just to refresh the page.
+        const proceed = await new Promise<boolean>((resolve) => {
+          new ConfirmModal(this.app, {
+            title: 'Already in the wiki',
+            body:
+              `"${file.basename}" is already ingested and unchanged. Re-ingest anyway? ` +
+              'This regenerates its wiki page (summary, tags, related links) and overwrites the existing one — you still review before it is written.',
+            confirmText: 'Re-ingest',
+            onResult: resolve,
+          }).open();
+        });
+        if (!proceed) return;
+      }
+      void pagePathForCheck;
+
+      // Strip web-clip boilerplate (nav menus, footers, subscribe blocks)
+      // before spending context on it — critical with a 4096-token model.
+      const cleaned = cleanClippedMarkdown(content);
+      // Clamp to the engine context (token-estimated, CJK-aware) rather
+      // than rejecting on a char count — a summary card of the first
+      // part beats nothing, and the marker tells the model the tail is
+      // missing.
+      const clamped = clampToTokens(cleaned, this.budget('ingest'));
+      if (clamped.truncated) {
+        // Same event as the chat panel's truncation message, so it says the
+        // same thing: whose limit it is, and what you can do about it. The
+        // old wording ("fits the local model context") blamed the model for
+        // a cap this plugin chose.
+        notify(
+          'warn',
+          `Only the first ~${Math.round(this.budget('ingest') / 1000)}k tokens of "${file.basename}" were ` +
+            'read — the page below is based on that much. Raise Context window in settings to read more.'
+        );
+      }
+
+      this.beginRun();
+      this.status(`Ingesting "${file.basename}"…`);
+      try {
+        const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
+          this.status(`Ingesting "${file.basename}" — ${t}`)
+        );
+        this.statusEnd();
+
+        const sourceHash = contentHash(content);
+        const pagePath = wikiPagePath(file.basename);
+        const selfLink = pagePath.replace(/\.md$/, '');
+        const candidates = (await this.liveIndexEntries()).filter(
+          (e) => e.linkPath !== selfLink
+        );
+        let related: { title: string; linkPath: string }[] = [];
+        if (candidates.length) {
+          this.status(`Ingesting "${file.basename}" — finding related pages…`);
+          related = await this.pickRelatedPages(extraction.summary, candidates);
+          this.statusEnd();
+        }
+        const pageContent = buildWikiPage(file.basename, file.path, extraction, related, sourceHash);
+        const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
+
+        const previewModal = new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
+          void (async () => {
+            await ensureWikiScaffold(this.app.vault);
+            await writeWikiPage(this.app.vault, pagePath, pageContent);
+            await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
+            const pending = await queuePendingTags(this.app.vault, extraction.tags);
+            this.notePendingGrowth(pending.before, pending.after);
+            await this.rippleConceptPages(pagePath, [...extraction.tags, ...(extraction.mentions ?? [])]);
+            await this.pruneIndex();
+            await appendLog(this.app.vault, 'ingest', file.basename);
+            this.statusEnd(`Wiki page written: ${pagePath}`);
+            this.refreshIngestBadges();
+          })();
+        });
+        this.presentResult(`"${file.basename}" is drafted — review it`, () => previewModal.open());
+      } catch (err) {
+        this.statusFail('Ingest', err);
+      }
+  }
+
   async scanAndReviewIngest() {
     if (this.scanRunning) {
-      notify('warn', 'A scan is already running — use "Stop scan" in settings to cancel it.');
+      notify('warn', 'A scan is already running — run "Stop the running scan" to cancel it.');
       return;
     }
     // Allow-list scope (opt-in): scan only looks at the folders the user named.
@@ -2336,7 +2367,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       'progress',
       `Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each, so this takes a while. ` +
         'Close Settings and keep working: progress runs in the status bar, and the review dialog ' +
-        'waits for you there rather than interrupting. (To stop early, reopen Settings → "Stop scan".)',
+        'waits for you there rather than interrupting. (To stop early, run "Stop the running scan".)',
       DURATION.LONG
     );
     // Pages drafted earlier in THIS batch are valid link targets for later

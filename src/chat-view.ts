@@ -141,13 +141,59 @@ export class ChatView extends ItemView {
 
   private buildEmptyState() {
     this.emptyStateEl = this.messagesEl.createDiv({ cls: 'gemma4-chat-empty' });
-    const emptyIcon = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-icon' });
-    setIcon(emptyIcon, 'gemma-wiki-logo');
-    this.emptyStateEl.createDiv({
+    void this.renderEmptyState();
+  }
+
+  /**
+   * The empty state, which is the only screen a new user is guaranteed to
+   * look at.
+   *
+   * In Wiki mode with nothing ingested, the honest thing to say is "there is
+   * nothing here yet" and to offer the way out. Filling the wiki lived only
+   * in Settings and in a command called "semi-automatic ingest", so the one
+   * moment a user is looking straight at an empty wiki was the one moment
+   * nothing told them what to do about it.
+   */
+  private async renderEmptyState() {
+    const el = this.emptyStateEl;
+    if (!el) return;
+    el.empty();
+    const icon = el.createDiv({ cls: 'gemma4-chat-empty-icon' });
+    setIcon(icon, 'gemma-wiki-logo');
+
+    const wikiEmpty =
+      this.mode === 'wiki' && (await readIndexEntries(this.app.vault)).length === 0;
+
+    if (wikiEmpty) {
+      el.createDiv({ cls: 'gemma4-chat-empty-title', text: 'Your wiki is empty' });
+      el.createDiv({
+        cls: 'gemma4-chat-empty-hint',
+        text: 'Wiki mode answers from pages you have filed. File some first:',
+      });
+      const actions = el.createDiv({ cls: 'gemma4-chat-empty-actions' });
+      const batch = actions.createEl('button', {
+        cls: 'gemma4-chat-empty-action mod-cta',
+        text: 'Scan a folder',
+      });
+      setTooltip(batch, 'Draft a page for every new or changed note in the folders you named in settings');
+      batch.addEventListener('click', () => void this.plugin.scanAndReviewIngest());
+
+      const one = actions.createEl('button', { cls: 'gemma4-chat-empty-action', text: 'File this note' });
+      setTooltip(one, 'Draft one page from the note you have open');
+      one.addEventListener('click', () => void this.plugin.ingestActiveNote());
+
+      el.createDiv({
+        cls: 'gemma4-chat-empty-hint',
+        text: 'Nothing is written until you approve it. Or switch to This note above and ask about the open note right now.',
+      });
+      return;
+    }
+
+    el.createDiv({
       cls: 'gemma4-chat-empty-title',
-      text: 'Ask about the open note',
+      text: this.mode === 'wiki' ? 'Ask your wiki' : 'Ask about the open note',
     });
-    this.emptyStateEl.createDiv({
+    el.createDiv({
       cls: 'gemma4-chat-empty-hint',
       text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine.',
     });
@@ -466,6 +512,7 @@ export class ChatView extends ItemView {
     );
     this.renderSuggestions();
     this.updateNoteChip();
+    void this.renderEmptyState();
   }
 
   private updateNoteChip() {

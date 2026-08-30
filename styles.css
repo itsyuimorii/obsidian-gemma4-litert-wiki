@@ -420,6 +420,21 @@
   line-height: 1.55;
 }
 
+/* Shown only when Wiki mode has nothing to answer from — the one screen
+   where "your wiki is empty" needs to come with the way to fill it. */
+.gemma4-chat-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+
+.gemma4-chat-empty-action {
+  font-size: var(--font-ui-smaller);
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 /* ---------- Input area ---------- */
 
 .gemma4-chat-input-wrap {
