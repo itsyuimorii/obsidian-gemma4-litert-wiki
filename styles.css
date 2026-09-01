@@ -1289,3 +1289,15 @@
   margin-top: -6px;
   color: var(--text-faint);
 }
+
+/* A chip that cannot run because something else is. Not an error — the engine
+   is busy — so it recedes rather than shouting. */
+.gemma4-chat .gemma4-chat-suggestion-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gemma4-chat .gemma4-chat-suggestion-disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
