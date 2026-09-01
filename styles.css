@@ -884,11 +884,19 @@
   height: 14px;
 }
 
-/* Write-op chip: same pill, hairline emphasis so "this edits your note"
-   reads differently from ask-only chips. */
+/* Write-op chip: identical pill and identical text — the mark is a glyph.
+   It used to be a dashed border and a darker colour, which at 26px and 1px
+   read as nothing except "this label is a different font", noticed as an
+   inconsistency rather than as a meaning. An icon survives the size. */
 .gemma4-chat .gemma4-chat-suggestion-write {
-  border-style: dashed;
-  color: var(--text-normal);
+  gap: 6px;
+}
+
+.gemma4-chat .gemma4-chat-suggestion-write svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  opacity: 0.75;
 }
 
 /* ---------- Onboarding (first-run model download) ---------- */
