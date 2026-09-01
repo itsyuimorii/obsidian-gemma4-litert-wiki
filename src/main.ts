@@ -311,6 +311,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Did attention leave while the current run was going? Decides whether the
   // result opens itself or waits.
   private userMovedOn = false;
+  private chatBusy = false;
   private runStartedAt = 0;
   // The pinned toast for the running operation, and whether the user closed
   // it. A dismissal is respected until they ask for it back.
@@ -349,7 +350,21 @@ export default class LiteRtSpikePlugin extends Plugin {
    * different elapsed times for the same note.
    */
   isBusy(): boolean {
-    return this.runningText !== null || this.scanRunning;
+    return this.runningText !== null || this.scanRunning || this.chatBusy;
+  }
+
+  /**
+   * The chat panel is generating.
+   *
+   * It tracks its own busy flag for its own send button, and that flag was
+   * invisible from here — so while an answer streamed, isBusy() said no and
+   * every chip stayed live. Pressing Formatting mid-answer started a second
+   * call on the same engine, which is the thing the guard exists to stop.
+   */
+  setChatBusy(busy: boolean): void {
+    if (this.chatBusy === busy) return;
+    this.chatBusy = busy;
+    this.notifyBusyChange();
   }
 
   /**
@@ -361,7 +376,7 @@ export default class LiteRtSpikePlugin extends Plugin {
    * finish." Two dashes and a stage nobody asked about.
    */
   runningLabel(): string | null {
-    if (this.runningText === null) return null;
+    if (this.runningText === null) return this.chatBusy ? 'Answering' : null;
     return this.runningText.split(' — ')[0].replace(/[…:]\s*$/, '');
   }
 
