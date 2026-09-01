@@ -309,8 +309,7 @@ export class ChatView extends ItemView {
   /** What pressing a suggestion does — from a chip or from a message. */
   private runSuggestion(spec: SuggestionSpec) {
     if (spec.ask) {
-      this.inputEl.value = spec.ask;
-      void this.handleSend(spec.wholeWiki);
+      void this.handleSend({ text: spec.ask, wholeWiki: spec.wholeWiki });
       return;
     }
     if (spec.action === 'scan') return void this.plugin.scanAndReviewIngest();
@@ -614,21 +613,21 @@ export class ChatView extends ItemView {
               return;
             }
             item.onClick(() => {
-              // The parser trims the file, so a prompt written to end in
-              // "…explain: " arrives without its space and the cursor lands
-              // against the colon. Put it back rather than asking every skill
-              // author to notice.
-              this.inputEl.value =
-                skill.fill && /[:\-–—]$/.test(skill.prompt) ? `${skill.prompt} ` : skill.prompt;
-              this.autoGrowInput();
-              if (skill.fill) {
-                // Hand it over unsent, cursor at the end, where the blank is.
-                this.inputEl.focus();
-                const end = this.inputEl.value.length;
-                this.inputEl.setSelectionRange(end, end);
+              if (!skill.fill) {
+                void this.handleSend({ text: skill.prompt });
                 return;
               }
-              void this.handleSend();
+              // fill: true is the one case that DOES want the box — the prompt
+              // is unfinished and you are being handed the pen. The parser
+              // trims the file, so a prompt written to end in "…explain: "
+              // arrives without its space and the cursor would land against
+              // the colon; put it back rather than asking every skill author
+              // to notice.
+              this.inputEl.value = /[:\-–—]$/.test(skill.prompt) ? `${skill.prompt} ` : skill.prompt;
+              this.autoGrowInput();
+              this.inputEl.focus();
+              const end = this.inputEl.value.length;
+              this.inputEl.setSelectionRange(end, end);
             });
           });
         }
@@ -827,7 +826,16 @@ export class ChatView extends ItemView {
     this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight });
   }
 
-  private async handleSend(wholeWiki = false) {
+  /**
+   * Send a question.
+   *
+   * A canned prompt is passed in rather than staged in the input box. It used
+   * to be written there first and sent a line later, so anything that stopped
+   * the send — the busy guard, most visibly — left the prompt sitting in the
+   * box as if you had typed it and changed your mind. The box is where YOU
+   * write; it is not a transport for text the plugin already has.
+   */
+  private async handleSend(opts: { text?: string; wholeWiki?: boolean } = {}) {
     if (this.busy) return;
     // The input is the one door the greyed chips do not cover: you can type a
     // question while an Improve is running and press Enter. Same engine, same
@@ -836,14 +844,15 @@ export class ChatView extends ItemView {
       notify('warn', `Busy: ${this.plugin.runningLabel() ?? 'something is running'}. Wait for that to finish.`);
       return;
     }
-    const question = this.inputEl.value.trim();
+    const typed = opts.text === undefined;
+    const question = (opts.text ?? this.inputEl.value).trim();
     if (!question) return;
-    this.inputEl.value = '';
+    if (typed) this.inputEl.value = '';
     this.autoGrowInput();
     this.lastQuestion = question;
     this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
-    await this.runGeneration(question, false, wholeWiki);
+    await this.runGeneration(question, false, opts.wholeWiki ?? false);
   }
 
   // Builds the grounding context for one question, or returns null with a
@@ -1106,13 +1115,17 @@ export class ChatView extends ItemView {
         text: `Failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     } finally {
+      // Release first, tidy up after. The answer is fully rendered by now, so
+      // the panel LOOKS idle — but this ran `await conversation.delete()`
+      // before clearing the flags, leaving a window where a press was silently
+      // refused because a teardown nobody can see had not finished.
       this.activeConversation = null;
-      await conversation?.delete().catch(() => {});
       this.busy = false;
       this.plugin.setChatBusy(false);
       this.sendButton.disabled = false;
       this.stopButton.hide();
       this.inputEl.focus();
+      await conversation?.delete().catch(() => {});
     }
   }
 }
