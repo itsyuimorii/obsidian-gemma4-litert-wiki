@@ -970,11 +970,13 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
           'hold.\n\n' +
           'For each one, quote the exact phrase, say what is missing, and suggest the shortest ' +
           'addition that would fix it.\n\n' +
-          'If the note is clear throughout, say so plainly. Do not invent problems.',
+          'If nothing in the note would stop another reader, say so — and name the one or two ' +
+          'things that came closest, so it is clear what you looked at. Do not invent problems ' +
+          'to fill the list.',
         `> [!info] What this skill is\n` +
           `> **A legibility check on your own writing.** It finds the bits of a note that only made sense to you on the day you wrote them — the abbreviation you never expanded, the tool named with no hint of what it does, the line that assumes something the note never says.\n` +
           `>\n` +
-          `> Most useful on a fast note: a brain dump, a meeting scribble, anything written in shorthand or in more than one language.\n` +
+          `> Most useful on a fast note: a brain dump, a meeting scribble, anything written in shorthand or in more than one language. **On a note that was written carefully it will find nothing** — and will say what came closest, so you can tell it looked.\n` +
           `>\n` +
           `> | | Asks |\n` +
           `> |---|---|\n` +
