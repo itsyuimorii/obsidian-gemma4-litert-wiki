@@ -250,11 +250,24 @@ const LOG_HEADER =
 // README is documentation for the folder it sits in — none of them is a page,
 // so none of them should ever appear in lint, the review board, retag, relink
 // or the contradiction sweep.
+/**
+ * The four folders whose files are pages: things that go in `index.md` and
+ * that lint, the review board, retagging and concept clustering all iterate.
+ *
+ * An allow-list, not a deny-list. It used to be "anything under the wiki
+ * folder except index, log, schema and READMEs", which quietly counted every
+ * file in `skills/` as a page — lint reported each one as an orphan, and the
+ * review board offered to refresh a prompt for going stale. A deny-list is
+ * also wrong for every folder added later, which would each have to remember
+ * to exclude themselves.
+ */
+function pageDirs(): string[] {
+  return [wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir()];
+}
+
 export function isWikiPage(file: { path: string; basename: string }): boolean {
-  if (!file.path.startsWith(`${_wikiDir}/`)) return false;
-  if (file.path === indexPath() || file.path === logPath() || file.path === schemaPath()) return false;
   if (file.basename.toLowerCase() === 'readme') return false;
-  return true;
+  return pageDirs().some((dir) => file.path.startsWith(`${dir}/`));
 }
 
 export function wikiScaffoldPaths(): { path: string; what: string }[] {
@@ -832,6 +845,21 @@ export interface WikiSkill {
    * careful wording that a hand-typed question would lose.
    */
   fill?: boolean;
+  /**
+   * Put the answer in a file instead of the chat.
+   *
+   * The value is a folder name under the wiki folder. This is the line
+   * between a saved prompt and a tool: everything else here answers into the
+   * conversation and leaves you to save it by hand, which is wrong for the
+   * skills whose output IS an artifact — a set of flashcards is something you
+   * take away, not something you read once and scroll past.
+   *
+   * The write goes through the same preview-approve gate as everything else,
+   * and the folder is deliberately not one of the four page folders, so the
+   * result is never indexed, retrieved or flagged as stale. It is yours to
+   * use, not more material for the wiki to reason about.
+   */
+  writes?: string;
 }
 
 // A skill file is `key: value` frontmatter between --- fences, then the prompt
@@ -880,6 +908,7 @@ function parseSkillFile(name: string, content: string): WikiSkill | null {
     prompt,
     mode,
     fill: front.fill === 'true',
+    writes: front.writes ? front.writes.replace(/^\/+|\/+$/g, '') || undefined : undefined,
   };
 }
 
@@ -907,9 +936,11 @@ function buildSkillFile(
   mode: 'note' | 'wiki' | undefined,
   prompt: string,
   doc?: string,
-  fill = false
+  fill = false,
+  writes?: string
 ): string {
-  const modeLine = (mode ? `mode: ${mode}\n` : '') + (fill ? 'fill: true\n' : '');
+  const modeLine =
+    (mode ? `mode: ${mode}\n` : '') + (fill ? 'fill: true\n' : '') + (writes ? `writes: ${writes}\n` : '');
   // The callout goes above the prompt so the file reads as documentation first;
   // stripCalloutBlocks() removes it again on the way to the model.
   const docBlock = doc ? `${doc}\n\n` : '';
@@ -938,6 +969,7 @@ const SKILLS_README =
   `> | \`icon\` | Any Obsidian (Lucide) icon name. Defaults to \`wand-2\`. |\n` +
   `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, the skill is **shown greyed unless the panel is already in that mode** — it will not switch you into it, because a menu item should not quietly change what the panel is grounded in. Leave it out and the skill runs in whichever mode you are in. |\n` +
   `> | \`fill\` | Optional, \`true\`. Puts the prompt in the input box and waits instead of sending it — for a skill that has to be aimed at something. End the prompt with the blank and the cursor lands there. |\n` +
+  `> | \`writes\` | Optional, a folder name. **The answer becomes a file instead of a chat message**: \`writes: flashcards\` puts it in \`flashcards/<note>.md\`, behind the same preview you approve. For a skill whose output is something you take away rather than read once. |\n` +
   `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
   `> [!info] The three that are not files\n` +
   `> The ⚡ menu also holds **Quiz**, **Flashcards** and **Find gaps**, which ship inside the plugin rather than as files — so this folder will always show fewer things than the menu does. They cannot be edited or deleted; copy one into a file here if you want your own version of it.\n` +
@@ -955,8 +987,14 @@ const SKILLS_README =
       `> The two files that ship here carry a \`stamp:\` line in their frontmatter. **Leave it alone and the plugin keeps the file current when a release improves it; edit anything in the file and it is yours, permanently.** Deleting the stamp opts out too.\n` +
   `>\n` +
   `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
+  `> [!info] Where the answer goes\n` +
+  `> By default into the chat, where you can read it and save it by hand.\n` +
+  `>\n` +
+  `> With \`writes:\`, into a file instead — one ask, one preview, one write, and the thread is never touched. **Shipped this way: Flashcards**, which lands in \`flashcards/\`.\n` +
+  `>\n` +
+  `> That folder is deliberately not one of the four page folders, so what a skill writes is **never indexed, retrieved, or flagged as stale**. It is yours to use, not more material for the wiki to reason about.\n\n` +
   `> [!info] What a skill is not\n` +
-  `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools.\n` +
+  `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools. Calling it a skill is generous: it is a saved prompt with a menu entry, plus somewhere for the answer to land.\n` +
   `>\n` +
   `> Files named \`README\` (this one) are ignored.\n`;
 
