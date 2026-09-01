@@ -29,6 +29,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - **Scan (semi-automatic ingest)** — sweep the folders you named for new or changed notes, draft a card for each, and review them all in one list **sorted low-confidence first**, so the pages most in need of a human eye are the ones you read first. Untick anything that should not have become a page. Opt-in by scope: leave the folder list blank and scan refuses to run rather than sweeping your vault.
 - **index.md / log.md** — a one-line-per-page catalog the query path reads first, and an append-only, grep-friendly activity log.
 - **Query (Wiki mode)** — index-first retrieval with stopword filtering; the catalog and recent log always ride along, so meta-questions ("what did I add today?") work; answers are grounded only in retrieved material with honest refusals otherwise.
+- **Whole-wiki questions ground in every page**, not in the ones that lexically match. *"What connects my pages"* is about the shape of the collection, so scoring it against page summaries matches nothing — the words in the question appear in no summary — and the model is handed zero pages and correctly reports it was given none. The two chips that ask this kind of question carry the flag; `loadPages` fills to the budget and stops.
 - **Save answers back** — every reply has a save-to-wiki action (same review gate), so explorations compound instead of vanishing with the chat. Whole conversations can be archived to `chats/`.
 - **Concept pages** — pick a tag or mention two or more pages share, and the plugin writes a page *above* them that links down into each one. Ingest ripples into them, and member lists self-heal in both directions.
 
@@ -44,7 +45,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 **Config as notes** — the rules live as plain markdown you can read, edit and version:
 
 - **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. *Organize tags* has local Gemma merge near-synonyms into one vocabulary; *Retag* applies it to existing pages, both behind a preview.
-- **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. Ships with a README and two examples.
+- **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. `fill: true` puts the prompt in the input box and waits rather than sending, for a skill that has to be aimed at something. **`writes: <folder>` makes the answer a file instead of a chat message** — one ask, one preview, one write, landing outside the four page folders so it is never indexed or flagged stale. *Flashcards* ships that way, because a set of flashcards is something you take away, not something you read once and scroll past. Ships with a README and two examples, which carry a `stamp:` hash so a later release can improve them **unless you have edited the file**, in which case it is yours forever.
 - **Every folder has a README** explaining what belongs in it, and the layout is shown in Settings with per-row state, generated from the same list the scaffold builds from.
 
 **Chat panel** — shadcn-inspired monochrome, theme-variable driven:
@@ -52,40 +53,44 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - **Two grounding modes**: *This note* (the open file) and *Wiki* (your ingested pages).
 - **Deterministic Sources row** on every answer — the plugin lists exactly what was used, clickable; citation is never left to the model.
 - **`+` attachments** — fuzzy-pick any notes as removable context pills, in either mode.
-- **⚡ Skills** — canned single-task prompts: quiz, flashcards, gap-finding, recent-activity digest (auto-switches to Wiki mode), plus anything in `skills/`.
+- **⚡ Skills** — canned single-task prompts: *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Unclear bits* as editable files, plus anything else in `skills/`. A skill file is frontmatter and a prompt, so the menu holds *questions*; anything that **does** something (scan, file a note, reformat one) is a chip above the input instead.
+- **Skills declare the mode they need, and are greyed when it is the wrong one** rather than switching you into it — a menu item should not quietly change what the panel is grounded in. All the shipped ones are note-scoped, because in Wiki mode they retrieved nothing: the lexical scorer matches prompt words against page summaries, and *"create practice questions from this material"* shares no vocabulary with a page about compound interest.
 - **✨ Improve formatting** — the one write action on raw notes, and the most constrained call in the plugin: structure/formatting/typos only, wording and voice preserved, full-result preview before anything is written. Long notes are split on headings and blank lines into passes that each fit the context window, rewritten one pass at a time and stitched back together; a selection still narrows it to one section.
-- Streaming replies with a typing spinner, stop button, copy/regenerate actions, persistent starter chips, auto-growing + expandable input, clear-chat, hover tooltips everywhere.
+- **Three fixed chips above the input**, the one part of the panel that never disappears. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* — and the first becomes **Stop scan** while a scan is running, including one started from the command palette. They do not rearrange themselves when the wiki is empty: asking a wiki question with nothing filed answers "there is nothing here" and **that answer carries the buttons to fix it**, so the remedy travels with the problem instead of hiding the other chips from the person still working out what this does.
+- Streaming replies with a typing spinner, stop button, copy/regenerate actions, auto-growing + expandable input, clear-chat, hover tooltips everywhere.
 
 **Engineering rules the whole plugin follows**:
 
 - Every model operation is **one structured ask** — no tool loops, no multi-step planning; small local models are unreliable at chaining and reliable at filling one schema.
+- **One operation at a time.** There is one engine, one status line and one clock, so starting a second is refused with a message naming what is already running — and every door it could come through closes while one runs: the chips grey, the skills menu greys with a line saying what is busy, and the chat input refuses. A streaming answer counts as an operation, which it did not at first, so pressing *Formatting* mid-answer used to start a second call on the same GPU.
 - Every write goes through a **preview-approve gate**. Raw notes are modified by exactly one feature (Improve), always previewed.
-- Grounded-or-refuse: the model answers from provided material or says it can't — in both modes.
-- Per-feature input budgets are derived from the configured context window, so raising it makes each call see more rather than requiring anything to be re-tuned.
+- Grounded-or-refuse: the model answers from provided material or says it can't — in both modes. The grounding prompt separates three cases, because collapsing them is how a small model produces confidently wrong refusals: a **question** the material does not answer (say so), an **instruction** to work with it (carry it out — asked for flashcards it used to go looking for flashcards *inside* the note and refuse), and a **request it cannot parse** (say it did not follow, and ask again). The third matters most: a fragment used to come back as *"I do not have information regarding X in the provided notes"*, which implies the notes might have had it when the truth is the model did not understand the question.
+- Per-feature input budgets are derived from the context window **the engine actually granted**, read back from `Engine.create` rather than assumed from the setting — LiteRT-LM may clamp `maxNumTokens`, and every budget derived from the request would then overshoot.
+- **One notification vocabulary** (`src/notify.ts`): six kinds each with a single meaning, three durations instead of ten hand-picked numbers, and no call site choosing a millisecond count. `noop` deliberately carries no mark — a command that correctly did nothing is not an event. Failures never print a raw exception; they name the operation, give the first line of the reason, and say where the rest is. Warnings and errors are also appended to `log.md`, because a toast is not a record.
+- **Three surfaces, one job each.** A toast is a *moment*, so it reports starts and results. A run is not a moment: progress lives in the status bar, which is always visible, never covers the note, cannot be dismissed by accident, and can be clicked to repeat itself. And a result dialog **only opens by itself if you never looked away** — if you went back to your notes while a multi-minute scan ran, it waits on the status bar until you ask for it, rather than stealing the window out from under whatever you were typing.
 
 ## 💬 Chat with your notes — entirely offline
 
-Click the message-circle ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
+Click the book-and-spark ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
 
 - **This note** — answers strictly from the currently open note.
 - **Wiki** — the Karpathy Query path: reads the `gemma-wiki/index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
 
-Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), honest refusals when the material doesn't contain the answer, and per-message **copy / regenerate / save-to-wiki** actions. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (quiz, flashcards, gap-finding, recent-activity digest) against the current grounding.
+Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), honest refusals when the material doesn't contain the answer, and per-message **copy / regenerate / save-to-wiki** actions. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (*Quiz*, *Flashcards*, *Find gaps*) against the open note.
 
 ## 📑 Contents
 
-- [🧠 Gemma 4 LiteRT Wiki for Obsidian](#-gemma-4-litert-wiki-for-obsidian)
-  - [� Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
-  - [📑 Contents](#-contents)
-  - [🤔 Why this exists](#-why-this-exists)
-  - [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
-  - [📋 Requirements](#-requirements)
-  - [⌨️ Current commands](#️-current-commands)
-  - [🔧 How it works](#-how-it-works)
-  - [📊 Benchmarks](#-benchmarks)
-  - [🗺️ Roadmap](#️-roadmap)
-  - [🔒 Privacy](#-privacy)
-  - [💖 Credits](#-credits)
+- [✨ Features at a glance](#-features-at-a-glance)
+- [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
+- [🤔 Why this exists](#-why-this-exists)
+- [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
+- [📋 Requirements](#-requirements)
+- [⌨️ Current commands](#️-current-commands)
+- [🔧 How it works](#-how-it-works)
+- [📊 Benchmarks](#-benchmarks)
+- [🗺️ Roadmap](#️-roadmap)
+- [🔒 Privacy](#-privacy)
+- [💖 Credits](#-credits)
 
 ## 🤔 Why this exists
 
@@ -125,17 +130,57 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 
 ## ⌨️ Current commands
 
+All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) under *Gemma Wiki*.
+
+**Ask**
+
 | Command | What it does |
 |---|---|
-| **Chat with active note (local Gemma)** | Opens the chat panel — This-note / Wiki modes, attachments, skills, save-to-wiki. See [above](#-chat-with-your-notes--entirely-offline). |
-| **Ingest active note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3-5 key points, confidence) plus a related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a small badge in the file explorer. |
-| **Relink wiki pages (fill missing Related sections)** | Backfills cross-links on pages ingested before related-links existed, through one aggregated review modal. |
-| **Lint wiki (orphans and index health)** | Model-free report: orphan pages, index entries pointing at missing files, pages missing from the index. |
-| **LiteRT spike: check WebGPU** | Debug: confirms a usable WebGPU adapter is available. |
-| **LiteRT spike: load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without downloading the model — isolates runtime issues from model issues. |
-| **LiteRT spike: download Gemma 4 E4B model (one-time, ~3GB)** | Downloads and caches the model; shows live progress. |
-| **LiteRT spike: fix grammar of selection** | Runs a real generation on the selected text and replaces it with a grammar-corrected version, logging prefill/decode speed and time-to-first-token to the console. |
-| **LiteRT spike: JSON reliability test (5 runs)** | Runs 5 independent structured-JSON-output generations against the selection and reports a pass rate — this is the risk test for whether the model can reliably drive an ingest pipeline. |
+| **Chat with active note (local Gemma)** | Opens the chat panel — This-note / Wiki modes, `+` attachments, ⚡ skills, save-to-wiki. See [above](#-chat-with-your-notes--entirely-offline). |
+
+**File notes into the wiki**
+
+| Command | What it does |
+|---|---|
+| **Ingest this note into wiki (local Gemma)** | One strict JSON extraction (summary, 3 tags, 3–5 key points, salient mentions, self-rated confidence) plus a validated related-pages pick from the index — previewed in a review modal, written only on approval. Raw notes are never modified; ingested notes get a badge in the file explorer. |
+| **Scan a folder into the wiki (batch, local Gemma)** | The same extraction across whole folders, for new or changed notes only. Opens a dialog that **counts what each folder holds and estimates the run time before you commit**, remembers your last pick, drafts everything first, then shows one review list **sorted low-confidence first**. Scope is opt-in: it never sweeps the vault without you ticking a folder. |
+| **Stop the running scan** | Only in the palette while a scan is running; the *Scan a folder* chip becomes *Stop scan* at the same time. A model call cannot be interrupted, so **the note in flight finishes and is kept** — everything drafted so far still goes to the review list, and the rest is offered on the next scan. Stopping never loses work and never writes anything. |
+| **Suggest tags & links for active note (local Gemma)** | Proposes frontmatter tags and links to related wiki pages for one note, behind a preview. |
+
+**Build the layer above**
+
+| Command | What it does |
+|---|---|
+| **Build a concept page from a tag or mention (local Gemma)** | Pick a tag or mention two or more pages share; writes a page *above* them that links down into each. Member lists self-heal in both directions. |
+| **Relink wiki pages (fill or re-sync Related sections)** | Backfills or refreshes cross-links on existing pages through one aggregated review modal. |
+| **Organize tags (schema.md, local Gemma)** | Folds every tag your ingests produced into one vocabulary in `schema.md`, honouring the rejected list. |
+| **Retag wiki pages to vocabulary (local Gemma)** | Rewrites existing pages onto that vocabulary so near-duplicates collapse. Preview before writing. |
+
+**Keep it honest**
+
+| Command | What it does |
+|---|---|
+| **Review board (low-confidence, drifted, and stale pages)** | One queue for the three ways a page goes bad: low self-rated confidence, source drift caught by `source_hash`, and staleness. |
+| **Find contradictions in wiki (local Gemma)** | Checks pages sharing a tag for claims that disagree, recently-changed pairs first. Flags with the reason quoted and **never edits**. |
+| **Provenance spot-check (local Gemma)** | Traces each key point on a page back to a sentence in the raw note, and flags what cannot be traced. |
+| **Lint wiki (orphans and index health)** | Model-free: orphan pages, index entries pointing at missing files, pages missing from the index. |
+| **Reconcile wiki (drop links to deleted pages)** | Drops index entries and cross-links pointing at pages you deleted. |
+
+**Write into your own note — the only one that does**
+
+| Command | What it does |
+|---|---|
+| **Improve formatting of active note (local Gemma)** | Structure, lists and typos only; wording and voice preserved. Long notes are split on headings and blank lines into passes that each fit the context window, rewritten one pass at a time and stitched back byte-exactly; you are told the pass count before it starts. A selection narrows it to one section. Full-result preview before anything is written. |
+
+**Setup and diagnostics**
+
+| Command | What it does |
+|---|---|
+| **Download model (one-time, ~3GB)** | Downloads and caches the model with live progress, instead of waiting for the first command to trigger it. |
+| **[Test] Check WebGPU** | Confirms a usable WebGPU adapter is available. *(The four `[Test]` commands are hidden unless Settings → Model → Developer commands is on.)* |
+| **[Test] Load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without the model — isolates runtime issues from model issues. |
+| **[Test] Fix grammar of selection** | Runs a real generation on the selection, logging prefill/decode speed and time-to-first-token to the console. |
+| **[Test] JSON reliability test (5 runs)** | Five independent structured-JSON generations against the selection, reported as a pass rate — the risk test for whether the model can reliably drive the ingest pipeline. |
 
 ## 🔧 How it works
 

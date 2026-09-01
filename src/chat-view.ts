@@ -4,7 +4,6 @@ import {
   ItemView,
   Menu,
   MarkdownRenderer,
-  Notice,
   setIcon,
   setTooltip,
   TFile,
@@ -33,6 +32,7 @@ import {
   type ChatTurnRecord,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
+import { notify } from './notify';
 
 // Chat with the currently active note, entirely local. This is the
 // "narrow" version of Query from the wiki roadmap — grounded in one open
@@ -81,6 +81,91 @@ export const VIEW_TYPE_CHAT = 'gemma4-litert-wiki-chat-view';
 // context window (settings) minus room for the answer and instructions.
 // Token-estimated (CJK-aware), not char-counted.
 
+/** One chip above the input: a label, and what pressing it does. */
+export interface SuggestionSpec {
+  label: string;
+  /** What to send, for the chips that ask a question. */
+  ask?: string;
+  /** A non-question action: scan, file a note, reformat one. Styled as a write. */
+  action?: 'scan' | 'ingest' | 'improve';
+  /**
+   * Ground in every page rather than the ones that lexically match.
+   *
+   * There are two kinds of wiki question and only one of them is served by
+   * retrieval. "What did I conclude about X" wants the pages about X. "What
+   * connects my pages" wants breadth, and scoring it against page summaries
+   * finds nothing at all — the words in the question (connections, themes,
+   * gaps, pages) appear in no summary, so zero pages come back and the model
+   * correctly reports that it was given none.
+   */
+  wholeWiki?: boolean;
+}
+
+/**
+ * Which chips belong above the input, given the mode and whether the wiki
+ * holds anything.
+ *
+ * Pulled out as a pure function because the bug this fixes lives entirely in
+ * this decision, not in the rendering: with an empty wiki, every one of the
+ * three wiki-mode questions is guaranteed to fail. The panel was inviting the
+ * user to do something that could not work, three times over, and answering
+ * each with the same refusal.
+ *
+ * This row is also the only part of the panel that never disappears — the
+ * empty state that used to carry "Scan a folder" is about an empty
+ * CONVERSATION, and vanishes the moment you send anything, while an empty
+ * WIKI stays empty until you file something. Two different emptinesses; the
+ * remedy belongs to the one that persists.
+ */
+export function suggestionsFor(mode: 'note' | 'wiki'): SuggestionSpec[] {
+  if (mode === 'note') {
+    // "Key points" went: it and "Summarize" are the same operation in two
+    // layouts, and they were two of the three slots. The freed slot goes to
+    // the action that was missing entirely — This-note mode had no way to put
+    // the note you are looking at into the wiki, even though actions can ONLY
+    // live in this row and that one is the plugin's core loop.
+    return [
+      { label: 'Summarize', ask: 'Summarize this note' },
+      { label: 'Formatting', action: 'improve' },
+      { label: 'Ingest this note into wiki', action: 'ingest' },
+    ];
+  }
+  // Three, fixed, and the same whatever state the wiki is in.
+  //
+  // An earlier version swapped these out for "Scan a folder / File this note"
+  // when nothing was filed yet. It meant the row you learned was not the row
+  // you kept, and it hid Find connections from the person most likely to be
+  // wondering what this thing does. Asking a wiki question against an empty
+  // wiki now simply answers "there is nothing here", and that answer carries
+  // the buttons to fix it — the remedy travels with the problem instead of
+  // rearranging the furniture in advance.
+  //
+  // Three because the row is permanent screen space and a fourth wraps on a
+  // narrow panel. Scan takes one because it is an action, and a skill file is
+  // frontmatter plus a prompt with no way to express "do this". The other two
+  // are the questions whose answers are not already sitting in a file you
+  // could open — which is what ruled out "What's in my wiki?" (index.md) and
+  // "Added recently" (log.md, and it duplicated a skills-menu entry).
+  return [
+    { label: 'Scan a folder', action: 'scan' },
+    {
+      label: 'Find connections',
+      ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
+      wholeWiki: true,
+    },
+    {
+      label: "What's still open?",
+      // Wiki-wide, which is what separates it from the "Find gaps" skill:
+      // that one looks for holes in whatever the chat is grounded in right
+      // now, this one looks across everything filed.
+      ask:
+        'What questions do my pages raise but never answer? List the gaps and why each ' +
+        'matters. Cite the pages.',
+      wholeWiki: true,
+    },
+  ];
+}
+
 export class ChatView extends ItemView {
   private plugin: LiteRtSpikePlugin;
   private messagesEl!: HTMLElement;
@@ -94,6 +179,11 @@ export class ChatView extends ItemView {
   private lastQuestion: string | null = null;
   private activeConversation: Conversation | null = null;
   private mode: 'note' | 'wiki' = 'note'; // overwritten from settings in onOpen
+  // Whether the wiki holds any pages. Cached, because the chips are drawn
+  // synchronously and metadataCache fires 'resolved' constantly — reading
+  // index.md on every one of those would be a file read per keystroke-ish
+  // event for a boolean that changes about once.
+  private wikiEmpty = true;
   private modeButtons: { note: HTMLElement; wiki: HTMLElement } | null = null;
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
@@ -141,13 +231,73 @@ export class ChatView extends ItemView {
 
   private buildEmptyState() {
     this.emptyStateEl = this.messagesEl.createDiv({ cls: 'gemma4-chat-empty' });
-    const emptyIcon = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-icon' });
-    setIcon(emptyIcon, 'gemma-wiki-logo');
-    this.emptyStateEl.createDiv({
+    void this.renderEmptyState();
+  }
+
+  /**
+   * The empty state, which is the only screen a new user is guaranteed to
+   * look at.
+   *
+   * In Wiki mode with nothing ingested, the honest thing to say is "there is
+   * nothing here yet" and to offer the way out. Filling the wiki lived only
+   * in Settings and in a command called "semi-automatic ingest", so the one
+   * moment a user is looking straight at an empty wiki was the one moment
+   * nothing told them what to do about it.
+   */
+  /**
+   * Re-read whether the wiki holds anything, and redraw only if that changed.
+   *
+   * metadataCache fires 'resolved' constantly, and this is behind a file read,
+   * so the guard is the point: without it every resolve would re-read
+   * index.md to re-answer a boolean that flips roughly once in the life of a
+   * vault.
+   */
+  private async refreshWikiEmpty(): Promise<void> {
+    let empty = true;
+    try {
+      empty = (await readIndexEntries(this.app.vault)).length === 0;
+    } catch {
+      empty = this.wikiEmpty;
+    }
+    if (empty === this.wikiEmpty) return;
+    this.wikiEmpty = empty;
+    this.renderSuggestions();
+    void this.renderEmptyState();
+  }
+
+  private async renderEmptyState() {
+    const el = this.emptyStateEl;
+    if (!el) return;
+    el.empty();
+    const icon = el.createDiv({ cls: 'gemma4-chat-empty-icon' });
+    setIcon(icon, 'gemma-wiki-logo');
+
+    // Kept, because knowing the wiki is empty before you ask is worth a file
+    // read. Not kept: the two buttons that used to be here. The chip row above
+    // the input carries Scan permanently now, and a screen with the same two
+    // buttons twice is a screen that has not decided where they live.
+    if (this.mode === 'wiki' && this.wikiEmpty) {
+      el.createDiv({ cls: 'gemma4-chat-empty-title', text: 'Your wiki is empty' });
+      el.createDiv({
+        cls: 'gemma4-chat-empty-hint',
+        text:
+          'Wiki mode answers from pages you have filed here, and nothing is filed yet. ' +
+          'Press Scan a folder below to fill it.',
+      });
+      el.createDiv({
+        cls: 'gemma4-chat-empty-hint',
+        text:
+          'Or switch to This note above and ask about the note you have open right now — that ' +
+          'needs no setup at all.',
+      });
+      return;
+    }
+
+    el.createDiv({
       cls: 'gemma4-chat-empty-title',
-      text: 'Ask about the open note',
+      text: this.mode === 'wiki' ? 'Ask your wiki' : 'Ask about the open note',
     });
-    this.emptyStateEl.createDiv({
+    el.createDiv({
       cls: 'gemma4-chat-empty-hint',
       text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine.',
     });
@@ -156,47 +306,70 @@ export class ChatView extends ItemView {
   // Suggestion chips live above the input, permanently — they used to sit
   // in the empty state and vanished after the first question. Note-mode
   // only: canned wiki-mode questions would fight the lexical retrieval.
+  /** What pressing a suggestion does — from a chip or from a message. */
+  private runSuggestion(spec: SuggestionSpec) {
+    if (spec.ask) {
+      void this.handleSend({ text: spec.ask, wholeWiki: spec.wholeWiki });
+      return;
+    }
+    if (spec.action === 'scan') return void this.plugin.scanAndReviewIngest();
+    if (spec.action === 'ingest') return void this.plugin.ingestActiveNote();
+    void this.plugin.improveActiveNote();
+  }
+
   private renderSuggestions() {
     if (!this.suggestionRow) return;
     this.suggestionRow.empty();
     this.suggestionRow.show();
-    // Short labels; the full question lives in the prompt. Chips swap per
-    // mode instead of hiding — wiki mode gets prompts that are reliable
-    // against catalog+log grounding. The Improve write op routes straight
-    // to the preview-gated editor and never enters retrieval.
-    const ask = (q: string) => {
-      this.inputEl.value = q;
-      void this.handleSend();
+    // Short labels; the full question lives in the prompt. What belongs here
+    // is decided by suggestionsFor(); this only draws it.
+    // The one thing that separates a chip that ASKS from a chip that DOES.
+    // Same pill, same text colour; the glyph carries it.
+    const ACTION_ICON: Record<string, string> = {
+      scan: 'folder-search',
+      ingest: 'file-plus-2',
+      improve: 'wand-2',
     };
-    const items: { label: string; run: () => void; write?: boolean }[] =
-      this.mode === 'note'
-        ? [
-            { label: 'Summarize', run: () => ask('Summarize this note') },
-            { label: 'Key points', run: () => ask('What are the key points?') },
-            { label: 'Formatting', write: true, run: () => void this.plugin.improveActiveNote() },
-          ]
-        : [
-            {
-              label: "What's in my wiki?",
-              run: () => ask('What is in my wiki? Give a short overview grouped by topic.'),
-            },
-            {
-              label: 'Added recently',
-              run: () => ask('What did I add to the wiki recently, based on the activity log?'),
-            },
-            {
-              label: 'Find connections',
-              run: () =>
-                ask('What connections or common themes link the pages in my wiki? Cite the pages.'),
-            },
-          ];
-    for (const item of items) {
+    const TIP: Record<string, string> = {
+      scan: 'Pick folders, see how many notes each holds, then draft a page for each',
+      ingest: 'Draft one wiki page from the note you have open — you review it before anything is written',
+      improve: 'Edits this note — you review before anything is written',
+    };
+    const scanning = this.plugin.isScanning();
+    // Something else is already spending the engine. Rather than let you press
+    // a button and be told no, take the button away — the only version of this
+    // that needs no words. The scan chip is the exception, and only because it
+    // turns into the stop control; every other chip greys, including during a
+    // scan, where they used to stay lit and then refuse.
+    const busy = this.plugin.isBusy();
+    for (const spec of suggestionsFor(this.mode)) {
+      // The scan chip doubles as the stop control while a scan runs. Pressing
+      // it and getting "a scan is already running — use the other command" was
+      // the button refusing to be the thing it obviously is.
+      const isScanChip = spec.action === 'scan';
+      const label = isScanChip && scanning ? 'Stop scan' : spec.label;
       const chip = this.suggestionRow.createEl('button', {
-        cls: item.write ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
-        text: item.label,
+        cls: spec.action ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
       });
-      if (item.write) setTooltip(chip, 'Edits this note — you review before anything is written');
-      chip.addEventListener('click', item.run);
+      if (spec.action) setIcon(chip.createSpan(), isScanChip && scanning ? 'square' : ACTION_ICON[spec.action]);
+      chip.createSpan({ text: label });
+      if (isScanChip && scanning) {
+        chip.addClass('gemma4-chat-suggestion-running');
+        setTooltip(chip, 'Stop after the note being drafted right now finishes');
+        chip.addEventListener('click', () => {
+          this.plugin.cancelScan();
+          notify('info', 'Stopping — the note being drafted right now will finish first.');
+        });
+        continue;
+      }
+      if (busy) {
+        chip.disabled = true;
+        chip.addClass('gemma4-chat-suggestion-disabled');
+        setTooltip(chip, `Busy: ${this.plugin.runningLabel() ?? 'something is running'}`);
+        continue;
+      }
+      if (spec.action) setTooltip(chip, TIP[spec.action]);
+      chip.addEventListener('click', () => this.runSuggestion(spec));
     }
   }
 
@@ -205,7 +378,7 @@ export class ChatView extends ItemView {
   // through the same review-gated write path as saved answers.
   private async saveConversation() {
     if (!this.turns.length) {
-      new Notice('ℹ️ Nothing to save yet — ask something first.');
+      notify('noop', 'Nothing to save yet — ask something first.');
       return;
     }
     const firstQ = this.turns.find((t) => t.role === 'user')?.content ?? 'chat';
@@ -221,7 +394,7 @@ export class ChatView extends ItemView {
         // effectively write-only.
         await upsertIndexEntry(this.app.vault, pagePath, firstQ.slice(0, 80), `Saved ${this.mode} chat: ${firstQ.slice(0, 100)}`);
         await appendLog(this.app.vault, 'chat', firstQ.slice(0, 60));
-        new Notice(`✅ Conversation saved: ${pagePath}`, 3000);
+        notify('done', `Conversation saved: ${pagePath}`);
       })();
     }).open();
   }
@@ -258,6 +431,18 @@ export class ChatView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: LiteRtSpikePlugin) {
     super(leaf);
     this.plugin = plugin;
+  }
+
+  /**
+   * Closing the panel mid-answer must not leave the plugin marked busy.
+   *
+   * chatBusy is cleared in a finally, but that finally belongs to a generation
+   * whose view is gone; a panel closed while streaming would otherwise leave
+   * every chip and command disabled with nothing left to finish and clear it.
+   */
+  async onClose(): Promise<void> {
+    this.activeConversation?.cancel();
+    this.plugin.setChatBusy(false);
   }
 
   getViewType(): string {
@@ -361,17 +546,33 @@ export class ChatView extends ItemView {
     });
     setIcon(skillsBtn, 'zap');
     setTooltip(skillsBtn, 'Run a skill');
-    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki' }[] = [
+    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean; writes?: string }[] = [
       {
-        label: 'Quiz me',
+        // Nouns, because every one of these hands you a thing: a quiz, a set of
+        // cards, a checklist. The menu was three imperatives and two nouns,
+        // and the two nouns were the seed files — the ones a user writes.
+        // "Find gaps" keeps its verb: "Gaps" alone does not say gaps in what.
+        label: 'Quiz',
         icon: 'graduation-cap',
+        // Note-scoped, and not only as a matter of taste. Run in Wiki mode
+        // these three retrieve NOTHING: the lexical scorer matches the words
+        // in the prompt against page summaries, and "create practice
+        // questions from this material" shares no vocabulary with a page
+        // about compound interest. Zero pages came back and the model was
+        // asked to quiz you on a catalog.
+        mode: 'note',
         prompt:
           'Create 5 practice questions that test understanding of this material. Number each ' +
           'question and put its answer in bold directly below it.',
       },
       {
-        label: 'Make flashcards',
+        label: 'Flashcards',
         icon: 'layers',
+        mode: 'note',
+        // The one shipped skill whose output is unambiguously an artifact:
+        // you take flashcards away and use them. Answering into the chat and
+        // leaving you to press save was the wrong shape for it.
+        writes: 'flashcards',
         prompt:
           'Create 8 flashcards from this material. Format each as **Q:** question then **A:** ' +
           'answer on the next line, with a blank line between cards.',
@@ -379,20 +580,10 @@ export class ChatView extends ItemView {
       {
         label: 'Find gaps',
         icon: 'search',
+        mode: 'note',
         prompt:
           'What important questions does this material raise but not answer? List the gaps and ' +
           'why each matters.',
-      },
-      {
-        label: 'Digest recent wiki activity',
-        icon: 'history',
-        // Needs the catalog + log, which only Wiki mode carries — running
-        // it in This-note mode produced "I do not have access to an
-        // activity log". The skill switches mode itself.
-        mode: 'wiki',
-        prompt:
-          'Based on the activity log and catalog, summarize what was added to the wiki recently, ' +
-          'grouped by topic.',
       },
     ];
 
@@ -403,18 +594,61 @@ export class ChatView extends ItemView {
     skillsBtn.addEventListener('click', (evt) => {
       void (async () => {
         const custom = await readSkills(this.app.vault);
+        const all = [...SKILLS, ...custom];
         const menu = new Menu();
-        for (const skill of [...SKILLS, ...custom]) {
+        // A skill that declares a mode used to switch you into it on click.
+        // That is a menu item quietly changing what the panel is grounded in
+        // — you pressed "Feynman" from Wiki mode and landed in This note,
+        // with nothing saying so. Show it as unavailable instead, and say
+        // which mode it wants.
+        const unusable = all.filter((s) => s.mode && s.mode !== this.mode);
+        if (unusable.length === all.length && all.length) {
+          const want = all[0].mode === 'wiki' ? 'Wiki' : 'This note';
+          menu.addItem((item) => item.setTitle(`Switch to ${want} to use these`).setDisabled(true));
+          menu.addSeparator();
+        }
+        // A skill spends the engine too, so it obeys the same one-at-a-time
+        // rule as the chips rather than queueing behind whatever is running.
+        const busy = this.plugin.isBusy();
+        if (busy) {
           menu.addItem((item) =>
-            item
-              .setTitle(skill.label)
-              .setIcon(skill.icon)
-              .onClick(() => {
-                if (skill.mode && skill.mode !== this.mode) this.setMode(skill.mode);
-                this.inputEl.value = skill.prompt;
-                void this.handleSend();
-              })
+            item.setTitle(`Busy: ${this.plugin.runningLabel() ?? 'something is running'}`).setDisabled(true)
           );
+          menu.addSeparator();
+        }
+        for (const skill of all) {
+          const wrongMode = !!skill.mode && skill.mode !== this.mode;
+          menu.addItem((item) => {
+            item.setTitle(skill.writes ? `${skill.label} → ${skill.writes}/` : skill.label).setIcon(skill.icon);
+            if (wrongMode || busy) {
+              item.setDisabled(true);
+              return;
+            }
+            item.onClick(() => {
+              // A skill that writes a file is not a conversation. It runs on
+              // the plugin side — one ask, one preview, one write — and never
+              // touches the thread.
+              if (skill.writes) {
+                void this.plugin.runSkillToFile(skill);
+                return;
+              }
+              if (!skill.fill) {
+                void this.handleSend({ text: skill.prompt });
+                return;
+              }
+              // fill: true is the one case that DOES want the box — the prompt
+              // is unfinished and you are being handed the pen. The parser
+              // trims the file, so a prompt written to end in "…explain: "
+              // arrives without its space and the cursor would land against
+              // the colon; put it back rather than asking every skill author
+              // to notice.
+              this.inputEl.value = /[:\-–—]$/.test(skill.prompt) ? `${skill.prompt} ` : skill.prompt;
+              this.autoGrowInput();
+              this.inputEl.focus();
+              const end = this.inputEl.value.length;
+              this.inputEl.setSelectionRange(end, end);
+            });
+          });
         }
         menu.showAtMouseEvent(evt);
       })();
@@ -454,6 +688,15 @@ export class ChatView extends ItemView {
     });
 
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateNoteChip()));
+    // The chips depend on whether the wiki holds anything, and that changes
+    // out from under this panel — a scan finishing, a page written, a page
+    // deleted. Read it once now, then follow the vault. refreshWikiEmpty
+    // redraws only when the answer flips.
+    void this.refreshWikiEmpty();
+    this.registerEvent(this.app.metadataCache.on('resolved', () => void this.refreshWikiEmpty()));
+    // The scan chip is also the stop button, so it has to know when a scan
+    // starts and ends — including scans started from the command palette.
+    this.register(this.plugin.onScanState(() => this.renderSuggestions()));
   }
 
   private setMode(mode: 'note' | 'wiki') {
@@ -466,6 +709,7 @@ export class ChatView extends ItemView {
     );
     this.renderSuggestions();
     this.updateNoteChip();
+    void this.renderEmptyState();
   }
 
   private updateNoteChip() {
@@ -508,10 +752,26 @@ export class ChatView extends ItemView {
   // Failures render inside the thread rather than as a floating Notice —
   // otherwise the user's question bubble is left dangling with no visible
   // response, which read as "the model can't answer".
-  private appendInfoMessage(text: string) {
+  /**
+   * An inline note in the thread — a refusal, a truncation warning.
+   *
+   * Optionally with buttons. A refusal that names the way out and then makes
+   * you go find it is only half a message: the "your wiki is empty" one used
+   * to name a command you had to type, while the only clickable version of the
+   * same thing lived in the empty state, which disappears the moment you send
+   * anything.
+   */
+  private appendInfoMessage(text: string, actions?: SuggestionSpec[]) {
     this.emptyStateEl.hide();
     const row = this.messagesEl.createDiv({ cls: 'gemma4-chat-row gemma4-chat-row-assistant' });
-    row.createDiv({ cls: 'gemma4-chat-info', text });
+    const box = row.createDiv({ cls: 'gemma4-chat-info', text });
+    if (actions?.length) {
+      const bar = box.createDiv({ cls: 'gemma4-chat-info-actions' });
+      for (const spec of actions) {
+        const btn = bar.createEl('button', { cls: 'gemma4-chat-empty-action', text: spec.label });
+        btn.addEventListener('click', () => this.runSuggestion(spec));
+      }
+    }
     this.scrollToBottom();
   }
 
@@ -537,7 +797,7 @@ export class ChatView extends ItemView {
     setTooltip(copyBtn, 'Copy answer');
     copyBtn.addEventListener('click', () => {
       void navigator.clipboard.writeText(getAnswer());
-      new Notice('✅ Copied.');
+      notify('done', 'Copied.');
     });
 
     const regenBtn = actions.createEl('button', {
@@ -575,7 +835,7 @@ export class ChatView extends ItemView {
           const summary = answer.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 140) ?? question;
           await upsertIndexEntry(this.app.vault, pagePath, question, summary);
           await appendLog(this.app.vault, 'answer', question);
-          new Notice(`ℹ️ Saved to wiki: ${pagePath}`, 3000);
+          notify('done', `Saved to wiki: ${pagePath}`);
         })();
       }).open();
     });
@@ -585,16 +845,33 @@ export class ChatView extends ItemView {
     this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight });
   }
 
-  private async handleSend() {
+  /**
+   * Send a question.
+   *
+   * A canned prompt is passed in rather than staged in the input box. It used
+   * to be written there first and sent a line later, so anything that stopped
+   * the send — the busy guard, most visibly — left the prompt sitting in the
+   * box as if you had typed it and changed your mind. The box is where YOU
+   * write; it is not a transport for text the plugin already has.
+   */
+  private async handleSend(opts: { text?: string; wholeWiki?: boolean } = {}) {
     if (this.busy) return;
-    const question = this.inputEl.value.trim();
+    // The input is the one door the greyed chips do not cover: you can type a
+    // question while an Improve is running and press Enter. Same engine, same
+    // rule.
+    if (this.plugin.isBusy()) {
+      notify('warn', `Busy: ${this.plugin.runningLabel() ?? 'something is running'}. Wait for that to finish.`);
+      return;
+    }
+    const typed = opts.text === undefined;
+    const question = (opts.text ?? this.inputEl.value).trim();
     if (!question) return;
-    this.inputEl.value = '';
+    if (typed) this.inputEl.value = '';
     this.autoGrowInput();
     this.lastQuestion = question;
     this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
-    await this.runGeneration(question);
+    await this.runGeneration(question, false, opts.wholeWiki ?? false);
   }
 
   // Builds the grounding context for one question, or returns null with a
@@ -603,7 +880,8 @@ export class ChatView extends ItemView {
   // guess from the model's own knowledge.
   private async buildContext(
     question: string,
-    ungrounded = false
+    ungrounded = false,
+    wholeWiki = false
   ): Promise<{
     systemPrompt: string;
     sourcePath: string;
@@ -629,15 +907,26 @@ export class ChatView extends ItemView {
       const entries = await readIndexEntries(this.app.vault);
       if (!entries.length) {
         this.appendInfoMessage(
-          'Your wiki is empty — run "Ingest active note into wiki" on a few notes first, then ask again.'
+          'Your wiki is empty, so there is nothing to answer from. File something first — ' +
+            'nothing is written without your approval.',
+          [
+            { label: 'Scan a folder', action: 'scan' },
+            { label: 'Ingest this note into wiki', action: 'ingest' },
+          ]
         );
         return null;
       }
-      const selected = scoreEntries(question, entries);
+      // A whole-wiki question is not a retrieval problem. Scoring "what
+      // connects my pages" against page summaries matches nothing, because the
+      // question is about the shape of the collection and not about anything
+      // in it — so every page is the right answer to "which pages", and
+      // loadPages fills up to the budget and stops.
+      const selected = wholeWiki ? entries : scoreEntries(question, entries);
       // Expand one hop through the link graph (issue #14): a page linked to
       // or from a lexical hit often holds the answer even when its own summary
       // didn't share the question's words. Seeds still decide noPageMatch.
-      const expanded = selected.length ? expandByLinks(this.app, selected, entries, 2) : [];
+      const expanded =
+        !wholeWiki && selected.length ? expandByLinks(this.app, selected, entries, 2) : [];
       const retrieved = [...selected, ...expanded];
       const pages = retrieved.length
         ? await loadPages(this.app.vault, retrieved, this.plugin.budget('chat') * 3)
@@ -653,15 +942,30 @@ export class ChatView extends ItemView {
         this.plugin.budget('chat')
       );
       if (clampedWiki.truncated) {
-        this.appendInfoMessage('Context was longer than the local model can hold — answering from the first part only.');
+        this.appendInfoMessage(
+          `Only the first ~${Math.round(this.plugin.budget('chat') / 1000)}k tokens of the retrieved ` +
+            'material were sent — the rest was cut to keep one answer fast.'
+        );
       }
       return {
         systemPrompt:
-          "You answer questions about the user's personal wiki. Use ONLY the material below: " +
+          "Use ONLY the material below about the user's personal wiki: " +
           'the catalog (every wiki page with a one-line summary), the recent activity log ' +
-          '(dated ingest/answer entries), and the full text of the most relevant pages. If the ' +
-          'answer is not in this material, say so plainly instead of guessing. Be concise. You ' +
-          'may use markdown formatting.\n\n' +
+          '(dated ingest/answer entries), and ' +
+          (wholeWiki
+            ? 'the full text of the wiki pages, as many as fit. Work across all of them — this ' +
+              'is about the collection, not about one page. '
+            : 'the full text of the most relevant pages. ') +
+          'Never bring in outside knowledge, and never invent detail that is not there.\n\n' +
+          'If the user asks a question and this material does not answer it, say so plainly ' +
+          'rather than guessing. If the user asks you to work with the material instead, carry ' +
+          'that out from what is here — the instruction comes from the user, so do not look for ' +
+          'it inside the pages.\n\n' +
+          'If you cannot tell what is being asked — the request is a fragment, a single word, or ' +
+          'otherwise unclear — say that you did not follow it and ask for it another way. Do NOT ' +
+          'report that the material lacks something when the real problem is that you did not ' +
+          'understand the request.\n\n' +
+          'Be concise. You may use markdown formatting.\n\n' +
           `## Catalog\n${catalog}\n\n` +
           (logTail ? `## Recent activity log\n${logTail}\n\n` : '') +
           clampedWiki.text,
@@ -675,7 +979,9 @@ export class ChatView extends ItemView {
         // No page matched the question — the answer leans on catalog/log
         // only (good for meta-questions, thin for everything else). Flag it
         // so runGeneration can offer the "ask Gemma directly" hatch below.
-        noPageMatch: selected.length === 0,
+        // Only meaningful for a retrieval question. A whole-wiki question that
+        // came back thin was not a miss — it had everything there was.
+        noPageMatch: !wholeWiki && selected.length === 0,
       };
     }
 
@@ -697,26 +1003,55 @@ export class ChatView extends ItemView {
     sources.push(...attachments.sources);
     const clamped = clampToTokens(noteBlock + attachments.blocks, this.plugin.budget('chat'));
     if (clamped.truncated) {
+      // Say whose limit this is. "Longer than the model can hold" blamed the
+      // model for a cap the plugin sets, and left the reader with nothing to
+      // do about it.
       this.appendInfoMessage(
-        'This note is longer than the local model can hold — answering from the first part only.'
+        `Only the first ~${Math.round(this.plugin.budget('chat') / 1000)}k tokens of this note were ` +
+          'sent — the rest was cut to keep one answer fast. Raise Context window in settings to ' +
+          'send more, or select a section and ask about that.'
       );
     }
     return {
       systemPrompt:
-        "Answer the user's question using ONLY the notes below. If the answer is not in them, " +
-        'say so plainly instead of guessing or using outside knowledge. Be concise. You may use ' +
-        'markdown formatting.\n\n' +
+        // Two kinds of request, and the old prompt only knew one. It said
+        // "answer the user's question ... if the answer is not in them, say
+        // so", which is right for a question and actively wrong for an
+        // instruction: asked to make flashcards, the model went looking for
+        // flashcards IN the note, did not find any, and refused — "the notes
+        // do not contain a specific command or skill for generating
+        // flashcards". Every skill is a transformation, not a lookup.
+        //
+        // The grounding promise is unchanged: only this material, no outside
+        // knowledge, no invented detail. What changes is that carrying out an
+        // instruction is no longer mistaken for failing to find one.
+        'Use ONLY the notes below. Never bring in outside knowledge, and never invent detail ' +
+        'that is not there.\n\n' +
+        'If the user asks a question and the notes do not answer it, say so plainly rather than ' +
+        'guessing.\n\n' +
+        'If the user asks you to work with the material — summarise it, turn it into questions ' +
+        'or flashcards, list the actions it implies, point out what is unclear — carry that out ' +
+        'from what the notes contain. The instruction comes from the user; do not look for it ' +
+        'inside the notes.\n\n' +
+        'If you cannot tell what is being asked — the request is a fragment, a single word, or ' +
+        'otherwise unclear — say that you did not follow it and ask for it another way. Do NOT ' +
+        'report that the material lacks something when the real problem is that you did not ' +
+        'understand the request.\n\n' +
+        'Be concise. You may use markdown formatting.\n\n' +
         clamped.text,
       sourcePath: file?.path ?? 'wiki/index.md',
       sources,
     };
   }
 
-  private async runGeneration(question: string, ungrounded = false) {
-    const context = await this.buildContext(question, ungrounded);
+  private async runGeneration(question: string, ungrounded = false, wholeWiki = false) {
+    const context = await this.buildContext(question, ungrounded, wholeWiki);
     if (!context) return;
 
     this.busy = true;
+    // Also tell the plugin: one engine, one operation, and a streaming answer
+    // is an operation. Without this the chips stayed live through an answer.
+    this.plugin.setChatBusy(true);
     this.sendButton.disabled = true;
     this.stopButton.show();
 
@@ -828,12 +1163,17 @@ export class ChatView extends ItemView {
         text: `Failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     } finally {
+      // Release first, tidy up after. The answer is fully rendered by now, so
+      // the panel LOOKS idle — but this ran `await conversation.delete()`
+      // before clearing the flags, leaving a window where a press was silently
+      // refused because a teardown nobody can see had not finished.
       this.activeConversation = null;
-      await conversation?.delete().catch(() => {});
       this.busy = false;
+      this.plugin.setChatBusy(false);
       this.sendButton.disabled = false;
       this.stopButton.hide();
       this.inputEl.focus();
+      await conversation?.delete().catch(() => {});
     }
   }
 }

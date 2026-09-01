@@ -209,3 +209,182 @@ export class AutoIngestReviewModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+/**
+ * Which folders to scan — asked, not assumed.
+ *
+ * "Scan a folder into the wiki" used to scan whichever folders happened to be
+ * typed into a settings field, and refuse outright when that field was blank
+ * ("go to Settings and name a folder"). A command that names a folder in its
+ * own title should ask you which one, and a first run should not bounce you
+ * into a settings pane to answer a question the command could have asked.
+ *
+ * Counts are exact and free: the candidate sweep is deterministic — no model,
+ * no GPU — so the dialog can tell you what each folder would actually cost
+ * before you commit to it.
+ */
+// Derived from the README's measured figures, not guessed: warm decode holds
+// ~29 tok/s and one note costs two calls.
+const SECONDS_PER_NOTE = 20;
+
+export class ScanFolderModal extends Modal {
+  private chosen: Set<string>;
+  private readonly folders: { path: string; count: number }[];
+  private readonly totalCandidates: number;
+  private readonly onConfirm: (prefixes: string[]) => void;
+  private readonly onCancel: () => void;
+  // Set before close() so onClose can tell "confirmed" from "dismissed".
+  // Without it the caller had to guess from the outside, and guessed by
+  // reading a flag that close() ran before anything could set.
+  private confirmed = false;
+  private countEl: HTMLElement | null = null;
+  private goBtn: HTMLButtonElement | null = null;
+
+  constructor(
+    app: App,
+    opts: {
+      folders: { path: string; count: number }[];
+      preselected: string[];
+      onConfirm: (prefixes: string[]) => void;
+      onCancel: () => void;
+    }
+  ) {
+    super(app);
+    this.folders = opts.folders;
+    // Pre-ticked with whatever you scanned last, so the common case is one
+    // click. The pick is remembered on confirm, without asking.
+    this.chosen = new Set(opts.preselected);
+    this.totalCandidates = opts.folders.reduce((n, f) => n + f.count, 0);
+    this.onConfirm = opts.onConfirm;
+    this.onCancel = opts.onCancel;
+  }
+
+  private selectedCount(): number {
+    let n = 0;
+    for (const f of this.folders) if (this.chosen.has(f.path)) n += f.count;
+    return n;
+  }
+
+  /**
+   * Say what the run costs, in notes and in minutes.
+   *
+   * This replaced a "max notes per scan" ceiling. That number existed because
+   * you could not see how big a run was before starting it — so the plugin
+   * quietly trimmed it and told you afterwards. Now the size is on screen
+   * before you commit, and stopping keeps whatever was drafted, so the honest
+   * move is to state the cost and let you decide rather than to decide for
+   * you.
+   *
+   * The estimate is from real instrumentation: warm decode holds ~29 tok/s
+   * (see Benchmarks in the README), and one note is two calls, so ~20s each.
+   * Rounded up, and never claimed to be exact.
+   */
+  private syncFooter() {
+    const n = this.selectedCount();
+    if (this.countEl) {
+      this.countEl.empty();
+      if (this.chosen.size === 0) {
+        this.countEl.setText('Pick at least one folder.');
+      } else if (n === 0) {
+        // Ticked, but everything in them is already filed and unchanged.
+        // "0 notes … roughly 1 minute" was the arithmetic answering a
+        // question nobody asked.
+        this.countEl.setText('Nothing new in the folders you ticked — they are all already filed.');
+      } else {
+        const mins = Math.max(1, Math.round((n * SECONDS_PER_NOTE) / 60));
+        this.countEl.createDiv({
+          text: `${n} note${n === 1 ? '' : 's'}, about one model call each — roughly ${mins} minute${mins === 1 ? '' : 's'}.`,
+        });
+        this.countEl.createDiv({
+          cls: 'gemma4-scan-count-sub',
+          text: 'The first one is slower if the model has not loaded yet. You can stop partway and still review what was drafted.',
+        });
+      }
+    }
+    if (this.goBtn) {
+      this.goBtn.disabled = n === 0;
+      this.goBtn.setText(n === 0 ? 'Scan' : `Scan ${n} note${n === 1 ? '' : 's'}`);
+    }
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('gemma4-scan-modal');
+    contentEl.createEl('h3', { text: 'Scan a folder into the wiki' });
+    contentEl.createDiv({
+      cls: 'gemma4-scan-lede',
+      // This explanation used to sit in the chat panel's empty state, where it
+      // was read by someone who had not yet decided to scan anything. It reads
+      // better here, above the folder list, at the moment the decision is
+      // actually in front of you.
+      text:
+        'Sweeps the folders you pick for new or changed notes and drafts a page for each. ' +
+        'One model call per note, so it takes a while — you can close this and keep working; ' +
+        'progress runs in the status bar, and the review list waits for you there if you moved ' +
+        'on. Nothing is ever written without your tick.',
+    });
+    // Name the other door. This dialog is the batch, and the single-note path
+    // is a command with a different name — someone who found this one has no
+    // reason to guess that "Ingest this note into wiki" is the same job for
+    // one file.
+    contentEl.createDiv({
+      cls: 'gemma4-scan-lede gemma4-scan-lede-aside',
+      text:
+        'This is the batch. For just the note you have open, close this and press Cmd/Ctrl+P → ' +
+        '"Ingest this note into wiki".',
+    });
+
+    if (!this.folders.length) {
+      contentEl.createDiv({
+        cls: 'gemma4-scan-empty',
+        text:
+          this.totalCandidates === 0
+            ? 'Nothing new to file — every note outside the wiki is already ingested and unchanged.'
+            : 'No folders found to scan.',
+      });
+      const only = contentEl.createDiv({ cls: 'gemma4-scan-buttons' });
+      only.createEl('button', { text: 'Close' }).addEventListener('click', () => this.close());
+      return;
+    }
+
+    const list = contentEl.createDiv({ cls: 'gemma4-scan-list' });
+    for (const f of this.folders) {
+      const row = list.createEl('label', { cls: 'gemma4-scan-row' });
+      const box = row.createEl('input', { type: 'checkbox' });
+      box.checked = this.chosen.has(f.path);
+      box.addEventListener('change', () => {
+        if (box.checked) this.chosen.add(f.path);
+        else this.chosen.delete(f.path);
+        this.syncFooter();
+      });
+      row.createSpan({ cls: 'gemma4-scan-row-path', text: f.path });
+      row.createSpan({
+        cls: 'gemma4-scan-row-count',
+        text: f.count === 0 ? 'nothing new' : `${f.count} new or changed`,
+      });
+    }
+
+    this.countEl = contentEl.createDiv({ cls: 'gemma4-scan-count' });
+
+    const buttons = contentEl.createDiv({ cls: 'gemma4-scan-buttons' });
+    buttons.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
+    this.goBtn = buttons.createEl('button', { cls: 'mod-cta', text: 'Scan' });
+    this.goBtn.addEventListener('click', () => {
+      // Mark the outcome BEFORE closing. close() runs onClose synchronously,
+      // and onClose is what reports a dismissal — so anything set afterwards
+      // is set too late. This exact ordering silently cancelled every scan:
+      // the caller saw "dismissed", returned, and nothing ran, with no error
+      // and no notification to say so.
+      this.confirmed = true;
+      const prefixes = [...this.chosen];
+      this.close();
+      this.onConfirm(prefixes);
+    });
+    this.syncFooter();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+    if (!this.confirmed) this.onCancel();
+  }
+}

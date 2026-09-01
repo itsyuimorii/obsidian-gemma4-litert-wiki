@@ -1,10 +1,11 @@
-import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, normalizePath, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
+import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import {
@@ -16,6 +17,7 @@ import {
   ensureSkillsScaffold,
   ensureWikiScaffold,
   isWikiPage,
+  type WikiSkill,
   wikiScaffoldPaths,
   indexPath,
   readSchema,
@@ -51,7 +53,7 @@ import {
   type ProvenanceFlag,
 } from './provenance';
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
-import { AutoIngestReviewModal, findIngestCandidates, type IngestDraft } from './auto-ingest';
+import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
@@ -75,6 +77,15 @@ const MIME: Record<string, string> = {
 
 const MODEL_URL =
   'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm';
+
+// Replaced with the build time by build.js. If this literal survives into
+// main.js, the bundle was produced without the stamping step.
+declare const BUILD_STAMP: string;
+
+// Scans are no longer trimmed to a hidden ceiling: the dialog states the size
+// and the rough time before you commit, and stopping mid-run keeps whatever
+// was drafted. findIngestCandidates still wants a number.
+const NO_SCAN_CAP = Number.MAX_SAFE_INTEGER;
 
 function log(...args: unknown[]) {
   console.log('[litert-spike]', ...args);
@@ -288,32 +299,282 @@ export default class LiteRtSpikePlugin extends Plugin {
   private serverBaseUrl: string | null = null;
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
-  private statusNotice: Notice | null = null;
+  // What the engine actually granted, read back from LiteRT-LM after
+  // Engine.create — not what we asked for. null until the model loads.
+  private effectiveContextTokens: number | null = null;
   private scanStatusEl: HTMLElement | null = null;
+  // What is running right now, if anything — the status bar's first duty.
+  private runningText: string | null = null;
+  // A finished run whose dialog is waiting for you to ask for it.
+  private parked: { label: string; open: () => void } | null = null;
+  // How many notes the background count last found worth reviewing.
+  private reviewCount = 0;
+  // Did attention leave while the current run was going? Decides whether the
+  // result opens itself or waits.
+  private userMovedOn = false;
+  private chatBusy = false;
+  private runStartedAt = 0;
+  // The pinned toast for the running operation, and whether the user closed
+  // it. A dismissal is respected until they ask for it back.
+  private statusNotice: Notice | null = null;
+  private runDismissed = false;
+  private tickId: number | null = null;
   private autoScanIntervalId: number | null = null;
   settings: GemmaWikiSettings = { ...DEFAULT_SETTINGS };
 
-  // One shared status Notice for the whole plugin: later messages update
-  // the same toast instead of stacking a new one per operation — repeated
-  // ingests were piling up popups.
-  private status(text: string) {
-    if (this.statusNotice) {
-      this.statusNotice.setMessage(text);
-    } else {
-      this.statusNotice = new Notice(text, 0);
-    }
+  // ---------------------------------------------------------------------
+  // Where a running operation lives.
+  //
+  // It used to be a Notice pinned open for the whole run. That is the wrong
+  // surface for it three ways over: a toast covers the note you are reading,
+  // it vanishes for good if you click it (there is no way to ask for it
+  // back), and during the 20-40 seconds of an actual generation it does not
+  // move — a frozen box in the corner reads as a bug, not as work.
+  //
+  // A run belongs in the status bar. It is always visible, it is never in
+  // front of anything, it cannot be dismissed by accident, and it survives
+  // you switching notes — which is what you will do, because these
+  // operations take minutes.
+  //
+  // Toasts keep what they are good at: moments. The result of a run is a
+  // moment. The run itself is not.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Is a model operation already running?
+   *
+   * There is one engine, one status line and one clock, so there is one
+   * operation at a time — and until now only scan enforced that. Pressing
+   * Formatting while an ingest was mid-flight started a second call on the
+   * same GPU, and the two runs then fought over a single runningText and a
+   * single runStartedAt, which is what put two toasts on screen showing
+   * different elapsed times for the same note.
+   */
+  isBusy(): boolean {
+    return this.runningText !== null || this.scanRunning || this.chatBusy;
   }
 
-  private statusEnd(text?: string, timeoutMs = 0) {
-    const n = this.statusNotice;
+  /**
+   * The chat panel is generating.
+   *
+   * It tracks its own busy flag for its own send button, and that flag was
+   * invisible from here — so while an answer streamed, isBusy() said no and
+   * every chip stayed live. Pressing Formatting mid-answer started a second
+   * call on the same engine, which is the thing the guard exists to stop.
+   */
+  setChatBusy(busy: boolean): void {
+    if (this.chatBusy === busy) return;
+    this.chatBusy = busy;
+    this.notifyBusyChange();
+  }
+
+  /**
+   * What is running, without its sub-status.
+   *
+   * The live text carries a stage after an em dash — "Ingesting X —
+   * Extracting…" — which is right in a progress line and wrong in a sentence
+   * about it, where it produced "Ingesting X — Extracting… — wait for that to
+   * finish." Two dashes and a stage nobody asked about.
+   */
+  runningLabel(): string | null {
+    if (this.runningText === null) return this.chatBusy ? 'Answering' : null;
+    return this.runningText.split(' — ')[0].replace(/[…:]\s*$/, '');
+  }
+
+  /**
+   * Refuse a second operation, and say what is already going.
+   *
+   * The UI disables these entries while something runs, so reaching this is
+   * usually the command palette, which routes around any button.
+   */
+  private refuseIfBusy(): boolean {
+    if (!this.isBusy()) return false;
+    notify('warn', `Busy: ${this.runningLabel() ?? 'a scan is running'}. Wait for that to finish.`);
+    return true;
+  }
+
+  private status(text: string) {
+    // Both surfaces, for the whole run. Two earlier attempts each fixed one
+    // half and broke the other:
+    //
+    //   A toast pinned open for the run — you cannot miss it, but clicking it
+    //   destroys it with no way back, and it does not move while the model
+    //   generates, so a frozen box reads as a hang.
+    //
+    //   The status bar alone — survives everything, but the top-right went
+    //   silent for minutes, so pressing a command acknowledged nothing, and
+    //   the bar is at the edge of the window where it is easy to miss and can
+    //   be switched off entirely.
+    //
+    // So: keep the toast AND the bar, and fix what was actually wrong with
+    // the toast. It carries a running clock so it visibly moves. Dismissing
+    // it is honoured — it means "out of my way" — and the status bar is the
+    // way back: click it and the toast returns.
+    const wasIdle = this.runningText === null;
+    if (wasIdle) {
+      this.runStartedAt = Date.now();
+      this.runDismissed = false;
+      if (this.tickId === null) {
+        this.tickId = window.setInterval(() => this.paintRun(), 1000);
+        this.registerInterval(this.tickId);
+      }
+    }
+    this.runningText = text;
+    this.paintRun();
+    if (wasIdle) this.notifyBusyChange();
+  }
+
+  /** Elapsed time, so a long generation never looks like a hang. */
+  private elapsed(): string {
+    const s = Math.floor((Date.now() - this.runStartedAt) / 1000);
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  /** Redraw both surfaces for the running operation. Called every second. */
+  private paintRun() {
+    if (this.runningText === null) return;
+    const body = mark('progress', `${this.runningText}  ·  ${this.elapsed()}`);
+    if (this.statusNotice) {
+      // Obsidian removes a dismissed Notice from the DOM. Writing to it after
+      // that is shouting into a void, and re-opening it would be overriding a
+      // decision the user just made.
+      if (this.statusNotice.noticeEl?.isConnected) {
+        this.statusNotice.setMessage(body);
+      } else {
+        // Stop writing to it, but KEEP the reference. Dropping it here left
+        // an orphan: statusEnd hides via this.statusNotice, so a toast we had
+        // let go of could never be closed again and sat on screen frozen at
+        // its last message while the next run opened a second one beside it.
+        this.runDismissed = true;
+      }
+    } else if (!this.runDismissed) {
+      this.statusNotice = new Notice(body, 0);
+    }
+    this.renderStatusBar();
+  }
+
+  /** Bring back a toast the user dismissed, from the status bar. */
+  private reopenRunNotice() {
+    if (this.runningText === null) return;
+    this.runDismissed = false;
+    this.statusNotice?.hide();
     this.statusNotice = null;
-    if (!n) return;
-    if (text) n.setMessage(text);
-    if (timeoutMs > 0) setTimeout(() => n.hide(), timeoutMs);
-    else n.hide();
+    this.paintRun();
+  }
+
+  /**
+   * Finish the running operation.
+   *
+   * The kind decides the mark and how long the result stays up, so a caller
+   * never picks a millisecond count. Warnings and failures also go to
+   * `log.md`, because a toast is not a record.
+   */
+  private statusEnd(text?: string, kind: NoticeKind = 'done', durationMs?: number) {
+    const wasRunning = this.runningText !== null;
+    this.runningText = null;
+    if (this.tickId !== null) {
+      window.clearInterval(this.tickId);
+      this.tickId = null;
+    }
+    this.statusNotice?.hide();
+    this.statusNotice = null;
+    this.runDismissed = false;
+    this.renderStatusBar();
+    if (wasRunning) this.notifyBusyChange();
+    if (!text) return;
+    notify(kind, text, durationMs);
+    void logNotice(this.app.vault, kind, text);
+  }
+
+  /**
+   * The one status-bar slot, shared by three things that are never true at
+   * once, in priority order: something is running, a finished run is waiting
+   * to be looked at, or there are notes worth reviewing.
+   */
+  private renderStatusBar() {
+    const el = this.scanStatusEl;
+    if (!el) return;
+    if (this.runningText !== null) {
+      el.setText(`⏳ ${this.runningText}  ·  ${this.elapsed()}`);
+      el.setAttr('aria-label', `${this.runningText} — click to bring the message back`);
+      el.show();
+      return;
+    }
+    if (this.parked) {
+      el.setText(`✅ ${this.parked.label}`);
+      el.setAttr('aria-label', `${this.parked.label} — click to open`);
+      el.show();
+      return;
+    }
+    if (this.reviewCount > 0 && this.settings.autoScanEnabled) {
+      el.setText(`📥 ${this.reviewCount} to review`);
+      el.setAttr('aria-label', 'New or changed notes — click to scan and review');
+      el.show();
+      return;
+    }
+    el.hide();
+  }
+
+  /** Clicking the status bar does whatever its current state means. */
+  private onStatusBarClick() {
+    if (this.runningText !== null) {
+      this.reopenRunNotice();
+      return;
+    }
+    const parked = this.parked;
+    if (parked) {
+      this.parked = null;
+      this.renderStatusBar();
+      parked.open();
+      return;
+    }
+    void this.scanAndReviewIngest(
+      this.settings.scanInclude.split(',').map((v) => v.trim()).filter(Boolean)
+    );
+  }
+
+  /**
+   * Show a result dialog — but only as an interruption if you are still here
+   * for it.
+   *
+   * A dialog that opens by itself minutes after you started something is an
+   * ambush: by then your attention has moved, and the first you hear of the
+   * whole operation is a modal stealing focus out of a note you were typing
+   * in. So if you did anything else while it ran, the dialog waits on the
+   * status bar instead and opens when you ask for it.
+   *
+   * If you never looked away, you are waiting on this, and making you click
+   * again would be its own small insult.
+   */
+  private presentResult(label: string, open: () => void) {
+    if (!this.userMovedOn) {
+      open();
+      return;
+    }
+    this.parked = { label, open };
+    this.renderStatusBar();
+    notify('done', `${label} — click "${label}" in the status bar when you are ready.`, DURATION.NORMAL);
+  }
+
+  /** Begin watching whether the user's attention leaves during a run. */
+  private beginRun() {
+    this.userMovedOn = false;
+  }
+
+  /** Report a thrown error through the status toast, in the house style. */
+  private statusFail(what: string, err: unknown) {
+    console.error(`[gemma4-litert-wiki] ${what} failed`, err);
+    this.statusEnd(failureText(what, err), 'error');
   }
 
   async onload() {
+    // Which build is actually running. Obsidian caches a plugin's main.js
+    // until it is disabled and re-enabled, so "I rebuilt it" and "the app is
+    // running it" are two different facts — and telling them apart by
+    // watching for a notification that may or may not appear is guesswork.
+    // BUILD_STAMP is written at build time; if it does not match the file on
+    // disk, the plugin needs a toggle off and on.
+    log(`loaded — v${this.manifest.version} build ${BUILD_STAMP}`);
     await this.loadSettings();
     setWikiDir(this.settings.wikiDir);
     this.addSettingTab(new GemmaWikiSettingTab(this.app, this));
@@ -349,7 +610,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           await this.saveSettings();
           setWikiDir(file.path);
           this.refreshIngestBadges();
-          new Notice(`ℹ️ Knowledge folder is now "${file.path}" — Gemma Wiki followed the rename.`, 6000);
+          notify('info', `Knowledge folder is now "${file.path}" — Gemma Wiki followed the rename.`);
         })();
       })
     );
@@ -365,7 +626,16 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.scanStatusEl = this.addStatusBarItem();
     this.scanStatusEl.addClass('mod-clickable');
     this.scanStatusEl.hide();
-    this.scanStatusEl.addEventListener('click', () => void this.scanAndReviewIngest());
+    this.scanStatusEl.addEventListener('click', () => this.onStatusBarClick());
+
+    // "Did you look away?" — the signal that decides whether a finished run
+    // opens its dialog or waits for you. Switching notes or typing in one is
+    // the whole of it; a run you sat and watched fires neither.
+    const movedOn = () => {
+      if (this.runningText !== null) this.userMovedOn = true;
+    };
+    this.registerEvent(this.app.workspace.on('active-leaf-change', movedOn));
+    this.registerEvent(this.app.workspace.on('editor-change', movedOn));
     // Build the wiki folders on first load rather than on first write. Until
     // this ran, a freshly installed plugin had created nothing at all, so
     // there was no way to see what it was going to do with the vault — and
@@ -444,11 +714,12 @@ export default class LiteRtSpikePlugin extends Plugin {
         // worst case — the entire knowledge folder deleted — rebuilt in total
         // silence, while losing one subfolder got a notice.
         if (gone.length) {
-          new Notice(
-            `ℹ️ Restored ${gone.length} missing item${gone.length === 1 ? '' : 's'} in ${wikiDir()}/:\n` +
+          notifyAndLog(
+            this.app.vault,
+            'warn',
+            `Restored ${gone.length} missing item${gone.length === 1 ? '' : 's'} in ${wikiDir()}/:\n` +
               gone.join('\n') +
-              '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.',
-            12000
+              '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.'
           );
         }
       })();
@@ -465,112 +736,51 @@ export default class LiteRtSpikePlugin extends Plugin {
 
     this.addCommand({
       id: 'litert-ingest-note',
-      name: 'Ingest active note into wiki (local Gemma)',
-      callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file) {
-          new Notice('⚠️ Open a note first.');
-          return;
-        }
-        const content = await this.app.vault.read(file);
-        // Precheck gate (deterministic, no model call): skip empty,
-        // frontmatter-only, and unchanged notes before the 20-40s model
-        // call. "Unchanged" compares a content hash against the existing
-        // page's source_hash.
-        const pagePathForCheck = wikiPagePath(file.basename);
-        const existingHash = getIngestedSourceHashes(this.app).get(file.path);
-        const skip = precheckNote(content, existingHash);
-        if (skip === 'empty' || skip === 'frontmatter-only') {
-          new Notice(
-            skip === 'empty' ? 'ℹ️ Note is empty — nothing to ingest.' : 'ℹ️ Note is only frontmatter — nothing to ingest.'
-          );
-          return;
-        }
-        if (skip === 'unchanged') {
-          // Not silently skipped: the note is already ingested and unchanged,
-          // but the user may want to re-ingest anyway — e.g. to regenerate its
-          // related links after the index changed, or just to refresh the page.
-          const proceed = await new Promise<boolean>((resolve) => {
-            new ConfirmModal(this.app, {
-              title: 'Already in the wiki',
-              body:
-                `"${file.basename}" is already ingested and unchanged. Re-ingest anyway? ` +
-                'This regenerates its wiki page (summary, tags, related links) and overwrites the existing one — you still review before it is written.',
-              confirmText: 'Re-ingest',
-              onResult: resolve,
-            }).open();
-          });
-          if (!proceed) return;
-        }
-        void pagePathForCheck;
-
-        // Strip web-clip boilerplate (nav menus, footers, subscribe blocks)
-        // before spending context on it — critical with a 4096-token model.
-        const cleaned = cleanClippedMarkdown(content);
-        // Clamp to the engine context (token-estimated, CJK-aware) rather
-        // than rejecting on a char count — a summary card of the first
-        // part beats nothing, and the marker tells the model the tail is
-        // missing.
-        const clamped = clampToTokens(cleaned, this.budget('ingest'));
-        if (clamped.truncated) {
-          new Notice('ℹ️ Note is long — ingesting a truncated version that fits the local model context.', 6000);
-        }
-
-        this.status(`Ingesting "${file.basename}"…`);
-        try {
-          const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
-            this.status(`Ingesting "${file.basename}" — ${t}`)
-          );
-          this.statusEnd();
-
-          const sourceHash = contentHash(content);
-          const pagePath = wikiPagePath(file.basename);
-          const selfLink = pagePath.replace(/\.md$/, '');
-          const candidates = (await this.liveIndexEntries()).filter(
-            (e) => e.linkPath !== selfLink
-          );
-          let related: { title: string; linkPath: string }[] = [];
-          if (candidates.length) {
-            this.status(`Ingesting "${file.basename}" — finding related pages…`);
-            related = await this.pickRelatedPages(extraction.summary, candidates);
-            this.statusEnd();
-          }
-          const pageContent = buildWikiPage(file.basename, file.path, extraction, related, sourceHash);
-          const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
-
-          new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
-            void (async () => {
-              await ensureWikiScaffold(this.app.vault);
-              await writeWikiPage(this.app.vault, pagePath, pageContent);
-              await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
-              const pending = await queuePendingTags(this.app.vault, extraction.tags);
-              this.notePendingGrowth(pending.before, pending.after);
-              await this.rippleConceptPages(pagePath, [...extraction.tags, ...(extraction.mentions ?? [])]);
-              await this.pruneIndex();
-              await appendLog(this.app.vault, 'ingest', file.basename);
-              this.status(`Wiki page written: ${pagePath}`);
-              this.statusEnd(undefined, 2500);
-              this.refreshIngestBadges();
-            })();
-          }).open();
-        } catch (err) {
-          console.error('[gemma4-litert-wiki] ingest failed', err);
-          this.status(`Ingest FAILED — ${err instanceof Error ? err.message : String(err)}`);
-          this.statusEnd(undefined, 8000);
-        }
-      },
+      // One name for one action, in the palette and on the chip alike. A
+      // button reading "File this note" beside a command reading "Ingest
+      // active note" is the same crime as Scan carrying two names.
+      name: 'Ingest this note into wiki (local Gemma)',
+      callback: () => void this.ingestActiveNote(),
     });
 
     this.addCommand({
       id: 'litert-scan-ingest',
-      name: 'Scan notes for wiki (semi-automatic ingest)',
+      // Renamed from "Scan notes for wiki (semi-automatic ingest)". Nobody
+      // types "semi-automatic ingest" into a command palette — that was my
+      // word for it, not the user's. "Batch" and "folder" are what someone
+      // reaches for when they have thirty notes and do not want to file them
+      // one at a time.
+      name: 'Scan a folder into the wiki (batch, local Gemma)',
       callback: () => void this.scanAndReviewIngest(),
+    });
+
+    // Stopping used to require going back to Settings, because the only Stop
+    // control was the same button that started it. If you launched from the
+    // command palette that meant hunting through a settings pane to cancel
+    // something you started with two keystrokes.
+    //
+    // checkCallback keeps it out of the palette entirely unless a scan is
+    // actually running, so it never shows up as a command that does nothing.
+    this.addCommand({
+      id: 'litert-stop-scan',
+      name: 'Stop the running scan',
+      checkCallback: (checking: boolean) => {
+        if (!this.isScanning()) return false;
+        if (!checking) {
+          this.cancelScan();
+          notify('info', 'Stopping — the note being drafted right now will finish first.');
+        }
+        return true;
+      },
     });
 
     this.addCommand({
       id: 'litert-suggest-tags-links',
       name: 'Suggest tags & links for active note (local Gemma)',
-      callback: () => void this.suggestTagsAndLinks(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.suggestTagsAndLinks();
+      },
     });
 
     this.addCommand({
@@ -588,7 +798,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // lint and as disconnected dots in the graph view.
         const entries = await this.liveIndexEntries();
         if (entries.length < 2) {
-          new Notice('⚠️ Need at least two indexed pages to relink.');
+          notify('warn', 'Need at least two indexed pages to relink.');
           return;
         }
         const proposals: RelinkProposal[] = [];
@@ -612,7 +822,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         }
         this.statusEnd();
         if (!proposals.length) {
-          new Notice('ℹ️ Nothing to relink — every page has an up-to-date Related section, or no matches were found.');
+          notify('noop', 'Nothing to relink — every page has an up-to-date Related section, or no matches were found.');
           return;
         }
         new RelinkPreviewModal(this.app, proposals, () => {
@@ -634,7 +844,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
               await appendLog(this.app.vault, 'relink', prop.title);
             }
-            new Notice(`✅ Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`, 4000);
+            notify('done', `Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`);
           })();
         }).open();
       },
@@ -665,13 +875,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         await this.pruneIndex();
         await this.pruneDeadRelatedLinks();
         const after = (await readIndexEntries(this.app.vault)).length;
-        new Notice(
-          before === after
-            ? 'ℹ️ Wiki is already consistent — no links to deleted pages.'
-            : `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
-              'and any related links pointing at them.',
-          5000
-        );
+        if (before === after) {
+          notify('noop', 'Wiki is already consistent — no links to deleted pages.');
+        } else {
+          notify(
+            'done',
+            `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
+              'and any related links pointing at them.'
+          );
+        }
       },
     });
 
@@ -684,292 +896,297 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.addCommand({
       id: 'litert-suggest-vocab',
       name: 'Organize tags (schema.md, local Gemma)',
-      callback: () => void this.suggestTagVocabulary(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.suggestTagVocabulary();
+      },
     });
 
     this.addCommand({
       id: 'litert-retag-pages',
       name: 'Retag wiki pages to vocabulary (local Gemma)',
-      callback: () => void this.retagPagesToVocabulary(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.retagPagesToVocabulary();
+      },
     });
 
     this.addCommand({
       id: 'litert-find-contradictions',
       name: 'Find contradictions in wiki (local Gemma)',
-      callback: () => void this.findContradictions(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.findContradictions();
+      },
     });
 
     this.addCommand({
       id: 'litert-provenance-check',
       name: 'Provenance spot-check (local Gemma)',
-      callback: () => void this.spotCheckProvenance(),
-    });
-
-    this.addCommand({
-      id: 'litert-create-skills-folder',
-      name: 'Create skills folder with examples',
-      callback: () => void this.createSkillsFolder(),
-    });
-
-    this.addCommand({
-      id: 'litert-check-webgpu',
-      name: '[Test] Check WebGPU',
-      callback: async () => {
-        const result = await checkWebGPU();
-        log('WebGPU check:', result);
-        new Notice(result.ok ? `✅ WebGPU OK — ${result.detail}` : `❌ WebGPU FAILED — ${result.detail}`, 10000);
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.spotCheckProvenance();
       },
     });
 
-    this.addCommand({
-      id: 'litert-load-wasm',
-      name: '[Test] Load WASM runtime (no model download)',
-      callback: async () => {
-        new Notice('⏳ Loading LiteRT-LM WASM runtime… check the developer console (Cmd+Opt+I) for detail.', 5000);
-        try {
-          await this.ensureWasmLoaded();
-          new Notice('✅ LiteRT-LM WASM runtime loaded successfully.', 8000);
-        } catch (err) {
-          console.error('[litert-spike] wasm load failed', err);
-          new Notice(
-            `❌ WASM load FAILED — see console for stack. ${err instanceof Error ? err.message : String(err)}`,
-            12000
-          );
-        }
-      },
-    });
+    // Diagnostics I wrote for myself while getting LiteRT-LM to run inside
+    // Electron. They are genuinely useful when something is broken — "is
+    // WebGPU there", "does the runtime load without the model", "can this
+    // model actually hold a JSON schema" — but they are four of the twenty
+    // entries a user sees when they type the plugin's name, and none of them
+    // is a thing anyone wants to do with their notes. Off unless asked for,
+    // in Settings → Model → Developer commands.
+    if (this.settings.devCommands) {
+      this.addCommand({
+        id: 'litert-check-webgpu',
+        name: '[Test] Check WebGPU',
+        callback: async () => {
+          const result = await checkWebGPU();
+          log('WebGPU check:', result);
+          if (result.ok) notify('done', `WebGPU OK — ${result.detail}`, DURATION.NORMAL);
+          else notify('error', `WebGPU unavailable — ${result.detail}`);
+        },
+      });
+
+      this.addCommand({
+        id: 'litert-load-wasm',
+        name: '[Test] Load WASM runtime (no model download)',
+        callback: async () => {
+          const p = new Progress('Loading LiteRT-LM WASM runtime… full detail in the console (Cmd/Ctrl+Opt+I).');
+          try {
+            await this.ensureWasmLoaded();
+            p.done('LiteRT-LM WASM runtime loaded successfully.');
+          } catch (err) {
+            p.fail('Loading the WASM runtime', err);
+          }
+        },
+      });
 
     this.addCommand({
       id: 'litert-download-model',
       name: 'Download model (one-time, ~3GB)',
       callback: async () => {
-        const notice = new Notice('⏳ Preparing model download…', 0);
+        this.beginRun();
+        this.status('Preparing model download…');
         try {
           const blob = await this.ensureModelBlob((text) => {
             log(text);
-            notice.setMessage(text);
+            this.status(text);
           });
-          notice.setMessage(`Model ready. Size: ${(blob.size / 1e9).toFixed(2)} GB`);
-          setTimeout(() => notice.hide(), 5000);
+          this.statusEnd(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
         } catch (err) {
-          console.error('[gemma4-litert-wiki] model download failed', err);
-          notice.setMessage(`Download: ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 10000);
+          this.statusFail('Downloading the model', err);
         }
       },
     });
 
-    this.addCommand({
-      id: 'litert-fix-grammar',
-      name: '[Test] Fix grammar of selection',
-      editorCallback: async (editor) => {
-        const selection = editor.getSelection();
-        if (!selection.trim()) {
-          new Notice('⚠️ Select some text first, then run this command.');
-          return;
-        }
-        // v1 finding (2026-08-24): the 28s TTFT on a cold engine was mostly
-        // one-time GPU warmup cost, not per-call — once warm, prefill jumps
-        // ~5-6x. Cap is deliberately loose here — this spike's job right
-        // now is to find where the model's real context ceiling is
-        // (currently unknown), not to pre-guess a safe limit. A hard
-        // failure at some length is a valid, useful result, not a bug to
-        // prevent.
-        const MAX_INPUT_CHARS = 40000;
-        if (selection.length > MAX_INPUT_CHARS) {
-          new Notice(
-            `ℹ️ Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
-              'Select a shorter passage (a paragraph, not a whole note).',
-            8000
-          );
-          return;
-        }
-        // Rough token estimate (chars/3, generous for mixed CJK/English) so
-        // the output budget scales with input instead of being a fixed
-        // guess that either truncates long inputs or wastes tokens on
-        // short ones.
-        const estimatedInputTokens = Math.ceil(selection.length / 3);
-        const maxOutputTokens = Math.min(4096, Math.max(256, Math.ceil(estimatedInputTokens * 1.5)));
+      this.addCommand({
+        id: 'litert-fix-grammar',
+        name: '[Test] Fix grammar of selection',
+        editorCallback: async (editor) => {
+          const selection = editor.getSelection();
+          if (!selection.trim()) {
+            notify('warn', 'Select some text first, then run this command.');
+            return;
+          }
+          // v1 finding (2026-08-24): the 28s TTFT on a cold engine was mostly
+          // one-time GPU warmup cost, not per-call — once warm, prefill jumps
+          // ~5-6x. Cap is deliberately loose here — this spike's job right
+          // now is to find where the model's real context ceiling is
+          // (currently unknown), not to pre-guess a safe limit. A hard
+          // failure at some length is a valid, useful result, not a bug to
+          // prevent.
+          const MAX_INPUT_CHARS = 40000;
+          if (selection.length > MAX_INPUT_CHARS) {
+            notify(
+              'warn',
+              `Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
+                'Select a shorter passage (a paragraph, not a whole note).'
+            );
+            return;
+          }
+          // Rough token estimate (chars/3, generous for mixed CJK/English) so
+          // the output budget scales with input instead of being a fixed
+          // guess that either truncates long inputs or wastes tokens on
+          // short ones.
+          const estimatedInputTokens = Math.ceil(selection.length / 3);
+          const maxOutputTokens = Math.min(4096, Math.max(256, Math.ceil(estimatedInputTokens * 1.5)));
 
-        const notice = new Notice('⏳ Loading model (first run downloads ~3GB)…', 0);
-        let conversation: import('@litert-lm/core').Conversation | undefined;
-        try {
-          const engine = await this.ensureEngine((text) => {
-            log(text);
-            notice.setMessage(text);
-          });
-          notice.setMessage('Generating…');
+          const p = new Progress('Loading model (first run downloads ~3GB)…');
+          let conversation: import('@litert-lm/core').Conversation | undefined;
+          try {
+            const engine = await this.ensureEngine((text) => {
+              log(text);
+              p.update(text);
+            });
+            p.update('Generating…');
 
-          const { SamplerType } = await import('@litert-lm/core');
-          conversation = await engine.createConversation({
-            preface: {
-              messages: [
-                {
-                  role: 'system',
-                  content:
-                    'You are a copy editor. Fix grammar and spelling mistakes in the text the user gives you. ' +
-                    'Return ONLY the corrected text — no explanation, no preamble, no quotes around it. ' +
-                    'If the text is already correct, return it unchanged.',
-                },
-              ],
-            },
-            sessionConfig: {
-              samplerParams: { type: SamplerType.GREEDY },
-              maxOutputTokens,
-            },
-          });
+            const { SamplerType } = await import('@litert-lm/core');
+            conversation = await engine.createConversation({
+              preface: {
+                messages: [
+                  {
+                    role: 'system',
+                    content:
+                      'You are a copy editor. Fix grammar and spelling mistakes in the text the user gives you. ' +
+                      'Return ONLY the corrected text — no explanation, no preamble, no quotes around it. ' +
+                      'If the text is already correct, return it unchanged.',
+                  },
+                ],
+              },
+              sessionConfig: {
+                samplerParams: { type: SamplerType.GREEDY },
+                maxOutputTokens,
+              },
+            });
 
-          const wallStart = Date.now();
-          let result = '';
-          const stream = conversation.sendMessageStreaming(selection);
-          const reader = stream.getReader();
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const content = value?.content;
-            if (typeof content === 'string') {
-              result += content;
-            } else if (Array.isArray(content)) {
-              for (const part of content) {
-                if (part.type === 'text' && part.text) result += part.text;
+            const wallStart = Date.now();
+            let result = '';
+            const stream = conversation.sendMessageStreaming(selection);
+            const reader = stream.getReader();
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const content = value?.content;
+              if (typeof content === 'string') {
+                result += content;
+              } else if (Array.isArray(content)) {
+                for (const part of content) {
+                  if (part.type === 'text' && part.text) result += part.text;
+                }
               }
             }
+            const wallMs = Date.now() - wallStart;
+
+            const bench = await conversation.getBenchmarkInfo();
+            log('Grammar fix result:', result);
+            log('Wall time (ms):', wallMs);
+            log('Benchmark info:', bench);
+
+            editor.replaceSelection(result.trim());
+            p.done(
+              `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
+                `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`,
+              DURATION.LONG
+            );
+          } catch (err) {
+            p.fail('Fixing grammar', err);
+          } finally {
+            await conversation?.delete().catch(() => {});
           }
-          const wallMs = Date.now() - wallStart;
+        },
+      });
 
-          const bench = await conversation.getBenchmarkInfo();
-          log('Grammar fix result:', result);
-          log('Wall time (ms):', wallMs);
-          log('Benchmark info:', bench);
+      this.addCommand({
+        id: 'litert-json-reliability',
+        name: '[Test] JSON reliability test (5 runs)',
+        editorCallback: async (editor) => {
+          const selection = editor.getSelection();
+          if (!selection.trim()) {
+            notify('warn', 'Select a short paragraph first, then run this command.');
+            return;
+          }
+          if (selection.length > 3000) {
+            notify('warn', 'Keep it under 3000 chars for this test — pick a single paragraph.');
+            return;
+          }
 
-          notice.setMessage(
-            `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
-              `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`
-          );
-          editor.replaceSelection(result.trim());
-          setTimeout(() => notice.hide(), 10000);
-        } catch (err) {
-          console.error('[litert-spike] grammar fix failed', err);
-          notice.setMessage(`FAILED — see console. ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 12000);
-        } finally {
-          await conversation?.delete().catch(() => {});
-        }
-      },
-    });
+          const RUNS = 5;
+          const p = new Progress('JSON reliability test: loading model…');
+          try {
+            const engine = await this.ensureEngine((text) => {
+              log(text);
+              p.update(text);
+            });
 
-    this.addCommand({
-      id: 'litert-json-reliability',
-      name: '[Test] JSON reliability test (5 runs)',
-      editorCallback: async (editor) => {
-        const selection = editor.getSelection();
-        if (!selection.trim()) {
-          new Notice('⚠️ Select a short paragraph first, then run this command.');
-          return;
-        }
-        if (selection.length > 3000) {
-          new Notice('⚠️ Keep it under 3000 chars for this test — pick a single paragraph.', 6000);
-          return;
-        }
+            const { SamplerType } = await import('@litert-lm/core');
+            let successCount = 0;
+            const outcomes: string[] = [];
 
-        const RUNS = 5;
-        const notice = new Notice(`ℹ️ JSON reliability test: loading model…`, 0);
-        try {
-          const engine = await this.ensureEngine((text) => {
-            log(text);
-            notice.setMessage(text);
-          });
+            for (let i = 1; i <= RUNS; i++) {
+              p.update(`JSON reliability test: run ${i}/${RUNS}…`);
+              let conversation: import('@litert-lm/core').Conversation | undefined;
+              try {
+                conversation = await engine.createConversation({
+                  preface: {
+                    messages: [
+                      {
+                        role: 'system',
+                        content:
+                          'You extract structured metadata from a note. Given the text the user provides, ' +
+                          'respond with ONLY a single JSON object matching this exact shape, no markdown code ' +
+                          'fences, no explanation, nothing before or after it: ' +
+                          '{"summary": "one sentence summary", "tags": ["tag1", "tag2", "tag3"]}. ' +
+                          'Tags must be short lowercase noun phrases, exactly 3 of them.',
+                      },
+                    ],
+                  },
+                  sessionConfig: {
+                    samplerParams: { type: SamplerType.GREEDY },
+                    maxOutputTokens: 512,
+                  },
+                });
 
-          const { SamplerType } = await import('@litert-lm/core');
-          let successCount = 0;
-          const outcomes: string[] = [];
-
-          for (let i = 1; i <= RUNS; i++) {
-            notice.setMessage(`JSON reliability test: run ${i}/${RUNS}…`);
-            let conversation: import('@litert-lm/core').Conversation | undefined;
-            try {
-              conversation = await engine.createConversation({
-                preface: {
-                  messages: [
-                    {
-                      role: 'system',
-                      content:
-                        'You extract structured metadata from a note. Given the text the user provides, ' +
-                        'respond with ONLY a single JSON object matching this exact shape, no markdown code ' +
-                        'fences, no explanation, nothing before or after it: ' +
-                        '{"summary": "one sentence summary", "tags": ["tag1", "tag2", "tag3"]}. ' +
-                        'Tags must be short lowercase noun phrases, exactly 3 of them.',
-                    },
-                  ],
-                },
-                sessionConfig: {
-                  samplerParams: { type: SamplerType.GREEDY },
-                  maxOutputTokens: 512,
-                },
-              });
-
-              let raw = '';
-              const stream = conversation.sendMessageStreaming(selection);
-              const reader = stream.getReader();
-              for (;;) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const content = value?.content;
-                if (typeof content === 'string') raw += content;
-                else if (Array.isArray(content)) {
-                  for (const part of content) {
-                    if (part.type === 'text' && part.text) raw += part.text;
+                let raw = '';
+                const stream = conversation.sendMessageStreaming(selection);
+                const reader = stream.getReader();
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  const content = value?.content;
+                  if (typeof content === 'string') raw += content;
+                  else if (Array.isArray(content)) {
+                    for (const part of content) {
+                      if (part.type === 'text' && part.text) raw += part.text;
+                    }
                   }
                 }
-              }
 
-              // Small models often wrap JSON in ```json ... ``` despite
-              // being told not to — strip that before parsing rather than
-              // counting it as a hard failure.
-              const cleaned = raw
-                .trim()
-                .replace(/^```(?:json)?\s*/i, '')
-                .replace(/```\s*$/i, '')
-                .trim();
+                // Small models often wrap JSON in ```json ... ``` despite
+                // being told not to — strip that before parsing rather than
+                // counting it as a hard failure.
+                const cleaned = raw
+                  .trim()
+                  .replace(/^```(?:json)?\s*/i, '')
+                  .replace(/```\s*$/i, '')
+                  .trim();
 
-              try {
-                const parsed = JSON.parse(cleaned);
-                const valid =
-                  typeof parsed === 'object' &&
-                  parsed !== null &&
-                  typeof parsed.summary === 'string' &&
-                  Array.isArray(parsed.tags) &&
-                  parsed.tags.length === 3 &&
-                  parsed.tags.every((t: unknown) => typeof t === 'string');
-                if (valid) {
-                  successCount++;
-                  log(`Run ${i}: OK`, parsed);
-                  outcomes.push(`Run ${i}: OK — ${JSON.stringify(parsed)}`);
-                } else {
-                  log(`Run ${i}: parsed but wrong shape`, parsed, 'raw:', raw);
-                  outcomes.push(`Run ${i}: WRONG SHAPE — ${cleaned}`);
+                try {
+                  const parsed = JSON.parse(cleaned);
+                  const valid =
+                    typeof parsed === 'object' &&
+                    parsed !== null &&
+                    typeof parsed.summary === 'string' &&
+                    Array.isArray(parsed.tags) &&
+                    parsed.tags.length === 3 &&
+                    parsed.tags.every((t: unknown) => typeof t === 'string');
+                  if (valid) {
+                    successCount++;
+                    log(`Run ${i}: OK`, parsed);
+                    outcomes.push(`Run ${i}: OK — ${JSON.stringify(parsed)}`);
+                  } else {
+                    log(`Run ${i}: parsed but wrong shape`, parsed, 'raw:', raw);
+                    outcomes.push(`Run ${i}: WRONG SHAPE — ${cleaned}`);
+                  }
+                } catch (parseErr) {
+                  log(`Run ${i}: JSON.parse failed`, parseErr, 'raw:', raw);
+                  outcomes.push(`Run ${i}: PARSE FAILED — raw: ${raw}`);
                 }
-              } catch (parseErr) {
-                log(`Run ${i}: JSON.parse failed`, parseErr, 'raw:', raw);
-                outcomes.push(`Run ${i}: PARSE FAILED — raw: ${raw}`);
+              } finally {
+                await conversation?.delete().catch(() => {});
               }
-            } finally {
-              await conversation?.delete().catch(() => {});
             }
-          }
 
-          log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
-          notice.setMessage(
-            `JSON reliability: ${successCount}/${RUNS} valid. Full detail in console (search "JSON reliability").`
-          );
-          setTimeout(() => notice.hide(), 12000);
-        } catch (err) {
-          console.error('[litert-spike] JSON reliability test failed', err);
-          notice.setMessage(`FAILED — see console. ${err instanceof Error ? err.message : String(err)}`);
-          setTimeout(() => notice.hide(), 12000);
-        }
-      },
-    });
+            log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
+            const text = `JSON reliability: ${successCount}/${RUNS} valid. Full detail in console (search "JSON reliability").`;
+            if (successCount === RUNS) p.done(text, DURATION.LONG);
+            else p.warn(text);
+          } catch (err) {
+            p.fail('The JSON reliability test', err);
+          }
+        },
+      });
+    }
 
     // Badge refresh: once the layout is ready, then whenever metadata
     // resolves (covers wiki page creation, deletion, and vault sync).
@@ -1075,12 +1292,12 @@ export default class LiteRtSpikePlugin extends Plugin {
   async suggestTagsAndLinks() {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new Notice('⚠️ Open a note first.');
+      notify('warn', 'Open a note first.');
       return;
     }
     const content = await this.app.vault.read(file);
     if (precheckNote(content, undefined) !== null) {
-      new Notice('ℹ️ Note is empty — nothing to suggest.');
+      notify('noop', 'Note is empty — nothing to suggest.');
       return;
     }
 
@@ -1122,14 +1339,12 @@ export default class LiteRtSpikePlugin extends Plugin {
               await this.app.vault.append(file, block);
             }
           }
-          new Notice(`ℹ️ Updated "${file.basename}" — tags & links added.`, 3000);
+          notify('done', `Updated "${file.basename}" — tags & links added.`);
           this.refreshIngestBadges();
         })();
       }).open();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] suggest tags/links failed', err);
-      this.status(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`);
-      this.statusEnd(undefined, 8000);
+      this.statusFail('Suggest', err);
     }
   }
 
@@ -1188,16 +1403,16 @@ export default class LiteRtSpikePlugin extends Plugin {
     await ensureWikiScaffold(this.app.vault);
     await ensureSkillsScaffold(this.app.vault);
     if (!missing.length) {
-      new Notice(`✅ Everything is already in place under ${wikiDir()}/.`, 4000);
+      notify('noop', `Everything is already in place under ${wikiDir()}/.`);
       return;
     }
-    new Notice(`✅ Created ${missing.length} missing item${missing.length === 1 ? '' : 's'}:\n${missing.join('\n')}`, 8000);
+    notify('done', `Created ${missing.length} missing item${missing.length === 1 ? '' : 's'}:\n${missing.join('\n')}`);
   }
 
   async createSkillsFolder() {
     await ensureSkillsScaffold(this.app.vault);
     const path = `${wikiDir()}/skills`;
-    new Notice(`✅ Skills folder ready at ${path}. Open its README, then add a .md file per skill.`, 6000);
+    notify('done', `Skills folder ready at ${path}. Open its README, then add a .md file per skill.`);
     const readme = this.app.vault.getAbstractFileByPath(`${path}/README.md`);
     if (readme instanceof TFile) await this.app.workspace.getLeaf(true).openFile(readme);
   }
@@ -1229,10 +1444,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   async suggestTagVocabulary() {
     const counts = this.wikiTagCounts();
     if (!counts.length) {
-      new Notice(
-        '⚠️ No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
-          'Ingest a few notes first, then run "Organize tags".',
-        7000
+      notify(
+        'warn',
+        'No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
+          'Ingest a few notes first, then run "Organize tags".'
       );
       return;
     }
@@ -1241,14 +1456,14 @@ export default class LiteRtSpikePlugin extends Plugin {
     let vocab: string[];
     try {
       vocab = await this.cleanTagVocabulary(counts);
-      this.statusEnd('Vocabulary ready — review it below.', 2500);
+      this.statusEnd('Vocabulary ready — review it below.');
     } catch (err) {
       console.error('[gemma4-litert-wiki] vocab suggest failed', err);
-      this.statusEnd(`Suggest FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Suggest', err);
       return;
     }
     if (!vocab.length) {
-      new Notice('ℹ️ The model returned an empty vocabulary — nothing to write.', 5000);
+      notify('noop', 'The model returned an empty vocabulary — nothing to write.');
       return;
     }
 
@@ -1260,7 +1475,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const rejectedSet = new Set(existing.rejected.map((t) => slugify(t)));
     vocab = vocab.filter((t) => !rejectedSet.has(t));
     if (!vocab.length) {
-      new Notice('ℹ️ Every proposed tag is on the Rejected list — nothing to write.', 6000);
+      notify('noop', 'Every proposed tag is on the Rejected list — nothing to write.');
       return;
     }
     const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold, [], existing.rejected);
@@ -1271,8 +1486,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         await ensureWikiScaffold(this.app.vault);
         await writeWikiPage(this.app.vault, path, content);
         await appendLog(this.app.vault, 'schema', `tag vocabulary (${vocab.length} tags)`);
-        this.status(`Schema written: ${path}`);
-        this.statusEnd(undefined, 2500);
+        this.statusEnd(`Schema written: ${path}`);
       })();
     }).open();
   }
@@ -1313,10 +1527,11 @@ export default class LiteRtSpikePlugin extends Plugin {
   private notePendingGrowth(before: number, after: number): void {
     const MARK = 20;
     if (before < MARK && after >= MARK) {
-      new Notice(
-        `⚠️ ${after} tags are waiting in schema.md's Pending list. Run "Organize tags" to fold them ` +
-          'into the vocabulary — until then, similar notes keep coining near-duplicate tags.',
-        9000
+      notifyAndLog(
+        this.app.vault,
+        'warn',
+        `${after} tags are waiting in schema.md's Pending list. Run "Organize tags" to fold them ` +
+          'into the vocabulary — until then, similar notes keep coining near-duplicate tags.'
       );
     }
   }
@@ -1441,7 +1656,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         pages.length < 2
           ? 'Need at least two wiki pages to compare.'
           : 'No tag-sharing page pairs to check — nothing can contradict.',
-        5000
+        'noop'
       );
       return;
     }
@@ -1462,21 +1677,21 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] contradiction scan failed', err);
-      this.statusEnd(`Contradiction scan FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Contradiction scan', err);
       return;
     }
     // The pair cap is also silent otherwise: "0 flagged" reads as "your wiki is
     // consistent" when pairs were never looked at.
     const notChecked = uncappedPairs - pairs.length;
     if (unjudged || notChecked) {
-      new Notice(
-        '⚠️ ' + [
+      notify(
+        'warn',
+        [
           unjudged ? `${unjudged} of ${pairs.length} pairs could not be judged (see console)` : '',
           notChecked ? `${notChecked} more pair${notChecked === 1 ? '' : 's'} not checked this run (cap ${MAX_PAIRS})` : '',
         ]
           .filter(Boolean)
-          .join('; ') + '.',
-        8000
+          .join('; ') + '.'
       );
     }
     new ContradictionReportModal(this.app, flags, pairs.length, uncappedPairs).open();
@@ -1490,7 +1705,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.status('Sampling wiki pages…');
     const samples = await sampleWikiPages(this.app, LIMIT);
     if (!samples.length) {
-      this.statusEnd('No ingested pages with key points to check.', 5000);
+      this.statusEnd('No ingested pages with key points to check.', 'noop');
       return;
     }
     const flags: ProvenanceFlag[] = [];
@@ -1509,7 +1724,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] provenance check failed', err);
-      this.statusEnd(`Provenance check FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Provenance check', err);
       return;
     }
     new ProvenanceReportModal(this.app, flags, samples.length).open();
@@ -1584,7 +1799,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Never map INTO a banned tag, even if a stale hand-edit left it in both lists.
     const vocab = [...new Set(schema.tags.map((t) => slugify(t)).filter((t) => t && !rejected.has(t)))];
     if (!vocab.length) {
-      new Notice('⚠️ No vocabulary in schema.md yet — run "Organize tags" first.', 6000);
+      notify('warn', 'No vocabulary in schema.md yet — run "Organize tags" first.');
       return;
     }
     const STRUCTURAL = new Set(['concept', 'answer', 'chat']);
@@ -1610,7 +1825,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     if (!offVocab.size) {
-      new Notice('ℹ️ All page tags already match the vocabulary — nothing to retag.', 5000);
+      notify('noop', 'All page tags already match the vocabulary — nothing to retag.');
       return;
     }
 
@@ -1621,7 +1836,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusEnd();
     } catch (err) {
       console.error('[gemma4-litert-wiki] retag mapping failed', err);
-      this.statusEnd(`Retag FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+      this.statusFail('Retag', err);
       return;
     }
 
@@ -1642,7 +1857,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       if (JSON.stringify(from) !== JSON.stringify(to)) changes.push({ file: p.file, from, to });
     }
     if (!changes.length) {
-      new Notice('ℹ️ The model kept every old tag as-is — nothing to retag.', 6000);
+      notify('noop', 'The model kept every old tag as-is — nothing to retag.');
       return;
     }
 
@@ -1664,7 +1879,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             });
           }
           await appendLog(this.app.vault, 'retag', `${changes.length} pages to vocabulary`);
-          new Notice(`✅ Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`, 4000);
+          notify('done', `Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`);
         })();
       },
     }).open();
@@ -1785,10 +2000,11 @@ export default class LiteRtSpikePlugin extends Plugin {
       .sort((a, b) => b.members.length - a.members.length);
 
     if (!candidates.length) {
-      new Notice(
-        `ℹ️ No tag or mention is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
+      notify(
+        'noop',
+        `No tag or mention is shared by ${minMembers}+ pages yet (concept threshold = ${minMembers}). ` +
           'Ingest more notes, or lower the threshold in schema.md.',
-        7000
+        DURATION.NORMAL
       );
       return;
     }
@@ -1802,7 +2018,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.statusEnd();
         } catch (err) {
           console.error('[gemma4-litert-wiki] concept overview failed', err);
-          this.statusEnd(`Concept page FAILED — ${err instanceof Error ? err.message : String(err)}`, 8000);
+          this.statusFail('Concept page', err);
           return;
         }
         const members = cluster.members.map((e) => ({ title: e.title, linkPath: e.linkPath }));
@@ -1815,8 +2031,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             await writeWikiPage(this.app.vault, pagePath, pageContent);
             await upsertIndexEntry(this.app.vault, pagePath, `${cluster.tag} (concept)`, overview.slice(0, 140));
             await appendLog(this.app.vault, 'concept', cluster.tag);
-            this.status(`Concept page written: ${pagePath}`);
-            this.statusEnd(undefined, 2500);
+            this.statusEnd(`Concept page written: ${pagePath}`);
             this.refreshIngestBadges();
           })();
         }).open();
@@ -1983,7 +2198,8 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.autoScanIntervalId = null;
     }
     if (!this.settings.autoScanEnabled) {
-      this.scanStatusEl?.hide();
+      this.reviewCount = 0;
+      this.renderStatusBar();
       return;
     }
     void this.refreshScanBadge();
@@ -1997,22 +2213,24 @@ export default class LiteRtSpikePlugin extends Plugin {
   async refreshScanBadge() {
     if (!this.scanStatusEl || !this.settings.autoScanEnabled) return;
     try {
+      // The count MUST use the same scope a scan would. It did not: this call
+      // passed no includePrefixes, so the chip counted the entire vault while
+      // a scan only ever looked at the configured folders. With "testing-cases"
+      // configured, the chip could read "40 to review" and the scan it starts
+      // would find three — a number that was wrong about the only thing it
+      // existed to say.
       const result = await findIngestCandidates(this.app, {
         quietHours: this.settings.scanQuietHours,
-        maxPerRun: this.settings.scanMaxPerRun,
+        maxPerRun: NO_SCAN_CAP,
+        includePrefixes: this.settings.scanInclude.split(',').map((s) => s.trim()).filter(Boolean),
         excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
       });
-      const total = result.eligible.length + result.cappedOut;
-      if (total > 0) {
-        this.scanStatusEl.setText(`📥 ${total} to review`);
-        this.scanStatusEl.setAttr('aria-label', 'New or changed notes — click to scan and review');
-        this.scanStatusEl.show();
-      } else {
-        this.scanStatusEl.hide();
-      }
+      this.reviewCount = result.eligible.length + result.cappedOut;
+      this.renderStatusBar();
     } catch (err) {
       console.error('[gemma4-litert-wiki] scan badge refresh failed', err);
-      this.scanStatusEl.hide();
+      this.reviewCount = 0;
+      this.renderStatusBar();
     }
   }
 
@@ -2032,11 +2250,26 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Set by the settings tab so the Scan button can follow the real state
   // instead of a label set once at click time — which lost track whenever the
   // pane re-rendered, leaving a running scan showing "Scan now".
-  onScanStateChange: (() => void) | null = null;
+  // A set, not a single slot. It was one callback, and the settings pane
+  // cleared it on hide() — which was correct while the pane was the only thing
+  // that set it, and became a way to silently kill someone else's updates the
+  // moment a second consumer appeared. A chip frozen on "Stop scan" forever,
+  // because a settings pane was opened and closed.
+  private busyListeners = new Set<() => void>();
+
+  /** Watch whether the plugin is running something. Returns the unsubscribe. */
+  onScanState(fn: () => void): () => void {
+    this.busyListeners.add(fn);
+    return () => this.busyListeners.delete(fn);
+  }
+
+  private notifyBusyChange(): void {
+    for (const fn of this.busyListeners) fn();
+  }
 
   private setScanRunning(running: boolean): void {
     this.scanRunning = running;
-    this.onScanStateChange?.();
+    this.notifyBusyChange();
   }
 
   isScanning(): boolean {
@@ -2044,28 +2277,146 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   cancelScan(): void {
-    if (this.scanRunning) this.scanCancelled = true;
+    if (!this.scanRunning) return;
+    this.scanCancelled = true;
+    // Say so immediately. A model call cannot be interrupted, so the note in
+    // flight runs to completion — up to forty seconds — and nothing fires a
+    // progress callback during generation, so the status sat on "Drafting
+    // 7/30" the whole time. You pressed Stop and watched something claim to
+    // still be drafting.
+    this.status('Stopping — the note being drafted right now will finish first');
   }
 
-  async scanAndReviewIngest() {
+  // File one open note as a wiki page. Extracted from the command callback
+  // so the chat panel's empty state can offer it too — the moment a user is
+  // looking straight at an empty wiki is the moment to hand them the way to
+  // fill it, and a method is reachable where a command body is not.
+  async ingestActiveNote() {
+      if (this.refuseIfBusy()) return;
+      const file = this.app.workspace.getActiveFile();
+      if (!file) {
+        notify('warn', 'Open a note first.');
+        return;
+      }
+      const content = await this.app.vault.read(file);
+      // Precheck gate (deterministic, no model call): skip empty,
+      // frontmatter-only, and unchanged notes before the 20-40s model
+      // call. "Unchanged" compares a content hash against the existing
+      // page's source_hash.
+      const pagePathForCheck = wikiPagePath(file.basename);
+      const existingHash = getIngestedSourceHashes(this.app).get(file.path);
+      const skip = precheckNote(content, existingHash);
+      if (skip === 'empty' || skip === 'frontmatter-only') {
+        notify(
+          'noop',
+          skip === 'empty' ? 'Note is empty — nothing to ingest.' : 'Note is only frontmatter — nothing to ingest.'
+        );
+        return;
+      }
+      if (skip === 'unchanged') {
+        // Not silently skipped: the note is already ingested and unchanged,
+        // but the user may want to re-ingest anyway — e.g. to regenerate its
+        // related links after the index changed, or just to refresh the page.
+        const proceed = await new Promise<boolean>((resolve) => {
+          new ConfirmModal(this.app, {
+            title: 'Already in the wiki',
+            body:
+              `"${file.basename}" is already ingested and unchanged. Re-ingest anyway? ` +
+              'This regenerates its wiki page (summary, tags, related links) and overwrites the existing one — you still review before it is written.',
+            confirmText: 'Re-ingest',
+            onResult: resolve,
+          }).open();
+        });
+        if (!proceed) return;
+      }
+      void pagePathForCheck;
+
+      // Strip web-clip boilerplate (nav menus, footers, subscribe blocks)
+      // before spending context on it — critical with a 4096-token model.
+      const cleaned = cleanClippedMarkdown(content);
+      // Clamp to the engine context (token-estimated, CJK-aware) rather
+      // than rejecting on a char count — a summary card of the first
+      // part beats nothing, and the marker tells the model the tail is
+      // missing.
+      const clamped = clampToTokens(cleaned, this.budget('ingest'));
+      if (clamped.truncated) {
+        // Same event as the chat panel's truncation message, so it says the
+        // same thing: whose limit it is, and what you can do about it. The
+        // old wording ("fits the local model context") blamed the model for
+        // a cap this plugin chose.
+        notify(
+          'warn',
+          `Only the first ~${Math.round(this.budget('ingest') / 1000)}k tokens of "${file.basename}" were ` +
+            'read — the page below is based on that much. Raise Context window in settings to read more.'
+        );
+      }
+
+      this.beginRun();
+      this.status(`Ingesting "${file.basename}"…`);
+      try {
+        const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
+          this.status(`Ingesting "${file.basename}" — ${t}`)
+        );
+        this.statusEnd();
+
+        const sourceHash = contentHash(content);
+        const pagePath = wikiPagePath(file.basename);
+        const selfLink = pagePath.replace(/\.md$/, '');
+        const candidates = (await this.liveIndexEntries()).filter(
+          (e) => e.linkPath !== selfLink
+        );
+        let related: { title: string; linkPath: string }[] = [];
+        if (candidates.length) {
+          this.status(`Ingesting "${file.basename}" — finding related pages…`);
+          related = await this.pickRelatedPages(extraction.summary, candidates);
+          this.statusEnd();
+        }
+        const pageContent = buildWikiPage(file.basename, file.path, extraction, related, sourceHash);
+        const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
+
+        const previewModal = new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
+          void (async () => {
+            await ensureWikiScaffold(this.app.vault);
+            await writeWikiPage(this.app.vault, pagePath, pageContent);
+            await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
+            const pending = await queuePendingTags(this.app.vault, extraction.tags);
+            this.notePendingGrowth(pending.before, pending.after);
+            await this.rippleConceptPages(pagePath, [...extraction.tags, ...(extraction.mentions ?? [])]);
+            await this.pruneIndex();
+            await appendLog(this.app.vault, 'ingest', file.basename);
+            this.statusEnd(`Wiki page written: ${pagePath}`);
+            this.refreshIngestBadges();
+          })();
+        });
+        this.presentResult(`"${file.basename}" is drafted — review it`, () => previewModal.open());
+      } catch (err) {
+        this.statusFail('Ingest', err);
+      }
+  }
+
+  /**
+   * Ask which folders, then scan them.
+   *
+   * This used to read a settings field and refuse when it was blank, which
+   * made a command called "Scan a folder into the wiki" the one command that
+   * would not let you pick a folder. The dialog does the asking now; the
+   * settings field is only what it opens pre-ticked.
+   *
+   * Pass prefixes to skip the dialog — the background chip already knows what
+   * it counted.
+   */
+  async scanAndReviewIngest(prefixes?: string[]) {
     if (this.scanRunning) {
-      new Notice('⚠️ A scan is already running — use "Stop scan" in settings to cancel it.', 5000);
+      notify('warn', 'A scan is already running — run "Stop the running scan" to cancel it.');
       return;
     }
-    // Allow-list scope (opt-in): scan only looks at the folders the user named.
-    // Blank means nothing to scan — guide them to set it (or ingest one note
-    // by hand) rather than silently sweeping the whole vault.
-    const includePrefixes = this.settings.scanInclude.split(',').map((s) => s.trim()).filter(Boolean);
-    if (!includePrefixes.length) {
-      new Notice(
-        '⚠️ No scan folders set. In Settings → "Scan these folders", name the folder(s) to scan ' +
-          '(e.g. your inbox). To file one specific note instead, use "Ingest active note into wiki".',
-        9000
-      );
-      return;
-    }
+    if (this.refuseIfBusy()) return;
+    const includePrefixes = prefixes ?? (await this.askScanFolders());
+    if (!includePrefixes) return;
+    if (!includePrefixes.length) return;
     this.setScanRunning(true);
     this.scanCancelled = false;
+    this.beginRun();
     try {
       await this.runScanAndReview(includePrefixes);
     } finally {
@@ -2074,20 +2425,73 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
   }
 
+  /**
+   * Build the folder list for the scan dialog, with an exact count per folder.
+   *
+   * One deterministic sweep over the whole vault, then bucket the results by
+   * folder — rather than a sweep per folder, which would be the same work
+   * multiplied by however many folders you have. No model runs here, so the
+   * numbers are free and exact.
+   *
+   * Returns null if the user cancelled.
+   */
+  private async askScanFolders(): Promise<string[] | null> {
+    const configured = this.settings.scanInclude.split(',').map((v) => v.trim()).filter(Boolean);
+    const all = await findIngestCandidates(this.app, {
+      quietHours: 0,
+      maxPerRun: NO_SCAN_CAP,
+      excludePrefixes: this.settings.scanExclude.split(',').map((v) => v.trim()).filter(Boolean),
+    });
+
+    // Bucket by the note's immediate parent folder. Notes at the vault root
+    // are offered as one entry so they are reachable rather than invisible.
+    const counts = new Map<string, number>();
+    for (const c of all.eligible) {
+      const slash = c.file.path.lastIndexOf('/');
+      const folder = slash === -1 ? '/' : c.file.path.slice(0, slash);
+      counts.set(folder, (counts.get(folder) ?? 0) + 1);
+    }
+    // A folder already in settings stays on the list even at zero, so an
+    // existing choice never silently disappears from under the user.
+    for (const c of configured) if (!counts.has(c)) counts.set(c, 0);
+
+    const folders = [...counts.entries()]
+      .map(([path, count]) => ({ path, count }))
+      .sort((a, b) => b.count - a.count || a.path.localeCompare(b.path));
+
+    return new Promise((resolve) => {
+      new ScanFolderModal(this.app, {
+        folders,
+        preselected: configured.filter((c) => counts.has(c)),
+        onCancel: () => resolve(null),
+        onConfirm: (chosen) => {
+          void (async () => {
+            // Remembered automatically, not behind a tick. You expect a dialog
+            // to open where you left it, and the background count should watch
+            // the folders you actually care about — which is the ones you last
+            // scanned, not a field you filled in once and forgot.
+            this.settings.scanInclude = chosen.join(', ');
+            await this.saveSettings();
+            resolve(chosen);
+          })();
+        },
+      }).open();
+    });
+  }
+
   private async runScanAndReview(includePrefixes: string[]) {
     this.status('Scanning for new or changed notes…');
     const result = await findIngestCandidates(this.app, {
-      // Manual scan ignores the quiet period (issue #42): clicking "Scan now"
+      // Manual scan ignores the quiet period (issue #42): starting a scan
       // is an explicit ask — skipping the notes you just wrote is the opposite
-      // of the intent. The quiet period only guards background auto-scan,
+      // of the intent. The quiet period only guards the background count,
       // where a timer could grab a half-written draft mid-edit.
       quietHours: 0,
-      maxPerRun: this.settings.scanMaxPerRun,
+      maxPerRun: NO_SCAN_CAP,
       includePrefixes,
       excludePrefixes: this.settings.scanExclude.split(',').map((s) => s.trim()).filter(Boolean),
     });
     let eligible = result.eligible;
-    let cappedOut = result.cappedOut;
     if (!eligible.length) {
       const quietNote = result.skippedQuiet
         ? ` (${result.skippedQuiet} skipped — edited within the quiet period)`
@@ -2111,16 +2515,14 @@ export default class LiteRtSpikePlugin extends Plugin {
           }).open();
         });
         if (!proceed) return;
-        eligible = result.unchanged
-          .slice(0, this.settings.scanMaxPerRun)
-          .map((file) => ({ file, reason: 'refresh' as const }));
-        cappedOut = Math.max(0, result.unchanged.length - this.settings.scanMaxPerRun);
+        eligible = result.unchanged.map((file) => ({ file, reason: 'refresh' as const }));
       } else {
-        new Notice(
+        notify(
+          'noop',
           result.scanned
-            ? `ℹ️ Scanned ${result.scanned} notes — nothing new or changed to ingest.${quietNote}`
-            : 'ℹ️ No notes in scope to scan.',
-          6000
+            ? `Scanned ${result.scanned} notes — nothing new or changed to ingest.${quietNote}`
+            : 'No notes in scope to scan.',
+          DURATION.NORMAL
         );
         return;
       }
@@ -2135,11 +2537,12 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Drafting is one model call per note — minutes for a batch. Say so up
     // front, and say the settings pane is not holding it: users sat watching
     // a dialog they could have closed, unsure whether closing would cancel.
-    new Notice(
-      `⏳ Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each. You can close Settings ` +
-        'and keep working; the review dialog opens here when it is done. ' +
-        '(To stop early, reopen Settings and click "Stop scan".)',
-      9000
+    notify(
+      'progress',
+      `Scanning ${n} note${n === 1 ? '' : 's'} — about one model call each, so this takes a while. ` +
+        'Close Settings and keep working: progress runs in the status bar, and the review dialog ' +
+        'waits for you there rather than interrupting. (To stop early, run "Stop the running scan".)',
+      DURATION.LONG
     );
     // Pages drafted earlier in THIS batch are valid link targets for later
     // ones: they are about to be written together. Without this, scanning a
@@ -2157,9 +2560,10 @@ export default class LiteRtSpikePlugin extends Plugin {
       try {
         const content = await this.app.vault.read(file);
         const clamped = clampToTokens(cleanClippedMarkdown(content), this.budget('ingest'));
-        const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
-          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`)
-        );
+        const extraction = await this.extractNoteMetadata(clamped.text, (t) => {
+          if (this.scanCancelled) return;
+          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`);
+        });
         const sourceHash = contentHash(content);
         const pagePath = wikiPagePath(file.basename);
         const selfLink = pagePath.replace(/\.md$/, '');
@@ -2168,7 +2572,9 @@ export default class LiteRtSpikePlugin extends Plugin {
         );
         let related: { title: string; linkPath: string }[] = [];
         if (candidates.length) {
-          this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
+          if (!this.scanCancelled) {
+            this.status(`Drafting ${i + 1}/${n} — ${file.basename} · finding related pages…`);
+          }
           related = await this.pickRelatedPages(extraction.summary, candidates);
         }
         batchEntries.push({ linkPath: selfLink, title: file.basename, summary: extraction.summary });
@@ -2190,21 +2596,13 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.statusEnd();
 
     if (!drafts.length) {
-      new Notice(
-        cancelled ? 'ℹ️ Scan stopped — no drafts were finished.' : '❌ Every draft failed to generate — nothing to review.',
-        6000
-      );
+      if (cancelled) notify('noop', 'Scan stopped — no drafts were finished.', DURATION.NORMAL);
+      else notifyAndLog(this.app.vault, 'error', 'Every draft failed to generate — nothing to review.');
       return;
     }
 
-    const capNote = cancelled
-      ? ' (scan stopped — the rest will be offered next scan)'
-      : cappedOut
-        ? ` (${cappedOut} more left for the next scan)`
-        : '';
-    new Notice(`✅ ${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}.`, 4000);
-
-    new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
+    const capNote = cancelled ? ' — you stopped it, the rest is offered next scan' : '';
+    const reviewModal = new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
       if (!approved.length) return;
       await ensureWikiScaffold(this.app.vault);
       // Track Pending across the whole batch so the nudge fires once for the
@@ -2227,8 +2625,119 @@ export default class LiteRtSpikePlugin extends Plugin {
       await this.pruneDeadRelatedLinks();
       this.refreshIngestBadges();
       void this.refreshScanBadge();
-      new Notice(`✅ Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`, 4000);
-    }).open();
+      notify('done', `Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`);
+    });
+    // Drafting a batch takes minutes. If you went back to your notes while it
+    // ran, this dialog waits on the status bar rather than jumping in front
+    // of whatever you are typing.
+    const label = `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}`;
+    this.presentResult(label, () => reviewModal.open());
+  }
+
+  /**
+   * Run a skill whose output belongs in a file rather than in the chat.
+   *
+   * Everything else in the ⚡ menu answers into the conversation and leaves
+   * you to save it by hand. That is wrong for a skill whose result IS an
+   * artifact — flashcards are something you take away, not something you read
+   * once and scroll past — and it is the whole difference between a saved
+   * prompt and a tool.
+   *
+   * Deliberately not in the chat panel: this is one structured ask, one
+   * preview, one write, and the chat's job is conversation. It lands in a
+   * folder that is NOT one of the four page folders, so the result is never
+   * indexed, retrieved, or flagged stale — it is yours, not more material for
+   * the wiki to reason about.
+   */
+  async runSkillToFile(skill: WikiSkill) {
+    if (this.refuseIfBusy()) return;
+    const dir = skill.writes;
+    if (!dir) return;
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      notify('warn', 'Open a note first.');
+      return;
+    }
+    const raw = await this.app.vault.read(file);
+    if (!raw.trim()) {
+      notify('noop', 'Note is empty — nothing to work from.');
+      return;
+    }
+    const clamped = clampToTokens(cleanClippedMarkdown(raw), this.budget('chat'));
+    if (clamped.truncated) {
+      notify(
+        'warn',
+        `Only the first ~${Math.round(this.budget('chat') / 1000)}k tokens of "${file.basename}" ` +
+          'were read. Raise Context window in settings to use more.'
+      );
+    }
+
+    this.beginRun();
+    this.status(`${skill.label}: "${file.basename}"`);
+    let out = '';
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      const engine = await this.ensureEngine((t) => this.status(`${skill.label} — ${t}`));
+      const { SamplerType } = await import('@litert-lm/core');
+      conversation = await engine.createConversation({
+        preface: {
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Use ONLY the note below. Never bring in outside knowledge, and never invent ' +
+                'detail that is not there. The instruction comes from the user; carry it out ' +
+                'from what the note contains rather than looking for it inside the note. ' +
+                'Reply with the finished result and nothing else — no preamble, no commentary.' +
+                `\n\n## Note: ${file.basename}\n${clamped.text}`,
+            },
+          ],
+        },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 2048 },
+      });
+      const message = await conversation.sendMessage(skill.prompt);
+      const c = message.content;
+      if (typeof c === 'string') out = c;
+      else if (Array.isArray(c)) {
+        for (const part of c) if (part.type === 'text' && part.text) out += part.text;
+      }
+    } catch (err) {
+      this.statusFail(skill.label, err);
+      return;
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+
+    out = out.trim();
+    if (!out) {
+      this.statusEnd(`${skill.label} produced nothing.`, 'noop');
+      return;
+    }
+    this.statusEnd();
+
+    const path = normalizePath(`${wikiDir()}/${dir}/${slugify(file.basename)}.md`);
+    const body =
+      `---\nskill: ${skill.label}\nsource: ${file.path}\ncreated: ${window.moment().format('YYYY-MM-DD')}\n---\n\n` +
+      `# ${skill.label} — ${file.basename}\n\n${out}\n`;
+    const overwriting = !!this.app.vault.getAbstractFileByPath(path);
+    const modal = new IngestPreviewModal(
+      this.app,
+      path,
+      body,
+      overwriting,
+      () => {
+        void (async () => {
+          await this.app.vault
+            .createFolder(normalizePath(`${wikiDir()}/${dir}`))
+            .catch(() => {});
+          await writeWikiPage(this.app.vault, path, body);
+          await appendLog(this.app.vault, 'skill', `${skill.label} → ${path}`);
+          this.statusEnd(`Written: ${path}`);
+        })();
+      },
+      `Review before writing to ${dir}/`
+    );
+    this.presentResult(`${skill.label} is ready — review it`, () => modal.open());
   }
 
   // The one write operation that touches a raw note — and therefore the
@@ -2248,9 +2757,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   // rewritten one pass at a time with a fresh conversation, and stitched back
   // together before the preview gate.
   async improveActiveNote() {
+    if (this.refuseIfBusy()) return;
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new Notice('⚠️ Open a note first.');
+      notify('warn', 'Open a note first.');
       return;
     }
     // With a selection active, improve just the selection — still the way to
@@ -2268,7 +2778,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const selTo = usingSelection ? editor?.getCursor('to') : undefined;
     const content = usingSelection ? selection : await this.app.vault.read(file);
     if (!content.trim()) {
-      new Notice('ℹ️ Note is empty — nothing to improve.');
+      notify('noop', 'Note is empty — nothing to improve.');
       return;
     }
 
@@ -2285,7 +2795,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     if (!body.trim()) {
-      new Notice('ℹ️ Note is only frontmatter — nothing to improve.');
+      notify('noop', 'Note is only frontmatter — nothing to improve.');
       return;
     }
 
@@ -2295,7 +2805,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const chunks = chunkForImprove(body, MAX_INPUT_TOKENS);
     const passes = chunks.filter((c) => !c.verbatim && c.raw.trim()).length;
     if (passes === 0) {
-      new Notice('ℹ️ Nothing to improve — this note is one oversized code block, which is preserved as-is.', 8000);
+      notify('noop', 'Nothing to improve — this note is one oversized code block, which is preserved as-is.');
       return;
     }
     // Each pass is roughly half a minute of GPU time. Past a couple of them
@@ -2335,6 +2845,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         : '') +
       'Return ONLY the markdown, no explanation.';
 
+    this.beginRun();
     this.status(`Improving "${file.basename}"…`);
     const pieces: string[] = [];
     let failed = 0;
@@ -2409,13 +2920,13 @@ export default class LiteRtSpikePlugin extends Plugin {
         (passes > 1 ? ` — ${passes} passes` : '') +
         (failed > 0 ? `, ${failed} left unchanged (failed)` : '');
       if (failed > 0) {
-        new Notice(
-          `⚠️ ${failed} of ${passes} passes failed; those sections are unchanged in the preview. ` +
-            'See the console for why.',
-          8000
+        notify(
+          'warn',
+          `${failed} of ${passes} passes failed; those sections are unchanged in the preview. ` +
+            'Press Cmd/Ctrl+Opt+I for the full error.'
         );
       }
-      new IngestPreviewModal(this.app, source, improved, true, () => {
+      const previewModal = new IngestPreviewModal(this.app, source, improved, true, () => {
         void (async () => {
           if (usingSelection && editor && selFrom && selTo) {
             editor.replaceRange(improved, selFrom, selTo);
@@ -2423,13 +2934,15 @@ export default class LiteRtSpikePlugin extends Plugin {
             await this.app.vault.modify(file, improved);
           }
           await appendLog(this.app.vault, 'improve', file.basename);
-          new Notice(`✅ Note updated: ${file.basename}`, 3000);
+          notify('done', `Note updated: ${file.basename}`);
         })();
-      }).open();
+      }, 'Review your note before it is rewritten');
+      // A multi-pass rewrite is minutes of GPU time. Same rule as scan: if you
+      // walked away, the preview waits on the status bar instead of taking the
+      // window back.
+      this.presentResult(`"${file.basename}" is rewritten — review it`, () => previewModal.open());
     } catch (err) {
-      console.error('[gemma4-litert-wiki] improve failed', err);
-      this.status(`Improve FAILED — ${err instanceof Error ? err.message : String(err)}`);
-      this.statusEnd(undefined, 8000);
+      this.statusFail('Improve', err);
     }
   }
 
@@ -2741,7 +3254,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   // source: frontmatter points at raw notes (untouched); only the layer's
   // own paths (index links, Related links, path-prefixed wikilinks) move.
   async renameWikiDir(prev: string, next: string) {
-    const notice = new Notice(`⏳ Renaming ${prev} → ${next}…`, 0);
+    const p = new Progress(`Renaming ${prev} → ${next}…`);
     let skipped = 0;
     try {
       const prevFolder = this.app.vault.getAbstractFileByPath(prev);
@@ -2791,17 +3304,21 @@ export default class LiteRtSpikePlugin extends Plugin {
       await ensureWikiScaffold(this.app.vault);
       await ensureSkillsScaffold(this.app.vault);
       this.refreshIngestBadges();
-      notice.setMessage(
-        skipped
-          ? `⚠️ Wiki folder is now "${next}". ${skipped} file${skipped === 1 ? '' : 's'} already existed there ` +
+      if (skipped) {
+        void logNotice(
+          this.app.vault,
+          'warn',
+          `Renamed "${prev}" to "${next}"; ${skipped} file(s) already existed there and were left behind.`
+        );
+        p.warn(
+          `Wiki folder is now "${next}". ${skipped} file${skipped === 1 ? '' : 's'} already existed there ` +
             `and were left as they were — the originals are still in "${prev}/".`
-          : `✅ Wiki folder is now "${next}".`
-      );
-      setTimeout(() => notice.hide(), skipped ? 10000 : 4000);
+        );
+      } else {
+        p.done(`Wiki folder is now "${next}".`);
+      }
     } catch (err) {
-      console.error('[gemma4-litert-wiki] rename wiki dir failed', err);
-      notice.setMessage(`Rename failed — ${err instanceof Error ? err.message : String(err)}`);
-      setTimeout(() => notice.hide(), 8000);
+      p.fail('Renaming the wiki folder', err, this.app.vault);
     }
   }
 
@@ -2824,15 +3341,13 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Trigger the (resumable) download from the settings page — same gated
   // path used on first use, so re-download and resume both work here.
   async downloadModelFromSettings() {
-    const notice = new Notice('⏳ Preparing model download…', 0);
+    this.beginRun();
+    this.status('Preparing model download…');
     try {
-      const blob = await this.ensureModelBlob((t) => notice.setMessage(t));
-      notice.setMessage(`Model ready. Size: ${(blob.size / 1e9).toFixed(2)} GB`);
-      setTimeout(() => notice.hide(), 5000);
+      const blob = await this.ensureModelBlob((t) => this.status(t));
+      this.statusEnd(`Model ready — ${(blob.size / 1e9).toFixed(2)} GB, cached. It never downloads again.`);
     } catch (err) {
-      console.error('[gemma4-litert-wiki] settings download failed', err);
-      notice.setMessage(`Download: ${err instanceof Error ? err.message : String(err)}`);
-      setTimeout(() => notice.hide(), 10000);
+      this.statusFail('Downloading the model', err);
     }
   }
 
@@ -2877,24 +3392,32 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   // Per-feature input budgets derived from the configured context window.
   // Floors are the old 4096-context values, so a small window behaves exactly
-  // as before; ceilings keep prefill latency sane even at 64k — feeding the
-  // model 60k tokens per call would take minutes, not seconds.
+  // as before.
+  //
+  // The ceilings exist because prefill is not free — filling 60k tokens takes
+  // minutes, not seconds. But they used to be flat numbers, which made the
+  // Context window setting lie: it promises "longer notes fit whole", and a
+  // 27k-token note was truncated identically at 32k and at 64k because chat
+  // stopped at 24k either way. Raising the setting did nothing and the user
+  // was told the model could not hold it, which was not true — the plugin
+  // would not give it to the model. The ceilings now scale with the window, so
+  // the setting does what it says while still keeping a single call bounded.
   budget(kind: 'chat' | 'ingest' | 'improve' | 'provenance'): number {
-    const ctx = this.settings.contextTokens || 4096;
+    const ctx = this.effectiveContextTokens ?? this.settings.contextTokens ?? 4096;
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     switch (kind) {
       case 'chat':
         // Grounding for one answer: context minus output + instructions.
-        return clamp(ctx - 2000, 2400, 24000);
+        return clamp(ctx - 2000, 2400, Math.max(24000, Math.floor(ctx * 0.75)));
       case 'ingest':
         // One note being summarized into a card.
-        return clamp(Math.floor(ctx / 3), 2600, 16000);
+        return clamp(Math.floor(ctx / 3), 2600, Math.max(16000, Math.floor(ctx * 0.4)));
       case 'improve':
         // Input cap where input PLUS a same-sized rewrite must fit.
         return clamp(Math.floor((ctx - 1000) / 2.2), 1750, 24000);
       case 'provenance':
         // Source note fed to the claims check.
-        return clamp(Math.floor(ctx / 5), 2200, 12000);
+        return clamp(Math.floor(ctx / 5), 2200, Math.max(12000, Math.floor(ctx * 0.25)));
     }
   }
 
@@ -2919,6 +3442,24 @@ export default class LiteRtSpikePlugin extends Plugin {
           benchmarkEnabled: true,
           mainExecutorSettings: { maxNumTokens: this.settings.contextTokens || 4096 },
         });
+        // Read the window back out of the engine instead of trusting the
+        // request. LiteRT-LM is free to clamp maxNumTokens to what the model
+        // and the GPU can actually hold, and if it does, every budget derived
+        // from the setting would overshoot and the call would fail deep inside
+        // generation with nothing the user could act on.
+        const granted = engine.settings?.mainExecutorSettings?.maxNumTokens;
+        if (typeof granted === 'number' && granted > 0) {
+          this.effectiveContextTokens = granted;
+          const asked = this.settings.contextTokens || 4096;
+          log('context window:', { asked, granted });
+          if (granted < asked) {
+            notify(
+              'info',
+              `Context window: asked for ${asked.toLocaleString()} tokens, the model granted ` +
+                `${granted.toLocaleString()}. Gemma Wiki is using the real number.`
+            );
+          }
+        }
         onProgress('Ready.');
         return engine;
       })().catch((err) => {

@@ -199,6 +199,25 @@ const ICON_ZAP = ICON_SVG(
     '.78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'
 );
 
+// The rest of the chat panel's controls, so the README can name a button by
+// drawing it. Same Lucide glyphs the panel itself asks Obsidian for.
+const ICON_ATTACH = ICON_SVG('<path d="M5 12h14"/><path d="M12 5v14"/>');
+
+const ICON_COPY = ICON_SVG(
+  '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>' +
+    '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
+);
+
+const ICON_REGEN = ICON_SVG(
+  '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>' +
+    '<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'
+);
+
+const ICON_TRASH = ICON_SVG(
+  '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>' +
+    '<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
+);
+
 // Expanded, not a collapsed toggle. This is the first file a new user opens,
 // and "> [!info]-" hides its own contents behind a click nobody knows to make —
 // the explanation was there and invisible. Entries are appended to the end of
@@ -231,11 +250,24 @@ const LOG_HEADER =
 // README is documentation for the folder it sits in — none of them is a page,
 // so none of them should ever appear in lint, the review board, retag, relink
 // or the contradiction sweep.
+/**
+ * The four folders whose files are pages: things that go in `index.md` and
+ * that lint, the review board, retagging and concept clustering all iterate.
+ *
+ * An allow-list, not a deny-list. It used to be "anything under the wiki
+ * folder except index, log, schema and READMEs", which quietly counted every
+ * file in `skills/` as a page — lint reported each one as an orphan, and the
+ * review board offered to refresh a prompt for going stale. A deny-list is
+ * also wrong for every folder added later, which would each have to remember
+ * to exclude themselves.
+ */
+function pageDirs(): string[] {
+  return [wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir()];
+}
+
 export function isWikiPage(file: { path: string; basename: string }): boolean {
-  if (!file.path.startsWith(`${_wikiDir}/`)) return false;
-  if (file.path === indexPath() || file.path === logPath() || file.path === schemaPath()) return false;
   if (file.basename.toLowerCase() === 'readme') return false;
-  return true;
+  return pageDirs().some((dir) => file.path.startsWith(`${dir}/`));
 }
 
 export function wikiScaffoldPaths(): { path: string; what: string }[] {
@@ -267,20 +299,118 @@ const FOLDER_READMES: Array<[() => string, string]> = [
     () => `${_wikiDir}/README.md`,
     `# ${_wikiDir}\n\n` +
       `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified — they stay wherever you keep them. *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
-      `> [!info] Where the plugin lives\n` +
-      `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill from the ${ICON_ZAP} menu, and save an answer back here.\n` +
-      `>\n` +
-      `> Everything else is a command: press <kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd> and type *Gemma Wiki*.\n\n` +
-      `> [!info] Where things go\n` +
-      `> | Folder | What lands here |\n` +
-      `> |---|---|\n` +
-      `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |\n` +
-      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. They become grounding for later questions. |\n` +
-      `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |\n` +
-      `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |\n` +
-      `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |\n` +
-      `>\n` +
-      `> Every folder has a README of its own describing what belongs in it.\n\n` +
+      `> [!info] Where the plugin lives` + `\n` +
+      `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill, and save an answer back here.` + `\n` +
+      `>` + `\n` +
+      `> Everything else is a command: press <kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd> and type *Gemma Wiki*.` + `\n\n` +
+      `> [!info] Before it can answer anything` + `\n` +
+      `> The model is downloaded once — about 3 GB — and cached. It is not bundled with the plugin, so the first question you ask (or **Settings → Download model**) starts the download; you can keep working while it runs, and it resumes if interrupted.` + `\n` +
+      `>` + `\n` +
+      `> After that the plugin **never touches the network again**. There is no server, no API key, and no account: Gemma 4 runs inside Obsidian's own process on your GPU. Requires a desktop Obsidian with WebGPU — **Settings → [Test] Check WebGPU** confirms it in one click.` + `\n\n` +
+      `## What it can do` + `\n\n` +
+      `Nothing here reaches the network. Gemma 4 runs inside Obsidian on your GPU, so every command below costs GPU time rather than money, and works on a plane.` + `\n\n` +
+      `> [!info] Ask` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Chat with active note** | Answers grounded in the note you have open — and nothing else. It says "not in the note" instead of guessing. |` + `\n` +
+      `> | **Ask your wiki** | The other half of the same panel. Reads \`index.md\` to pick the pages worth opening, then answers from those, citing them. A question about the *collection* — *Find connections*, *What's still open?* — grounds in **every page instead**, because "what links my pages" is not a question retrieval can find an answer to. |` + `\n` +
+      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Unclear bits*, which ship as files. **All of them work on the open note**, so in Wiki mode they show greyed with a line saying to switch. A skill with \`fill: true\` puts its prompt in the input box and waits for you to finish the sentence instead of sending — that is how *Feynman* asks which idea. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
+      `> [!info] File notes into the wiki` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Ingest this note into wiki** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. **This is the one-note version of Scan.** |` + `\n` +
+      `> | **Scan a folder into the wiki** | The same thing over whole folders. It asks which ones, and **shows how many new or changed notes each holds and roughly how long the run takes** before you commit. Then it drafts them all and shows you the batch — **nothing is written until you approve it**. |` + `\n` +
+      `> | **Suggest tags & links** | Proposes frontmatter tags and links to related pages, for one note. You review before it writes. |` + `\n\n` +
+      `> [!info] Build on top of what is filed` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Build a concept page** | Pick a tag or a name that several pages share; get a page written *above* them that links down into each. This is the wiki layer, not another summary. |` + `\n` +
+      `> | **Relink wiki pages** | Fills in or re-syncs the *Related* section on every page as the wiki grows. |` + `\n` +
+      `> | **Organize tags** | Reads every tag your ingests produced and folds them into one vocabulary in \`schema.md\`. |` + `\n` +
+      `> | **Retag wiki pages** | Rewrites existing pages to use that vocabulary, so near-duplicate tags collapse. |` + `\n\n` +
+      `> [!info] Check the wiki against itself` + `\n` +
+      `> | | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Review board** | Everything that needs a human: low-confidence pages, and pages whose source note has changed since they were made. |` + `\n` +
+      `> | **Find contradictions** | Compares pages against each other and reports claims that cannot both be true. |` + `\n` +
+      `> | **Provenance spot-check** | Takes key points off a page and checks each one against the note it came from. Catches invented detail. |` + `\n` +
+      `> | **Lint wiki** | Structural only, no model: orphan pages, broken index entries. |` + `\n` +
+      `> | **Reconcile wiki** | Drops index entries and links pointing at pages you deleted. |` + `\n\n` +
+      `> [!info] The one command that edits your own note` + `\n` +
+      `> **Improve formatting** is the only thing here that writes into a note of yours. It fixes headings, lists and spacing — **it does not rewrite your words**, and the rewritten note is shown to you in full before anything is saved.` + `\n` +
+      `>` + `\n` +
+      `> A long note is split on its own headings and done in several passes; you are told how many before it starts. Select a section first to aim it at just that part.` + `\n\n` +
+      `## The chat panel` + `\n\n` +
+      `> [!info] Every answer ends with its Sources` + `\n` +
+      `> **The plugin lists what it put in the prompt. The model is never asked to cite anything.** Citation is exactly the thing a small local model would get wrong in a way nobody notices — an invented page name reads as well as a real one.` + `\n` +
+      `>` + `\n` +
+      `> So the Sources row under an answer is not the model's claim about where it looked. It is the plugin's record of what it sent, and every entry is clickable.` + `\n` +
+      `>` + `\n` +
+      `> If the material does not contain the answer, you get told that instead of a guess — in both modes.` + `\n\n` +
+      `> [!info] Header` + `\n` +
+      `> | Control | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **This note** / **Wiki** | Which material the answer is allowed to use. *This note* = the note you have open. *Wiki* = the pages in this folder. Switching also changes the suggestion chips underneath. |` + `\n` +
+      `> | ${ICON_SAVE_DISK} | Save the **whole conversation** to \`chats/\` as one file. |` + `\n` +
+      `> | ${ICON_TRASH} | Clear the thread. Nothing is written anywhere. |` + `\n\n` +
+      `> [!info] Under each answer` + `\n` +
+      `> | Control | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | ${ICON_COPY} | Copy the answer as markdown. |` + `\n` +
+      `> | ${ICON_REGEN} | Ask again from the same question. Useful when an answer starts well and drifts. |` + `\n` +
+      `> | ${ICON_SAVE_TO_WIKI} | Save **this one answer** to \`answers/\` — where it becomes grounding for later questions. |` + `\n\n` +
+      `> [!info] Around the input box` + `\n` +
+      `> | Control | What it does |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | ${ICON_ATTACH} | Attach another note as extra context, on top of whatever the current mode already sends. |` + `\n` +
+      `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. A skill can declare which mode it needs; one that needs the other mode is **shown greyed rather than switching you into it** — a menu item should not quietly change what the panel is grounded in. |` + `\n` +
+      `> | The chips above it | Three one-press starters, fixed — the row you learn is the row you keep. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* **While a scan is running, the first one becomes *Stop scan*.** **A chip with a small icon does something; a chip without one asks something.** The ones that do are always behind their own preview. |` + `\n` +
+      `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n` +
+      `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
+      `## While something is running` + `\n\n` +
+      `Ingesting a note is half a minute. Scanning a folder, or reformatting a long note, is minutes. You are not meant to sit and watch.` + `\n\n` +
+      `> [!info] It pops once, then moves to the status bar` + `\n` +
+      `> Starting is a moment, so it pops in the corner like anything else. **Staying started is not a moment**, so the running detail moves to the status bar along the bottom edge — always visible, never covering what you are reading, and **impossible to dismiss by accident**. Click it and it repeats the current step instead of disappearing. It pops again when it finishes.` + `\n` +
+      `>` + `\n` +
+      `> The same one line shows three things, whichever is true:` + `\n` +
+      `>` + `\n` +
+      `> | Looks like | Means |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | ⏳ *Drafting 7/30 — …* | Working. Click to repeat the message. |` + `\n` +
+      `> | ✅ *30 drafts ready to review* | **Finished, and waiting for you.** Click to open it. |` + `\n` +
+      `> | 📥 *4 to review* | Notes have changed since you filed them. Click to scan. **Off by default**, and when on it only *counts* — it never runs the model behind your back. |` + `\n\n` +
+      `> [!info] Stopping a scan` + `\n` +
+      `> While one is running, the **Scan a folder** chip becomes **Stop scan** — and so does "Stop the running scan" on the command palette.` + `\n` +
+      `>` + `\n` +
+      `> A model call cannot be interrupted, so **the note being drafted right now finishes first** — up to a minute — and it is kept. Everything drafted up to that point goes to the review list as usual; the rest is simply offered again on the next scan. **Stopping never loses work and never writes anything.**` + `\n\n` +
+      `> [!info] A dialog will not jump in front of you` + `\n` +
+      `> If you stayed and waited, the result opens by itself — you are waiting on it, and making you click again would be silly.` + `\n` +
+      `>` + `\n` +
+      `> **If you went back to your notes while it ran, it does not open.** It waits on the status bar as ✅ until you ask for it. A dialog that steals the window minutes after you started something is an ambush: by then you are typing somewhere else, and it is the first you hear of the whole operation.` + `\n\n` +
+      `> [!info] One more mark, in the file explorer` + `\n` +
+      `> A small mark next to a note means it already has a page in \`sources/\`. Decoration only — **the note file itself is untouched**.` + `\n\n` +
+      `## Settings worth knowing about` + `\n\n` +
+      `> [!info] The five that change what happens` + `\n` +
+      `> | Setting | Why you would touch it |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Context window** | How much the model holds at once. Bigger = longer notes fit whole and answers ground on more; costs GPU memory and time to the first word. **If the model fails to load or answers get worse after raising it, lower it.** Takes effect after the plugin reloads. |` + `\n` +
+      `> | **Never scan these** | Folders that are not notes: templates, attachments, an archive. Skipped by every scan whatever you tick. There is no "which folders" setting — the scan dialog asks, and remembers your last pick. |` + `\n` +
+      `> | **Stale after (days)** | How old a page gets before the review board asks you to look at it again. |` + `\n` +
+      `> | **Default chat mode** | Whether the panel opens on *This note* or *Wiki*. |` + `\n` +
+      `> | **Knowledge folder name** | Renames this folder and rewrites every internal link. Asks first. |` + `\n` +
+      `>` + `\n` +
+      `> Settings also shows a live map of this folder with a tick or *missing* per row, and a **Repair folders** button that recreates anything gone. It only ever adds.` + `\n\n` +
+      `## Where things go` + `\n\n` +
+      `> [!info] Folders` + `\n` +
+      `> | Folder | What lands here |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |` + `\n` +
+      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. They become grounding for later questions. |` + `\n` +
+      `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |` + `\n` +
+      `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
+      `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
+      `>` + `\n` +
+      `> Every folder has a README of its own describing what belongs in it.` + `\n\n` +
       `> [!info] The three files\n` +
       `> | File | What it is |\n` +
       `> |---|---|\n` +
@@ -380,14 +510,49 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   if (!vault.getAbstractFileByPath(schemaPath())) {
     await vault.create(schemaPath(), buildSchemaFile([])).catch(() => {});
   }
-  // Never overwrites: if you have edited a README, or deleted one on purpose
-  // and it came back, that is create-if-absent doing exactly what it says.
+  // These READMEs are documentation the plugin maintains, not user content —
+  // when a release explains a feature better, an existing vault should get the
+  // better text instead of being frozen on whatever shipped the day it was
+  // created. But an edited README is the user's, and silently reverting it
+  // would be the worst thing this function could do.
+  //
+  // So each generated file carries a stamp of its own text. On startup: no
+  // file, write it. Stamp still matches the body, nobody has touched it, safe
+  // to refresh. Stamp missing or stale, the user edited it — leave it alone,
+  // forever.
   for (const [pathOf, body] of FOLDER_READMES) {
     const path = normalizePath(pathOf());
-    if (!vault.getAbstractFileByPath(path)) {
-      await vault.create(path, body).catch(() => {});
+    const existing = vault.getAbstractFileByPath(path);
+    if (!existing) {
+      await vault.create(path, stampReadme(body)).catch(() => {});
+      continue;
     }
+    if (!(existing instanceof TFile)) continue;
+    const current = await vault.read(existing).catch(() => null);
+    if (current === null || !isUnmodifiedReadme(current)) continue;
+    if (stripReadmeStamp(current) === body) continue;
+    await vault.modify(existing, stampReadme(body)).catch(() => {});
   }
+}
+
+// The stamp is an HTML comment: invisible in reading view, harmless in source
+// view, and it survives round-tripping through Obsidian untouched.
+const README_STAMP = /\n?<!-- gemma-wiki: generated, edit freely — edits are never overwritten \(([0-9a-f]{8})\) -->\n?$/;
+
+function stampReadme(body: string): string {
+  return `${body}\n<!-- gemma-wiki: generated, edit freely — edits are never overwritten (${contentHash(body)}) -->\n`;
+}
+
+export function stripReadmeStamp(text: string): string {
+  return text.replace(README_STAMP, '');
+}
+
+// True only when the file still hashes to what the plugin wrote. Any edit,
+// including deleting the stamp, makes this false and the file is left alone.
+export function isUnmodifiedReadme(text: string): boolean {
+  const m = README_STAMP.exec(text);
+  if (!m) return false;
+  return contentHash(stripReadmeStamp(text)) === m[1];
 }
 
 export async function writeWikiPage(vault: Vault, pagePath: string, content: string): Promise<void> {
@@ -503,12 +668,25 @@ export function buildSchemaFile(
     `ingest. Keeping the rules as a note (not a hidden setting) means they version with your wiki,\n` +
     `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
     `wiki. Each section below explains itself — click a ▸ to expand it.\n\n` +
+    `## How this file changes\n\n` +
+    `> [!info] Three ways, and all three are yours\n` +
+    `> A note cannot hold a button, so nothing here is clickable. These are the exact ways in:\n` +
+    `>\n` +
+    `> | | How | Good for |\n` +
+    `> |---|---|---|\n` +
+    `> | **By hand** | Edit this file and save. The plugin reads it before every ingest. | A tag or two, precisely |\n` +
+    `> | **Organize tags** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → type *Organize tags*. Also Settings → Schema. | Rebuilding the vocabulary from the tags your pages actually use |\n` +
+    `> | **Retag wiki pages to vocabulary** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → type *Retag* | Bringing pages you already have in line after the vocabulary changed |\n` +
+    `>\n` +
+    `> **Editing this file affects future ingests only.** Pages already written keep their tags until you run *Retag*, which shows every change before writing.\n` +
+    `>\n` +
+    `> Nothing here ever changes on its own — a rebuild still ends in a preview you approve.\n\n` +
     `## Tags\n\n` +
     `> [!info]- What this is\n` +
     `> Your controlled vocabulary. On ingest the model reuses these exact tags instead of coining\n` +
     `> synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together share one\n` +
     `> tag — and can then reach the concept-page threshold below.\n` +
-    `> You do **not** hand-write this list: run **Organize tags** (settings, or the command palette)\n` +
+    `> You do **not** hand-write this list: run **Organize tags** (<kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>, type *Organize tags*)\n` +
     `> and the model builds it from the tags your ingested notes already produced. You review the\n` +
     `> result before anything is written. One tag per line.\n` +
     `> Tags are model-suggested, so expect the occasional odd borrow — a tag coined in one domain\n` +
@@ -538,7 +716,7 @@ export function buildSchemaFile(
     `> Two ways to clear them, and **both are your approval**:\n` +
     `> - **By hand** (retail) — cut a line up into \`## Tags\` to keep it; delete the line to reject it.\n` +
     `>   Precise, good for a few tags.\n` +
-    `> - **Organize tags** (wholesale) — rebuilds the vocabulary from the tags currently in use, merges\n` +
+    `> - **Organize tags** (wholesale, <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>) — rebuilds the vocabulary from the tags currently in use, merges\n` +
     `>   near-synonyms, and clears this list. You approve the result in a preview first.\n` +
     `> "The vocabulary never changes on its own" means exactly that: no action of yours — a hand-edit,\n` +
     `> or the command plus **Approve** — no change. Approving the preview *is* your approval, just\n` +
@@ -551,8 +729,8 @@ export function buildSchemaFile(
     `> re-propose one, ingest will never apply one, and Pending will never queue one.\n` +
     `> Deleting a tag from \`## Tags\` alone only lasts until the next Organize, because rebuilds\n` +
     `> read the tags still in use on your pages — a page still carrying it brings it back. Moving\n` +
-    `> the line HERE instead makes the removal permanent. (Run **Retag wiki pages to vocabulary**\n` +
-    `> to clear a banned tag off existing pages too.)\n\n` +
+    `> the line HERE instead makes the removal permanent. (To clear a banned tag off pages you\n` +
+    `> already have, run **Retag wiki pages to vocabulary** — <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>, type *Retag*.)\n\n` +
     `${rejectedLines}\n`
   );
 }
@@ -657,6 +835,31 @@ export interface WikiSkill {
   icon: string;
   prompt: string;
   mode?: 'note' | 'wiki';
+  /**
+   * Put the prompt in the input box and stop, instead of sending it.
+   *
+   * For a skill that needs one word from you — which concept, which section.
+   * A skill is one prompt and one press, and that is right for "quiz me on
+   * this"; it is wrong for anything that has to be aimed. Ending the prompt
+   * with the blank and leaving the cursor there costs one press and keeps the
+   * careful wording that a hand-typed question would lose.
+   */
+  fill?: boolean;
+  /**
+   * Put the answer in a file instead of the chat.
+   *
+   * The value is a folder name under the wiki folder. This is the line
+   * between a saved prompt and a tool: everything else here answers into the
+   * conversation and leaves you to save it by hand, which is wrong for the
+   * skills whose output IS an artifact — a set of flashcards is something you
+   * take away, not something you read once and scroll past.
+   *
+   * The write goes through the same preview-approve gate as everything else,
+   * and the folder is deliberately not one of the four page folders, so the
+   * result is never indexed, retrieved or flagged as stale. It is yours to
+   * use, not more material for the wiki to reason about.
+   */
+  writes?: string;
 }
 
 // A skill file is `key: value` frontmatter between --- fences, then the prompt
@@ -704,6 +907,8 @@ function parseSkillFile(name: string, content: string): WikiSkill | null {
     icon: front.icon || 'wand-2',
     prompt,
     mode,
+    fill: front.fill === 'true',
+    writes: front.writes ? front.writes.replace(/^\/+|\/+$/g, '') || undefined : undefined,
   };
 }
 
@@ -730,9 +935,12 @@ function buildSkillFile(
   icon: string,
   mode: 'note' | 'wiki' | undefined,
   prompt: string,
-  doc?: string
+  doc?: string,
+  fill = false,
+  writes?: string
 ): string {
-  const modeLine = mode ? `mode: ${mode}\n` : '';
+  const modeLine =
+    (mode ? `mode: ${mode}\n` : '') + (fill ? 'fill: true\n' : '') + (writes ? `writes: ${writes}\n` : '');
   // The callout goes above the prompt so the file reads as documentation first;
   // stripCalloutBlocks() removes it again on the way to the model.
   const docBlock = doc ? `${doc}\n\n` : '';
@@ -747,26 +955,46 @@ const SKILLS_README =
   `>\n` +
   `> \`\`\`\n` +
   `> ---\n` +
-  `> name: Feynman\n` +
-  `> icon: lightbulb\n` +
+  `> name: Counter-argument\n` +
+  `> icon: scale\n` +
   `> mode: note\n` +
   `> ---\n` +
   `>\n` +
-  `> Explain this in plain words, then say what you had to be vague about.\n` +
+  `> Argue the strongest case against what this note claims.\n` +
   `> \`\`\`\n` +
   `>\n` +
   `> | Key | Meaning |\n` +
   `> |---|---|\n` +
   `> | \`name\` | What shows in the menu. Defaults to the filename. |\n` +
   `> | \`icon\` | Any Obsidian (Lucide) icon name. Defaults to \`wand-2\`. |\n` +
-  `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, running the skill switches the chat to that grounding first — use \`wiki\` for anything that needs the catalog or the activity log. |\n` +
+  `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, the skill is **shown greyed unless the panel is already in that mode** — it will not switch you into it, because a menu item should not quietly change what the panel is grounded in. Leave it out and the skill runs in whichever mode you are in. |\n` +
+  `> | \`fill\` | Optional, \`true\`. Puts the prompt in the input box and waits instead of sending it — for a skill that has to be aimed at something. End the prompt with the blank and the cursor lands there. |\n` +
+  `> | \`writes\` | Optional, a folder name. **The answer becomes a file instead of a chat message**: \`writes: flashcards\` puts it in \`flashcards/<note>.md\`, behind the same preview you approve. For a skill whose output is something you take away rather than read once. |\n` +
   `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
+  `> [!info] The three that are not files\n` +
+  `> The ⚡ menu also holds **Quiz**, **Flashcards** and **Find gaps**, which ship inside the plugin rather than as files — so this folder will always show fewer things than the menu does. They cannot be edited or deleted; copy one into a file here if you want your own version of it.\n` +
+  `>\n` +
+  `> | | Asks |\n` +
+  `> |---|---|\n` +
+  `> | **Quiz** | Practice questions on the open note, answers included |\n` +
+  `> | **Flashcards** | Q/A pairs you can paste into a flashcard app |\n` +
+  `> | **Find gaps** | What the **topic** raises but never answers |\n` +
+  `>\n` +
+  `> All three are note-scoped, like everything shipped here: run against a whole wiki they retrieve nothing, because the words in a prompt like "create practice questions" match no page summary.\n\n` +
   `> [!info] Documenting a skill\n` +
-  `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`feynman.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
+  `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`unclear-bits.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
+      `>\n` +
+      `> The two files that ship here carry a \`stamp:\` line in their frontmatter. **Leave it alone and the plugin keeps the file current when a release improves it; edit anything in the file and it is yours, permanently.** Deleting the stamp opts out too.\n` +
   `>\n` +
   `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
+  `> [!info] Where the answer goes\n` +
+  `> By default into the chat, where you can read it and save it by hand.\n` +
+  `>\n` +
+  `> With \`writes:\`, into a file instead — one ask, one preview, one write, and the thread is never touched. **Shipped this way: Flashcards**, which lands in \`flashcards/\`.\n` +
+  `>\n` +
+  `> That folder is deliberately not one of the four page folders, so what a skill writes is **never indexed, retrieved, or flagged as stale**. It is yours to use, not more material for the wiki to reason about.\n\n` +
   `> [!info] What a skill is not\n` +
-  `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools.\n` +
+  `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools. Calling it a skill is generous: it is a saved prompt with a menu entry, plus somewhere for the answer to land.\n` +
   `>\n` +
   `> Files named \`README\` (this one) are ignored.\n`;
 
@@ -779,29 +1007,44 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
   }
   const seeds: Array<[string, string]> = [
     [`${wikiSkillsDir()}/README.md`, SKILLS_README],
-    // The Feynman technique rather than "explain like I'm five": the second
-    // half — naming what you could not explain — is the part that is actually
-    // useful on a knowledge base, and it is a different question from the
-    // built-in "Find gaps" (that one looks for holes in the material; this one
-    // looks for holes in your grasp of it).
+    // Replaces feynman.md, which had no job of its own: its first half was
+    // Summarize and its second was close to Find gaps. The real Feynman
+    // technique is YOU explaining and noticing where you stumble, which needs
+    // a conversation; this plugin is one structured ask by design, and what
+    // survives of the technique in one shot is two other menu entries.
+    //
+    // What the old prompt was genuinely good at was its second half on a
+    // brain-dump note — naming the shorthand nobody else could follow. That
+    // is not Summarize and not Find gaps (which asks what the TOPIC leaves
+    // open); it is a legibility check on your own writing, and it earns a
+    // place where the technique could not.
     [
-      `${wikiSkillsDir()}/feynman.md`,
+      `${wikiSkillsDir()}/unclear-bits.md`,
       buildSkillFile(
-        'Feynman',
-        'lightbulb',
+        'Unclear bits',
+        'help-circle',
         'note',
-        'Explain this material to someone clever who has never met the topic: plain words, short ' +
-          'sentences, every piece of jargon either dropped or defined the first time it appears.\n\n' +
-          'Then, under a heading "Where I had to be vague", list the points you could not explain ' +
-          'without hand-waving, and say what would have to be in the material for you to explain ' +
-          'them properly.',
+        'Find the places in this note that another person could not follow — and that you ' +
+          'yourself would not follow in six months.\n\n' +
+          'Look for: shorthand and abbreviations that are never expanded; names, tools and ' +
+          'projects referred to without saying what they are; fragments that assume context the ' +
+          'note does not contain; and links or titles mentioned with no indication of what they ' +
+          'hold.\n\n' +
+          'For each one, quote the exact phrase, say what is missing, and suggest the shortest ' +
+          'addition that would fix it.\n\n' +
+          'If nothing in the note would stop another reader, say so — and name the one or two ' +
+          'things that came closest, so it is clear what you looked at. Do not invent problems ' +
+          'to fill the list.',
         `> [!info] What this skill is\n` +
-          `> The Feynman technique, not "explain like I am five". The first half is the plain-words explanation; **the second half is the useful part** — naming what you could not explain without hand-waving.\n` +
+          `> **A legibility check on your own writing.** It finds the bits of a note that only made sense to you on the day you wrote them — the abbreviation you never expanded, the tool named with no hint of what it does, the line that assumes something the note never says.\n` +
           `>\n` +
-          `> | | Looks for |\n` +
+          `> Most useful on a fast note: a brain dump, a meeting scribble, anything written in shorthand or in more than one language. **On a note that was written carefully it will find nothing** — and will say what came closest, so you can tell it looked.\n` +
+          `>\n` +
+          `> | | Asks |\n` +
           `> |---|---|\n` +
-          `> | This skill | Holes in **your grasp** of the material |\n` +
-          `> | Built-in *Find gaps* | Holes in **the material itself** |\n` +
+          `> | **Summarize** | What does this note say? |\n` +
+          `> | **Find gaps** | What does the **topic** leave unanswered? |\n` +
+          `> | **This skill** | What would **nobody else understand**? |\n` +
           `>\n` +
           `> Everything below this box is the prompt. **Callouts are documentation and are stripped before the model sees it** — edit the prompt freely, and delete this box if you want.`
       ),
@@ -822,11 +1065,52 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
       ),
     ],
   ];
+  // Same deal as the generated READMEs: a seed the plugin wrote should get a
+  // better version when one ships, and a seed you edited is yours forever.
+  //
+  // Without this, improving a shipped skill only reached vaults created after
+  // the change — which bit twice, most visibly when Feynman was rewritten to
+  // fill the input box and every existing vault went on sending the old
+  // prompt, correctly, from the old file.
   for (const [path, content] of seeds) {
-    if (!vault.getAbstractFileByPath(normalizePath(path))) {
-      await vault.create(normalizePath(path), content).catch(() => {});
+    const norm = normalizePath(path);
+    const existing = vault.getAbstractFileByPath(norm);
+    if (!existing) {
+      await vault.create(norm, stampSeed(content)).catch(() => {});
+      continue;
     }
+    if (!(existing instanceof TFile)) continue;
+    const current = await vault.read(existing).catch(() => null);
+    if (current === null || !isUnmodifiedSeed(current)) continue;
+    if (stripSeedStamp(current) === content) continue;
+    await vault.modify(existing, stampSeed(content)).catch(() => {});
   }
+}
+
+// The stamp for a skill file goes INSIDE the frontmatter, not at the end of
+// the file the way a README's does. A skill's body is the prompt: an HTML
+// comment appended to it would be sent to the model. parseSkillFile reads the
+// keys it knows and ignores the rest, so an extra one costs nothing.
+const SEED_STAMP = /^stamp: ([0-9a-f]{8})\n/m;
+
+export function stripSeedStamp(text: string): string {
+  return text.replace(SEED_STAMP, '');
+}
+
+function stampSeed(content: string): string {
+  const hash = contentHash(content);
+  // Seeds always start with frontmatter; put the stamp on the line after the
+  // opening fence so it survives the user editing anything below it.
+  return content.startsWith('---\n')
+    ? content.replace('---\n', `---\nstamp: ${hash}\n`)
+    : `${content}\n<!-- gemma-wiki: generated (${hash}) -->\n`;
+}
+
+/** True only while the file still hashes to what the plugin wrote. */
+export function isUnmodifiedSeed(text: string): boolean {
+  const m = SEED_STAMP.exec(text);
+  if (!m) return false;
+  return contentHash(stripSeedStamp(text)) === m[1];
 }
 
 // Lexical retrieval over the index, per the "read the index, then read the

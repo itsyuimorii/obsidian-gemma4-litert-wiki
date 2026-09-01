@@ -420,6 +420,21 @@
   line-height: 1.55;
 }
 
+/* Shown only when Wiki mode has nothing to answer from — the one screen
+   where "your wiki is empty" needs to come with the way to fill it. */
+.gemma4-chat-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+
+.gemma4-chat-empty-action {
+  font-size: var(--font-ui-smaller);
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 /* ---------- Input area ---------- */
 
 .gemma4-chat-input-wrap {
@@ -869,11 +884,19 @@
   height: 14px;
 }
 
-/* Write-op chip: same pill, hairline emphasis so "this edits your note"
-   reads differently from ask-only chips. */
+/* Write-op chip: identical pill and identical text — the mark is a glyph.
+   It used to be a dashed border and a darker colour, which at 26px and 1px
+   read as nothing except "this label is a different font", noticed as an
+   inconsistency rather than as a meaning. An icon survives the size. */
 .gemma4-chat .gemma4-chat-suggestion-write {
-  border-style: dashed;
-  color: var(--text-normal);
+  gap: 6px;
+}
+
+.gemma4-chat .gemma4-chat-suggestion-write svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  opacity: 0.75;
 }
 
 /* ---------- Onboarding (first-run model download) ---------- */
@@ -1166,4 +1189,123 @@
   width: 15px;
   height: 15px;
   color: var(--text-normal);
+}
+
+/* ---------- Scan folder picker ---------- */
+
+.gemma4-scan-modal .gemma4-scan-lede {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-bottom: 12px;
+}
+
+.gemma4-scan-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.gemma4-scan-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+}
+
+.gemma4-scan-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-scan-row-path {
+  flex: 1;
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+}
+
+/* The number is the point of this dialog — it is what the settings field
+   could never tell you before you committed to a run. */
+.gemma4-scan-row-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.gemma4-scan-count {
+  margin-top: 12px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+/* The caveats under the headline number: real, but not what you are deciding
+   on, so they should not compete with it. */
+.gemma4-scan-count-sub {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+
+.gemma4-scan-empty {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 8px 0 4px;
+}
+
+.gemma4-scan-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* The empty-wiki state carries real explanation, so its hints need room. */
+.gemma4-chat-empty-emphasis {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+
+
+
+
+
+/* Buttons inside an inline message — a refusal that names the way out should
+   also be the way out. Same shape as the empty-state actions. */
+.gemma4-chat-info-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* The scan chip while a scan is running — it is the stop control then, and
+   should not look like the thing that starts one. */
+.gemma4-chat-suggestion-running {
+  opacity: 0.85;
+}
+
+/* The second line of the scan dialog's preamble: real, but it points at a
+   different door, so it should not compete with the one you are standing in. */
+.gemma4-scan-lede-aside {
+  margin-top: -6px;
+  color: var(--text-faint);
+}
+
+/* A chip that cannot run because something else is. Not an error — the engine
+   is busy — so it recedes rather than shouting. */
+.gemma4-chat .gemma4-chat-suggestion-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gemma4-chat .gemma4-chat-suggestion-disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
 }
