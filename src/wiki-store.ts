@@ -927,6 +927,8 @@ const SKILLS_README =
   `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
   `> [!info] Documenting a skill\n` +
   `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`feynman.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
+      `>\n` +
+      `> The two files that ship here carry a \`stamp:\` line in their frontmatter. **Leave it alone and the plugin keeps the file current when a release improves it; edit anything in the file and it is yours, permanently.** Deleting the stamp opts out too.\n` +
   `>\n` +
   `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
   `> [!info] What a skill is not\n` +
