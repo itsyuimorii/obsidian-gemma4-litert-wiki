@@ -338,6 +338,45 @@ export default class LiteRtSpikePlugin extends Plugin {
   // moment. The run itself is not.
   // ---------------------------------------------------------------------
 
+  /**
+   * Is a model operation already running?
+   *
+   * There is one engine, one status line and one clock, so there is one
+   * operation at a time — and until now only scan enforced that. Pressing
+   * Formatting while an ingest was mid-flight started a second call on the
+   * same GPU, and the two runs then fought over a single runningText and a
+   * single runStartedAt, which is what put two toasts on screen showing
+   * different elapsed times for the same note.
+   */
+  isBusy(): boolean {
+    return this.runningText !== null || this.scanRunning;
+  }
+
+  /**
+   * What is running, without its sub-status.
+   *
+   * The live text carries a stage after an em dash — "Ingesting X —
+   * Extracting…" — which is right in a progress line and wrong in a sentence
+   * about it, where it produced "Ingesting X — Extracting… — wait for that to
+   * finish." Two dashes and a stage nobody asked about.
+   */
+  runningLabel(): string | null {
+    if (this.runningText === null) return null;
+    return this.runningText.split(' — ')[0].replace(/[…:]\s*$/, '');
+  }
+
+  /**
+   * Refuse a second operation, and say what is already going.
+   *
+   * The UI disables these entries while something runs, so reaching this is
+   * usually the command palette, which routes around any button.
+   */
+  private refuseIfBusy(): boolean {
+    if (!this.isBusy()) return false;
+    notify('warn', `Busy: ${this.runningLabel() ?? 'a scan is running'}. Wait for that to finish.`);
+    return true;
+  }
+
   private status(text: string) {
     // Both surfaces, for the whole run. Two earlier attempts each fixed one
     // half and broke the other:
@@ -355,7 +394,8 @@ export default class LiteRtSpikePlugin extends Plugin {
     // the toast. It carries a running clock so it visibly moves. Dismissing
     // it is honoured — it means "out of my way" — and the status bar is the
     // way back: click it and the toast returns.
-    if (this.runningText === null) {
+    const wasIdle = this.runningText === null;
+    if (wasIdle) {
       this.runStartedAt = Date.now();
       this.runDismissed = false;
       if (this.tickId === null) {
@@ -365,6 +405,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
     this.runningText = text;
     this.paintRun();
+    if (wasIdle) this.notifyBusyChange();
   }
 
   /** Elapsed time, so a long generation never looks like a hang. */
@@ -384,7 +425,10 @@ export default class LiteRtSpikePlugin extends Plugin {
       if (this.statusNotice.noticeEl?.isConnected) {
         this.statusNotice.setMessage(body);
       } else {
-        this.statusNotice = null;
+        // Stop writing to it, but KEEP the reference. Dropping it here left
+        // an orphan: statusEnd hides via this.statusNotice, so a toast we had
+        // let go of could never be closed again and sat on screen frozen at
+        // its last message while the next run opened a second one beside it.
         this.runDismissed = true;
       }
     } else if (!this.runDismissed) {
@@ -397,6 +441,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   private reopenRunNotice() {
     if (this.runningText === null) return;
     this.runDismissed = false;
+    this.statusNotice?.hide();
     this.statusNotice = null;
     this.paintRun();
   }
@@ -409,6 +454,7 @@ export default class LiteRtSpikePlugin extends Plugin {
    * `log.md`, because a toast is not a record.
    */
   private statusEnd(text?: string, kind: NoticeKind = 'done', durationMs?: number) {
+    const wasRunning = this.runningText !== null;
     this.runningText = null;
     if (this.tickId !== null) {
       window.clearInterval(this.tickId);
@@ -418,6 +464,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.statusNotice = null;
     this.runDismissed = false;
     this.renderStatusBar();
+    if (wasRunning) this.notifyBusyChange();
     if (!text) return;
     notify(kind, text, durationMs);
     void logNotice(this.app.vault, kind, text);
@@ -714,7 +761,10 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.addCommand({
       id: 'litert-suggest-tags-links',
       name: 'Suggest tags & links for active note (local Gemma)',
-      callback: () => void this.suggestTagsAndLinks(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.suggestTagsAndLinks();
+      },
     });
 
     this.addCommand({
@@ -830,25 +880,37 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.addCommand({
       id: 'litert-suggest-vocab',
       name: 'Organize tags (schema.md, local Gemma)',
-      callback: () => void this.suggestTagVocabulary(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.suggestTagVocabulary();
+      },
     });
 
     this.addCommand({
       id: 'litert-retag-pages',
       name: 'Retag wiki pages to vocabulary (local Gemma)',
-      callback: () => void this.retagPagesToVocabulary(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.retagPagesToVocabulary();
+      },
     });
 
     this.addCommand({
       id: 'litert-find-contradictions',
       name: 'Find contradictions in wiki (local Gemma)',
-      callback: () => void this.findContradictions(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.findContradictions();
+      },
     });
 
     this.addCommand({
       id: 'litert-provenance-check',
       name: 'Provenance spot-check (local Gemma)',
-      callback: () => void this.spotCheckProvenance(),
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.spotCheckProvenance();
+      },
     });
 
     // Diagnostics I wrote for myself while getting LiteRT-LM to run inside
@@ -2177,17 +2239,21 @@ export default class LiteRtSpikePlugin extends Plugin {
   // that set it, and became a way to silently kill someone else's updates the
   // moment a second consumer appeared. A chip frozen on "Stop scan" forever,
   // because a settings pane was opened and closed.
-  private scanStateListeners = new Set<() => void>();
+  private busyListeners = new Set<() => void>();
 
-  /** Watch whether a scan is running. Returns the unsubscribe. */
+  /** Watch whether the plugin is running something. Returns the unsubscribe. */
   onScanState(fn: () => void): () => void {
-    this.scanStateListeners.add(fn);
-    return () => this.scanStateListeners.delete(fn);
+    this.busyListeners.add(fn);
+    return () => this.busyListeners.delete(fn);
+  }
+
+  private notifyBusyChange(): void {
+    for (const fn of this.busyListeners) fn();
   }
 
   private setScanRunning(running: boolean): void {
     this.scanRunning = running;
-    for (const fn of this.scanStateListeners) fn();
+    this.notifyBusyChange();
   }
 
   isScanning(): boolean {
@@ -2210,6 +2276,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   // looking straight at an empty wiki is the moment to hand them the way to
   // fill it, and a method is reachable where a command body is not.
   async ingestActiveNote() {
+      if (this.refuseIfBusy()) return;
       const file = this.app.workspace.getActiveFile();
       if (!file) {
         notify('warn', 'Open a note first.');
@@ -2327,6 +2394,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       notify('warn', 'A scan is already running — run "Stop the running scan" to cancel it.');
       return;
     }
+    if (this.refuseIfBusy()) return;
     const includePrefixes = prefixes ?? (await this.askScanFolders());
     if (!includePrefixes) return;
     if (!includePrefixes.length) return;
@@ -2567,6 +2635,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   // rewritten one pass at a time with a fresh conversation, and stitched back
   // together before the preview gate.
   async improveActiveNote() {
+    if (this.refuseIfBusy()) return;
     const file = this.app.workspace.getActiveFile();
     if (!file) {
       notify('warn', 'Open a note first.');

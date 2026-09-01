@@ -330,6 +330,10 @@ export class ChatView extends ItemView {
       improve: 'Edits this note — you review before anything is written',
     };
     const scanning = this.plugin.isScanning();
+    // Something else is already spending the engine. Rather than let you press
+    // a button and be told no, take the button away — the only version of this
+    // that needs no words.
+    const busyElsewhere = this.plugin.isBusy() && !scanning;
     for (const spec of suggestionsFor(this.mode)) {
       // The scan chip doubles as the stop control while a scan runs. Pressing
       // it and getting "a scan is already running — use the other command" was
@@ -347,6 +351,12 @@ export class ChatView extends ItemView {
           this.plugin.cancelScan();
           notify('info', 'Stopping — the note being drafted right now will finish first.');
         });
+        continue;
+      }
+      if (busyElsewhere) {
+        chip.disabled = true;
+        chip.addClass('gemma4-chat-suggestion-disabled');
+        setTooltip(chip, `Busy: ${this.plugin.runningLabel() ?? 'something is running'}`);
         continue;
       }
       if (spec.action) setTooltip(chip, TIP[spec.action]);
@@ -572,11 +582,20 @@ export class ChatView extends ItemView {
           menu.addItem((item) => item.setTitle(`Switch to ${want} to use these`).setDisabled(true));
           menu.addSeparator();
         }
+        // A skill spends the engine too, so it obeys the same one-at-a-time
+        // rule as the chips rather than queueing behind whatever is running.
+        const busy = this.plugin.isBusy();
+        if (busy) {
+          menu.addItem((item) =>
+            item.setTitle(`Busy: ${this.plugin.runningLabel() ?? 'something is running'}`).setDisabled(true)
+          );
+          menu.addSeparator();
+        }
         for (const skill of all) {
           const wrongMode = !!skill.mode && skill.mode !== this.mode;
           menu.addItem((item) => {
             item.setTitle(skill.label).setIcon(skill.icon);
-            if (wrongMode) {
+            if (wrongMode || busy) {
               item.setDisabled(true);
               return;
             }
