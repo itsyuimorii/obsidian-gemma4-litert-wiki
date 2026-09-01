@@ -301,7 +301,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | **Chat with active note** | Answers grounded in the note you have open — and nothing else. It says "not in the note" instead of guessing. |` + `\n` +
       `> | **Ask your wiki** | The other half of the same panel. Reads \`index.md\` to pick the pages worth opening, then answers from those, citing them. A question about the *collection* — *Find connections*, *What's still open?* — grounds in **every page instead**, because "what links my pages" is not a question retrieval can find an answer to. |` + `\n` +
-      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Feynman*, which ship as files. **All of them work on the open note**, so in Wiki mode they show greyed with a line saying to switch. A skill with \`fill: true\` puts its prompt in the input box and waits for you to finish the sentence instead of sending — that is how *Feynman* asks which idea. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
+      `> | **Skills** | Saved prompts — *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Unclear bits*, which ship as files. **All of them work on the open note**, so in Wiki mode they show greyed with a line saying to switch. A skill with \`fill: true\` puts its prompt in the input box and waits for you to finish the sentence instead of sending — that is how *Feynman* asks which idea. ${ICON_ZAP} in the panel. **Drop a \`.md\` file in \`skills/\` and it appears in the menu.** A skill file is frontmatter plus a prompt, so the menu holds questions; anything that *does* something is a chip above the input instead. |` + `\n\n` +
       `> [!info] File notes into the wiki` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -911,12 +911,12 @@ const SKILLS_README =
   `>\n` +
   `> \`\`\`\n` +
   `> ---\n` +
-  `> name: Feynman\n` +
-  `> icon: lightbulb\n` +
+  `> name: Counter-argument\n` +
+  `> icon: scale\n` +
   `> mode: note\n` +
   `> ---\n` +
   `>\n` +
-  `> Explain this in plain words, then say what you had to be vague about.\n` +
+  `> Argue the strongest case against what this note claims.\n` +
   `> \`\`\`\n` +
   `>\n` +
   `> | Key | Meaning |\n` +
@@ -926,7 +926,7 @@ const SKILLS_README =
   `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, running the skill switches the chat to that grounding first — use \`wiki\` for anything that needs the catalog or the activity log. |\n` +
   `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
   `> [!info] Documenting a skill\n` +
-  `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`feynman.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
+  `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`unclear-bits.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
       `>\n` +
       `> The two files that ship here carry a \`stamp:\` line in their frontmatter. **Leave it alone and the plugin keeps the file current when a release improves it; edit anything in the file and it is yours, permanently.** Deleting the stamp opts out too.\n` +
   `>\n` +
@@ -945,47 +945,44 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
   }
   const seeds: Array<[string, string]> = [
     [`${wikiSkillsDir()}/README.md`, SKILLS_README],
-    // The Feynman technique needs a target. Explaining "this material" when
-    // the material is a whole note produces a summary — which Summarize
-    // already does — and the old second half ("what would have to be in the
-    // material") is Find gaps. It had no job of its own, which is why it felt
-    // like nothing.
+    // Replaces feynman.md, which had no job of its own: its first half was
+    // Summarize and its second was close to Find gaps. The real Feynman
+    // technique is YOU explaining and noticing where you stumble, which needs
+    // a conversation; this plugin is one structured ask by design, and what
+    // survives of the technique in one shot is two other menu entries.
     //
-    // So it asks for one idea, and it asks YOU which one: fill: true puts the
-    // prompt in the box with the blank at the end and waits. Send it empty and
-    // the model picks one and names its pick, so the one-press path still
-    // works.
+    // What the old prompt was genuinely good at was its second half on a
+    // brain-dump note — naming the shorthand nobody else could follow. That
+    // is not Summarize and not Find gaps (which asks what the TOPIC leaves
+    // open); it is a legibility check on your own writing, and it earns a
+    // place where the technique could not.
     [
-      `${wikiSkillsDir()}/feynman.md`,
+      `${wikiSkillsDir()}/unclear-bits.md`,
       buildSkillFile(
-        'Feynman',
-        'lightbulb',
+        'Unclear bits',
+        'help-circle',
         'note',
-        'Explain one idea from this note to someone clever who has never met it: plain words, ' +
-          'short sentences, every piece of jargon either dropped or defined the first time it ' +
-          'appears, and one concrete example or analogy.\n\n' +
-          'Then, under a heading "Where this explanation is thin", say what you had to gloss ' +
-          'over and what the note would need to contain for you to explain it properly.\n\n' +
-          'If no idea is named below, pick the single most important one in the note and say ' +
-          'which one you picked.\n\n' +
-          'The idea to explain: ',
+        'Find the places in this note that another person could not follow — and that you ' +
+          'yourself would not follow in six months.\n\n' +
+          'Look for: shorthand and abbreviations that are never expanded; names, tools and ' +
+          'projects referred to without saying what they are; fragments that assume context the ' +
+          'note does not contain; and links or titles mentioned with no indication of what they ' +
+          'hold.\n\n' +
+          'For each one, quote the exact phrase, say what is missing, and suggest the shortest ' +
+          'addition that would fix it.\n\n' +
+          'If the note is clear throughout, say so plainly. Do not invent problems.',
         `> [!info] What this skill is\n` +
-          `> **Type one idea at the end of the prompt, then press Enter.** This skill fills the ` +
-          `input box instead of sending straight away, because the Feynman technique is about ` +
-          `*one thing* — explaining a whole note in plain words is a summary, and you already ` +
-          `have **Summarize** for that.\n` +
+          `> **A legibility check on your own writing.** It finds the bits of a note that only made sense to you on the day you wrote them — the abbreviation you never expanded, the tool named with no hint of what it does, the line that assumes something the note never says.\n` +
           `>\n` +
-          `> Leave the blank empty and it picks the note's central idea itself, and tells you ` +
-          `which one it picked.\n` +
+          `> Most useful on a fast note: a brain dump, a meeting scribble, anything written in shorthand or in more than one language.\n` +
           `>\n` +
-          `> | | Gives you |\n` +
+          `> | | Asks |\n` +
           `> |---|---|\n` +
-          `> | **Summarize** | The whole note, compressed |\n` +
-          `> | **This skill** | **One idea, in depth, with an example** |\n` +
-          `> | **Find gaps** | What the note raises but never answers |\n` +
+          `> | **Summarize** | What does this note say? |\n` +
+          `> | **Find gaps** | What does the **topic** leave unanswered? |\n` +
+          `> | **This skill** | What would **nobody else understand**? |\n` +
           `>\n` +
-          `> Everything below this box is the prompt. **Callouts are documentation and are stripped before the model sees it** — edit the prompt freely, and delete this box if you want.`,
-        true
+          `> Everything below this box is the prompt. **Callouts are documentation and are stripped before the model sees it** — edit the prompt freely, and delete this box if you want.`
       ),
     ],
     [
