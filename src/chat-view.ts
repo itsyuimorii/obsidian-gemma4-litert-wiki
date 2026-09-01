@@ -546,7 +546,7 @@ export class ChatView extends ItemView {
     });
     setIcon(skillsBtn, 'zap');
     setTooltip(skillsBtn, 'Run a skill');
-    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean }[] = [
+    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean; writes?: string }[] = [
       {
         // Nouns, because every one of these hands you a thing: a quiz, a set of
         // cards, a checklist. The menu was three imperatives and two nouns,
@@ -569,6 +569,10 @@ export class ChatView extends ItemView {
         label: 'Flashcards',
         icon: 'layers',
         mode: 'note',
+        // The one shipped skill whose output is unambiguously an artifact:
+        // you take flashcards away and use them. Answering into the chat and
+        // leaving you to press save was the wrong shape for it.
+        writes: 'flashcards',
         prompt:
           'Create 8 flashcards from this material. Format each as **Q:** question then **A:** ' +
           'answer on the next line, with a blank line between cards.',
@@ -615,12 +619,19 @@ export class ChatView extends ItemView {
         for (const skill of all) {
           const wrongMode = !!skill.mode && skill.mode !== this.mode;
           menu.addItem((item) => {
-            item.setTitle(skill.label).setIcon(skill.icon);
+            item.setTitle(skill.writes ? `${skill.label} → ${skill.writes}/` : skill.label).setIcon(skill.icon);
             if (wrongMode || busy) {
               item.setDisabled(true);
               return;
             }
             item.onClick(() => {
+              // A skill that writes a file is not a conversation. It runs on
+              // the plugin side — one ask, one preview, one write — and never
+              // touches the thread.
+              if (skill.writes) {
+                void this.plugin.runSkillToFile(skill);
+                return;
+              }
               if (!skill.fill) {
                 void this.handleSend({ text: skill.prompt });
                 return;
