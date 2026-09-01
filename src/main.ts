@@ -8,6 +8,7 @@ import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
+import { ensureRuntimeFile, isRuntimeFile } from './wasm-store';
 import {
   appendLog,
   buildConceptPage,
@@ -3381,17 +3382,52 @@ export default class LiteRtSpikePlugin extends Plugin {
         res.writeHead(403).end();
         return;
       }
-      fs.readFile(filePath, (err, data) => {
-        if (err) {
-          res.writeHead(404).end();
-          return;
-        }
+      const serve = (data: Buffer) => {
         const ext = path.extname(filePath);
         res.writeHead(200, {
           'Content-Type': MIME[ext] ?? 'application/octet-stream',
           'Access-Control-Allow-Origin': '*',
         });
         res.end(data);
+      };
+
+      fs.readFile(filePath, (err, data) => {
+        if (!err) {
+          serve(data);
+          return;
+        }
+        // Not on disk yet. The community store installs only main.js,
+        // manifest.json and styles.css, so on a fresh install the runtime is
+        // simply not here — fetch the one file the library just asked for,
+        // cache it next to the model, and answer with it. Whichever of the
+        // four variants that is stays the library's decision.
+        const fileName = path.basename(filePath);
+        if (!isRuntimeFile(fileName)) {
+          res.writeHead(404).end();
+          return;
+        }
+        this.status(`Fetching the local runtime — ${fileName}…`);
+        void ensureRuntimeFile(wasmDir, fileName, (p) => {
+          const mb = (p.receivedBytes / 1e6).toFixed(0);
+          const total = p.totalBytes ? ` / ${(p.totalBytes / 1e6).toFixed(0)}` : '';
+          this.status(`Fetching the local runtime… ${mb}${total} MB`);
+        })
+          .then((finalPath) => {
+            this.statusEnd();
+            fs.readFile(finalPath, (readErr, fetched) => {
+              if (readErr) {
+                res.writeHead(500).end();
+                return;
+              }
+              serve(fetched);
+            });
+          })
+          .catch((fetchErr: unknown) => {
+            const message = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+            console.error('[gemma4-litert-wiki] runtime fetch failed', fetchErr);
+            this.statusEnd(`Runtime download failed — ${message}`, 'error');
+            res.writeHead(502).end();
+          });
       });
     });
 
