@@ -655,12 +655,25 @@ export function buildSchemaFile(
     `ingest. Keeping the rules as a note (not a hidden setting) means they version with your wiki,\n` +
     `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
     `wiki. Each section below explains itself — click a ▸ to expand it.\n\n` +
+    `## How this file changes\n\n` +
+    `> [!info] Three ways, and all three are yours\n` +
+    `> A note cannot hold a button, so nothing here is clickable. These are the exact ways in:\n` +
+    `>\n` +
+    `> | | How | Good for |\n` +
+    `> |---|---|---|\n` +
+    `> | **By hand** | Edit this file and save. The plugin reads it before every ingest. | A tag or two, precisely |\n` +
+    `> | **Organize tags** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → type *Organize tags*. Also Settings → Schema. | Rebuilding the vocabulary from the tags your pages actually use |\n` +
+    `> | **Retag wiki pages to vocabulary** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → type *Retag* | Bringing pages you already have in line after the vocabulary changed |\n` +
+    `>\n` +
+    `> **Editing this file affects future ingests only.** Pages already written keep their tags until you run *Retag*, which shows every change before writing.\n` +
+    `>\n` +
+    `> Nothing here ever changes on its own — a rebuild still ends in a preview you approve.\n\n` +
     `## Tags\n\n` +
     `> [!info]- What this is\n` +
     `> Your controlled vocabulary. On ingest the model reuses these exact tags instead of coining\n` +
     `> synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together share one\n` +
     `> tag — and can then reach the concept-page threshold below.\n` +
-    `> You do **not** hand-write this list: run **Organize tags** (settings, or the command palette)\n` +
+    `> You do **not** hand-write this list: run **Organize tags** (<kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>, type *Organize tags*)\n` +
     `> and the model builds it from the tags your ingested notes already produced. You review the\n` +
     `> result before anything is written. One tag per line.\n` +
     `> Tags are model-suggested, so expect the occasional odd borrow — a tag coined in one domain\n` +
@@ -690,7 +703,7 @@ export function buildSchemaFile(
     `> Two ways to clear them, and **both are your approval**:\n` +
     `> - **By hand** (retail) — cut a line up into \`## Tags\` to keep it; delete the line to reject it.\n` +
     `>   Precise, good for a few tags.\n` +
-    `> - **Organize tags** (wholesale) — rebuilds the vocabulary from the tags currently in use, merges\n` +
+    `> - **Organize tags** (wholesale, <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>) — rebuilds the vocabulary from the tags currently in use, merges\n` +
     `>   near-synonyms, and clears this list. You approve the result in a preview first.\n` +
     `> "The vocabulary never changes on its own" means exactly that: no action of yours — a hand-edit,\n` +
     `> or the command plus **Approve** — no change. Approving the preview *is* your approval, just\n` +
@@ -703,8 +716,8 @@ export function buildSchemaFile(
     `> re-propose one, ingest will never apply one, and Pending will never queue one.\n` +
     `> Deleting a tag from \`## Tags\` alone only lasts until the next Organize, because rebuilds\n` +
     `> read the tags still in use on your pages — a page still carrying it brings it back. Moving\n` +
-    `> the line HERE instead makes the removal permanent. (Run **Retag wiki pages to vocabulary**\n` +
-    `> to clear a banned tag off existing pages too.)\n\n` +
+    `> the line HERE instead makes the removal permanent. (To clear a banned tag off pages you\n` +
+    `> already have, run **Retag wiki pages to vocabulary** — <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>, type *Retag*.)\n\n` +
     `${rejectedLines}\n`
   );
 }
@@ -923,8 +936,19 @@ const SKILLS_README =
   `> |---|---|\n` +
   `> | \`name\` | What shows in the menu. Defaults to the filename. |\n` +
   `> | \`icon\` | Any Obsidian (Lucide) icon name. Defaults to \`wand-2\`. |\n` +
-  `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, running the skill switches the chat to that grounding first — use \`wiki\` for anything that needs the catalog or the activity log. |\n` +
+  `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, the skill is **shown greyed unless the panel is already in that mode** — it will not switch you into it, because a menu item should not quietly change what the panel is grounded in. Leave it out and the skill runs in whichever mode you are in. |\n` +
+  `> | \`fill\` | Optional, \`true\`. Puts the prompt in the input box and waits instead of sending it — for a skill that has to be aimed at something. End the prompt with the blank and the cursor lands there. |\n` +
   `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
+  `> [!info] The three that are not files\n` +
+  `> The ⚡ menu also holds **Quiz**, **Flashcards** and **Find gaps**, which ship inside the plugin rather than as files — so this folder will always show fewer things than the menu does. They cannot be edited or deleted; copy one into a file here if you want your own version of it.\n` +
+  `>\n` +
+  `> | | Asks |\n` +
+  `> |---|---|\n` +
+  `> | **Quiz** | Practice questions on the open note, answers included |\n` +
+  `> | **Flashcards** | Q/A pairs you can paste into a flashcard app |\n` +
+  `> | **Find gaps** | What the **topic** raises but never answers |\n` +
+  `>\n` +
+  `> All three are note-scoped, like everything shipped here: run against a whole wiki they retrieve nothing, because the words in a prompt like "create practice questions" match no page summary.\n\n` +
   `> [!info] Documenting a skill\n` +
   `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`unclear-bits.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
       `>\n` +
