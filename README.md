@@ -62,7 +62,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 **Engineering rules the whole plugin follows**:
 
 - Every model operation is **one structured ask** — no tool loops, no multi-step planning; small local models are unreliable at chaining and reliable at filling one schema.
-- **One operation at a time.** There is one engine, one status line and one clock, so starting a second is refused with a message naming what is already running — and the chips and skills that would start one are disabled while it does, which needs no words at all.
+- **One operation at a time.** There is one engine, one status line and one clock, so starting a second is refused with a message naming what is already running — and every door it could come through closes while one runs: the chips grey, the skills menu greys with a line saying what is busy, and the chat input refuses. A streaming answer counts as an operation, which it did not at first, so pressing *Formatting* mid-answer used to start a second call on the same GPU.
 - Every write goes through a **preview-approve gate**. Raw notes are modified by exactly one feature (Improve), always previewed.
 - Grounded-or-refuse: the model answers from provided material or says it can't — in both modes.
 - Per-feature input budgets are derived from the context window **the engine actually granted**, read back from `Engine.create` rather than assumed from the setting — LiteRT-LM may clamp `maxNumTokens`, and every budget derived from the request would then overshoot.

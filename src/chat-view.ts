@@ -332,8 +332,10 @@ export class ChatView extends ItemView {
     const scanning = this.plugin.isScanning();
     // Something else is already spending the engine. Rather than let you press
     // a button and be told no, take the button away — the only version of this
-    // that needs no words.
-    const busyElsewhere = this.plugin.isBusy() && !scanning;
+    // that needs no words. The scan chip is the exception, and only because it
+    // turns into the stop control; every other chip greys, including during a
+    // scan, where they used to stay lit and then refuse.
+    const busy = this.plugin.isBusy();
     for (const spec of suggestionsFor(this.mode)) {
       // The scan chip doubles as the stop control while a scan runs. Pressing
       // it and getting "a scan is already running — use the other command" was
@@ -353,7 +355,7 @@ export class ChatView extends ItemView {
         });
         continue;
       }
-      if (busyElsewhere) {
+      if (busy) {
         chip.disabled = true;
         chip.addClass('gemma4-chat-suggestion-disabled');
         setTooltip(chip, `Busy: ${this.plugin.runningLabel() ?? 'something is running'}`);
@@ -422,6 +424,18 @@ export class ChatView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: LiteRtSpikePlugin) {
     super(leaf);
     this.plugin = plugin;
+  }
+
+  /**
+   * Closing the panel mid-answer must not leave the plugin marked busy.
+   *
+   * chatBusy is cleared in a finally, but that finally belongs to a generation
+   * whose view is gone; a panel closed while streaming would otherwise leave
+   * every chip and command disabled with nothing left to finish and clear it.
+   */
+  async onClose(): Promise<void> {
+    this.activeConversation?.cancel();
+    this.plugin.setChatBusy(false);
   }
 
   getViewType(): string {
@@ -815,6 +829,13 @@ export class ChatView extends ItemView {
 
   private async handleSend(wholeWiki = false) {
     if (this.busy) return;
+    // The input is the one door the greyed chips do not cover: you can type a
+    // question while an Improve is running and press Enter. Same engine, same
+    // rule.
+    if (this.plugin.isBusy()) {
+      notify('warn', `Busy: ${this.plugin.runningLabel() ?? 'something is running'}. Wait for that to finish.`);
+      return;
+    }
     const question = this.inputEl.value.trim();
     if (!question) return;
     this.inputEl.value = '';
@@ -971,6 +992,9 @@ export class ChatView extends ItemView {
     if (!context) return;
 
     this.busy = true;
+    // Also tell the plugin: one engine, one operation, and a streaming answer
+    // is an operation. Without this the chips stayed live through an answer.
+    this.plugin.setChatBusy(true);
     this.sendButton.disabled = true;
     this.stopButton.show();
 
@@ -1085,6 +1109,7 @@ export class ChatView extends ItemView {
       this.activeConversation = null;
       await conversation?.delete().catch(() => {});
       this.busy = false;
+      this.plugin.setChatBusy(false);
       this.sendButton.disabled = false;
       this.stopButton.hide();
       this.inputEl.focus();
