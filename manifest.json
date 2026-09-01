@@ -3,10 +3,8 @@
   "name": "Gemma 4 LiteRT Wiki",
   "version": "0.0.1",
   "minAppVersion": "1.11.4",
-  "description": "Gemma 4 runs inside Obsidian itself via LiteRT-LM and WebGPU — free, private, offline AI for your notes. no API key, no subscription, no server; \n\nFollows Andrej Karpathy’s LLM-wiki pattern: your notes are never modified, while Ingest and Scan turn them into a living Wiki of cross-note connections, concept pages, tags, links and Sources. Plugin-generated Sources, staleness detection, Provenance checks, and contradiction scanning keep the Wiki traceable.  \n\nChat with one note, several, or the whole Wiki — keep any answer worth keeping. Includes Quiz, Flashcards, Find Gaps, and custom Skills.\n\nPure Markdown, no database lock-in.",
+  "description": "Gemma 4 runs inside Obsidian itself via LiteRT-LM and WebGPU — free, private, offline AI for your notes. no API key, no subscription, no server; \n\nFollows Andrej Karpathy’s LLM-wiki pattern: your notes are never modified by the model, while Ingest and Scan turn them into a living Wiki of cross-note connections, concept pages, tags, links and Sources. Plugin-generated Sources, staleness detection, Provenance checks, and contradiction scanning keep the Wiki traceable.  \n\nChat with one note, several, or the whole Wiki — keep any answer worth keeping. Includes Quiz, Flashcards, Find Gaps, and custom Skills.\n\nPure Markdown, no database lock-in.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
 }
-
-
