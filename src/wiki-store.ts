@@ -1002,11 +1002,52 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
       ),
     ],
   ];
+  // Same deal as the generated READMEs: a seed the plugin wrote should get a
+  // better version when one ships, and a seed you edited is yours forever.
+  //
+  // Without this, improving a shipped skill only reached vaults created after
+  // the change — which bit twice, most visibly when Feynman was rewritten to
+  // fill the input box and every existing vault went on sending the old
+  // prompt, correctly, from the old file.
   for (const [path, content] of seeds) {
-    if (!vault.getAbstractFileByPath(normalizePath(path))) {
-      await vault.create(normalizePath(path), content).catch(() => {});
+    const norm = normalizePath(path);
+    const existing = vault.getAbstractFileByPath(norm);
+    if (!existing) {
+      await vault.create(norm, stampSeed(content)).catch(() => {});
+      continue;
     }
+    if (!(existing instanceof TFile)) continue;
+    const current = await vault.read(existing).catch(() => null);
+    if (current === null || !isUnmodifiedSeed(current)) continue;
+    if (stripSeedStamp(current) === content) continue;
+    await vault.modify(existing, stampSeed(content)).catch(() => {});
   }
+}
+
+// The stamp for a skill file goes INSIDE the frontmatter, not at the end of
+// the file the way a README's does. A skill's body is the prompt: an HTML
+// comment appended to it would be sent to the model. parseSkillFile reads the
+// keys it knows and ignores the rest, so an extra one costs nothing.
+const SEED_STAMP = /^stamp: ([0-9a-f]{8})\n/m;
+
+export function stripSeedStamp(text: string): string {
+  return text.replace(SEED_STAMP, '');
+}
+
+function stampSeed(content: string): string {
+  const hash = contentHash(content);
+  // Seeds always start with frontmatter; put the stamp on the line after the
+  // opening fence so it survives the user editing anything below it.
+  return content.startsWith('---\n')
+    ? content.replace('---\n', `---\nstamp: ${hash}\n`)
+    : `${content}\n<!-- gemma-wiki: generated (${hash}) -->\n`;
+}
+
+/** True only while the file still hashes to what the plugin wrote. */
+export function isUnmodifiedSeed(text: string): boolean {
+  const m = SEED_STAMP.exec(text);
+  if (!m) return false;
+  return contentHash(stripSeedStamp(text)) === m[1];
 }
 
 // Lexical retrieval over the index, per the "read the index, then read the

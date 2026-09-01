@@ -45,7 +45,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 **Config as notes** — the rules live as plain markdown you can read, edit and version:
 
 - **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. *Organize tags* has local Gemma merge near-synonyms into one vocabulary; *Retag* applies it to existing pages, both behind a preview.
-- **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. `fill: true` puts the prompt in the input box and waits rather than sending, for a skill that has to be aimed at something — end the prompt with the blank and the cursor lands there. Ships with a README and two examples.
+- **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. `fill: true` puts the prompt in the input box and waits rather than sending, for a skill that has to be aimed at something — end the prompt with the blank and the cursor lands there. Ships with a README and two examples, which carry a `stamp:` hash so a later release can improve them **unless you have edited the file**, in which case it is yours forever.
 - **Every folder has a README** explaining what belongs in it, and the layout is shown in Settings with per-row state, generated from the same list the scaffold builds from.
 
 **Chat panel** — shadcn-inspired monochrome, theme-variable driven:
@@ -62,6 +62,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 **Engineering rules the whole plugin follows**:
 
 - Every model operation is **one structured ask** — no tool loops, no multi-step planning; small local models are unreliable at chaining and reliable at filling one schema.
+- **One operation at a time.** There is one engine, one status line and one clock, so starting a second is refused with a message naming what is already running — and the chips and skills that would start one are disabled while it does, which needs no words at all.
 - Every write goes through a **preview-approve gate**. Raw notes are modified by exactly one feature (Improve), always previewed.
 - Grounded-or-refuse: the model answers from provided material or says it can't — in both modes.
 - Per-feature input budgets are derived from the context window **the engine actually granted**, read back from `Engine.create` rather than assumed from the setting — LiteRT-LM may clamp `maxNumTokens`, and every budget derived from the request would then overshoot.
