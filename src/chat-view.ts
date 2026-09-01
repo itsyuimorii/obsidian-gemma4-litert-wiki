@@ -323,6 +323,13 @@ export class ChatView extends ItemView {
     this.suggestionRow.show();
     // Short labels; the full question lives in the prompt. What belongs here
     // is decided by suggestionsFor(); this only draws it.
+    // The one thing that separates a chip that ASKS from a chip that DOES.
+    // Same pill, same text colour; the glyph carries it.
+    const ACTION_ICON: Record<string, string> = {
+      scan: 'folder-search',
+      ingest: 'file-plus-2',
+      improve: 'wand-2',
+    };
     const TIP: Record<string, string> = {
       scan: 'Pick folders, see how many notes each holds, then draft a page for each',
       ingest: 'Draft one wiki page from the note you have open — you review it before anything is written',
@@ -343,8 +350,9 @@ export class ChatView extends ItemView {
       const label = isScanChip && scanning ? 'Stop scan' : spec.label;
       const chip = this.suggestionRow.createEl('button', {
         cls: spec.action ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
-        text: label,
       });
+      if (spec.action) setIcon(chip.createSpan(), isScanChip && scanning ? 'square' : ACTION_ICON[spec.action]);
+      chip.createSpan({ text: label });
       if (isScanChip && scanning) {
         chip.addClass('gemma4-chat-suggestion-running');
         setTooltip(chip, 'Stop after the note being drafted right now finishes');

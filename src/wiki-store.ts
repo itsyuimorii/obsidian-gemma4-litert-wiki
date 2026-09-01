@@ -351,7 +351,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | ${ICON_ATTACH} | Attach another note as extra context, on top of whatever the current mode already sends. |` + `\n` +
       `> | ${ICON_ZAP} | The skills menu. Built-ins plus every file in \`skills/\`. A skill can declare which mode it needs; one that needs the other mode is **shown greyed rather than switching you into it** — a menu item should not quietly change what the panel is grounded in. |` + `\n` +
-      `> | The chips above it | Three one-press starters, fixed — the row you learn is the row you keep. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* **While a scan is running, the first one becomes *Stop scan*.** Chips marked as writes (*Formatting*, *Scan*) do something rather than ask something, always behind their own preview. |` + `\n` +
+      `> | The chips above it | Three one-press starters, fixed — the row you learn is the row you keep. In Wiki mode: *Scan a folder*, *Find connections*, *What's still open?* **While a scan is running, the first one becomes *Stop scan*.** **A chip with a small icon does something; a chip without one asks something.** The ones that do are always behind their own preview. |` + `\n` +
       `> | <kbd>Enter</kbd> | Send. <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line. |` + `\n` +
       `> | Send / stop | Answers stream in as they are generated. While one is running the send button becomes a stop button — pressing it keeps whatever has arrived so far. |` + `\n\n` +
       `## While something is running` + `\n\n` +
