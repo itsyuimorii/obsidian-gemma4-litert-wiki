@@ -930,15 +930,19 @@ export class ChatView extends ItemView {
       }
       return {
         systemPrompt:
-          "You answer questions about the user's personal wiki. Use ONLY the material below: " +
+          "Use ONLY the material below about the user's personal wiki: " +
           'the catalog (every wiki page with a one-line summary), the recent activity log ' +
           '(dated ingest/answer entries), and ' +
           (wholeWiki
             ? 'the full text of the wiki pages, as many as fit. Work across all of them — this ' +
-              'is a question about the collection, not about one page. '
+              'is about the collection, not about one page. '
             : 'the full text of the most relevant pages. ') +
-          'If the answer is not in this material, say so plainly instead of guessing. Be ' +
-          'concise. You may use markdown formatting.\n\n' +
+          'Never bring in outside knowledge, and never invent detail that is not there.\n\n' +
+          'If the user asks a question and this material does not answer it, say so plainly ' +
+          'rather than guessing. If the user asks you to work with the material instead, carry ' +
+          'that out from what is here — the instruction comes from the user, so do not look for ' +
+          'it inside the pages.\n\n' +
+          'Be concise. You may use markdown formatting.\n\n' +
           `## Catalog\n${catalog}\n\n` +
           (logTail ? `## Recent activity log\n${logTail}\n\n` : '') +
           clampedWiki.text,
@@ -987,9 +991,26 @@ export class ChatView extends ItemView {
     }
     return {
       systemPrompt:
-        "Answer the user's question using ONLY the notes below. If the answer is not in them, " +
-        'say so plainly instead of guessing or using outside knowledge. Be concise. You may use ' +
-        'markdown formatting.\n\n' +
+        // Two kinds of request, and the old prompt only knew one. It said
+        // "answer the user's question ... if the answer is not in them, say
+        // so", which is right for a question and actively wrong for an
+        // instruction: asked to make flashcards, the model went looking for
+        // flashcards IN the note, did not find any, and refused — "the notes
+        // do not contain a specific command or skill for generating
+        // flashcards". Every skill is a transformation, not a lookup.
+        //
+        // The grounding promise is unchanged: only this material, no outside
+        // knowledge, no invented detail. What changes is that carrying out an
+        // instruction is no longer mistaken for failing to find one.
+        'Use ONLY the notes below. Never bring in outside knowledge, and never invent detail ' +
+        'that is not there.\n\n' +
+        'If the user asks a question and the notes do not answer it, say so plainly rather than ' +
+        'guessing.\n\n' +
+        'If the user asks you to work with the material — summarise it, turn it into questions ' +
+        'or flashcards, list the actions it implies, point out what is unclear — carry that out ' +
+        'from what the notes contain. The instruction comes from the user; do not look for it ' +
+        'inside the notes.\n\n' +
+        'Be concise. You may use markdown formatting.\n\n' +
         clamped.text,
       sourcePath: file?.path ?? 'wiki/index.md',
       sources,
