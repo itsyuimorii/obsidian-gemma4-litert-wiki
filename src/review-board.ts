@@ -63,6 +63,26 @@ export async function buildReviewBoard(app: App, staleDays: number): Promise<Rev
       }
     }
 
+    // Answer drift: the same idea one layer up. A saved answer records
+    // read_hashes — what each page it read looked like at the time. When a
+    // card or note it was built on changes, the answer keeps confidently
+    // saying whatever was true then; without this check nothing anywhere ever
+    // pointed that out, so a stale answer sat in retrieval indefinitely.
+    const readHashes = fm?.read_hashes;
+    if (readHashes && typeof readHashes === 'object') {
+      for (const [p, h] of Object.entries(readHashes as Record<string, unknown>)) {
+        if (typeof h !== 'string') continue;
+        const rf = app.vault.getAbstractFileByPath(`${p}.md`);
+        if (!(rf instanceof TFile)) continue;
+        const cur = await app.vault.read(rf);
+        if (contentHash(cur) !== h) {
+          drifted = true;
+          reasons.push('a page this answer was based on has changed');
+          break;
+        }
+      }
+    }
+
     // Stale concept overview (issue #60 ripple): membership changed after the
     // overview was written — ingest added a page or the pruner removed one —
     // so the prose no longer reflects ## Pages. Rebuilding the concept page
