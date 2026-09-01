@@ -18,6 +18,7 @@ import {
   buildChatTranscript,
   chatTranscriptPath,
   clampToTokens,
+  contentHash,
   ensureWikiScaffold,
   expandByLinks,
   getIngestedSourcePaths,
@@ -546,7 +547,7 @@ export class ChatView extends ItemView {
     });
     setIcon(skillsBtn, 'zap');
     setTooltip(skillsBtn, 'Run a skill');
-    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean; writes?: string }[] = [
+    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean }[] = [
       {
         // Nouns, because every one of these hands you a thing: a quiz, a set of
         // cards, a checklist. The menu was three imperatives and two nouns,
@@ -569,10 +570,6 @@ export class ChatView extends ItemView {
         label: 'Flashcards',
         icon: 'layers',
         mode: 'note',
-        // The one shipped skill whose output is unambiguously an artifact:
-        // you take flashcards away and use them. Answering into the chat and
-        // leaving you to press save was the wrong shape for it.
-        writes: 'flashcards',
         prompt:
           'Create 8 flashcards from this material. Format each as **Q:** question then **A:** ' +
           'answer on the next line, with a blank line between cards.',
@@ -619,21 +616,14 @@ export class ChatView extends ItemView {
         for (const skill of all) {
           const wrongMode = !!skill.mode && skill.mode !== this.mode;
           menu.addItem((item) => {
-            item.setTitle(skill.writes ? `${skill.label} → ${skill.writes}/` : skill.label).setIcon(skill.icon);
+            item.setTitle(skill.label).setIcon(skill.icon);
             if (wrongMode || busy) {
               item.setDisabled(true);
               return;
             }
             item.onClick(() => {
-              // A skill that writes a file is not a conversation. It runs on
-              // the plugin side — one ask, one preview, one write — and never
-              // touches the thread.
-              if (skill.writes) {
-                void this.plugin.runSkillToFile(skill);
-                return;
-              }
               if (!skill.fill) {
-                void this.handleSend({ text: skill.prompt });
+                void this.handleSend({ text: skill.prompt, skillLabel: skill.label });
                 return;
               }
               // fill: true is the one case that DOES want the box — the prompt
@@ -785,7 +775,8 @@ export class ChatView extends ItemView {
     getAnswer: () => string,
     question: string,
     sources: { title: string; linkPath: string }[],
-    allowSave = true
+    allowSave = true,
+    skillLabel?: string
   ) {
     const actions = row.createDiv({ cls: 'gemma4-chat-actions' });
 
@@ -823,22 +814,46 @@ export class ChatView extends ItemView {
     });
     setIcon(saveBtn, 'file-plus-2');
     setTooltip(saveBtn, 'Save answer to wiki');
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', () => void (async () => {
       const answer = getAnswer();
-      const pagePath = answerPagePath(question);
-      const pageContent = buildAnswerPage(question, answer, sources);
+      // Anchored to the note it was grounded in: a canned prompt is the same
+      // words every time, so naming the file by the question alone made Quiz
+      // on note B overwrite Quiz on note A.
+      const pagePath = answerPagePath(question, sources[0]?.title);
+      // Record what this answer read, and what it looked like, so the review
+      // board can flag the answer when a source changes — same drift idea as
+      // the cards, extended to the layer above them.
+      const readHashes: Record<string, string> = {};
+      for (const src of sources) {
+        const f = this.app.vault.getAbstractFileByPath(`${src.linkPath}.md`);
+        if (f instanceof TFile) {
+          try {
+            readHashes[src.linkPath] = contentHash(await this.app.vault.read(f));
+          } catch {
+            /* best-effort */
+          }
+        }
+      }
+      const pageContent = buildAnswerPage(question, answer, sources, {
+        // A skill's output is a rendering of the material, not a synthesis —
+        // saved for you, but never fed back to retrieval.
+        derived: !!skillLabel,
+        titleLabel: skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : undefined,
+        sourceHashes: Object.keys(readHashes).length ? readHashes : undefined,
+      });
       const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
+      const indexTitle = skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : question;
       new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
         void (async () => {
           await ensureWikiScaffold(this.app.vault);
           await writeWikiPage(this.app.vault, pagePath, pageContent);
           const summary = answer.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 140) ?? question;
-          await upsertIndexEntry(this.app.vault, pagePath, question, summary);
+          await upsertIndexEntry(this.app.vault, pagePath, indexTitle, summary);
           await appendLog(this.app.vault, 'answer', question);
           notify('done', `Saved to wiki: ${pagePath}`);
         })();
       }).open();
-    });
+    })());
   }
 
   private scrollToBottom() {
@@ -854,7 +869,7 @@ export class ChatView extends ItemView {
    * box as if you had typed it and changed your mind. The box is where YOU
    * write; it is not a transport for text the plugin already has.
    */
-  private async handleSend(opts: { text?: string; wholeWiki?: boolean } = {}) {
+  private async handleSend(opts: { text?: string; wholeWiki?: boolean; skillLabel?: string } = {}) {
     if (this.busy) return;
     // The input is the one door the greyed chips do not cover: you can type a
     // question while an Improve is running and press Enter. Same engine, same
@@ -871,7 +886,7 @@ export class ChatView extends ItemView {
     this.lastQuestion = question;
     this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
-    await this.runGeneration(question, false, opts.wholeWiki ?? false);
+    await this.runGeneration(question, false, opts.wholeWiki ?? false, opts.skillLabel);
   }
 
   // Builds the grounding context for one question, or returns null with a
@@ -928,17 +943,23 @@ export class ChatView extends ItemView {
       const expanded =
         !wholeWiki && selected.length ? expandByLinks(this.app, selected, entries, 2) : [];
       const retrieved = [...selected, ...expanded];
-      const pages = retrieved.length
+      const loaded = retrieved.length
         ? await loadPages(this.app.vault, retrieved, this.plugin.budget('chat') * 3)
-        : '';
+        : { pages: '', answers: '' };
       // Catalog + recent log always ride along: they are small, and they
       // make meta-questions answerable ("what is in my wiki?", "what did
       // I add today?") — pure page retrieval left those as dead ends.
       const catalog = entries.map((e) => `- ${e.title} — ${e.summary}`).join('\n');
       const logTail = await readLogTail(this.app.vault, 12);
       const attachments = await this.readAttachments();
+      // Pages first, answers after and under their own heading, so a saved
+      // answer never outranks the material it was derived from.
       const clampedWiki = clampToTokens(
-        (pages ? `## Relevant pages\n${pages}\n\n` : '') + attachments.blocks,
+        (loaded.pages ? `## Relevant pages\n${loaded.pages}\n\n` : '') +
+          (loaded.answers
+            ? `## Your earlier saved answers (derived from the pages — where they disagree with a page, trust the page)\n${loaded.answers}\n\n`
+            : '') +
+          attachments.blocks,
         this.plugin.budget('chat')
       );
       if (clampedWiki.truncated) {
@@ -1044,7 +1065,7 @@ export class ChatView extends ItemView {
     };
   }
 
-  private async runGeneration(question: string, ungrounded = false, wholeWiki = false) {
+  private async runGeneration(question: string, ungrounded = false, wholeWiki = false, skillLabel?: string) {
     const context = await this.buildContext(question, ungrounded, wholeWiki);
     if (!context) return;
 
@@ -1136,7 +1157,7 @@ export class ChatView extends ItemView {
       this.turns.push({ role: 'assistant', content: answer, sources: context.ungrounded ? [] : context.sources });
       // Ungrounded answers can't be saved to the wiki — filing model guesses
       // as sourced pages is exactly the pollution the grounding model avoids.
-      this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded);
+      this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded, skillLabel);
 
       // Issue #7 routing: a grounded wiki answer with no matching page often
       // means "not in your wiki". Offer a per-answer, opt-in hatch to ask

@@ -27,8 +27,14 @@ export function setWikiDir(name: string): void {
 export function wikiDir(): string {
   return _wikiDir;
 }
+// Named cards/, and renamed FROM sources/ deliberately. The folder holds
+// model-generated summary cards, and calling that folder "sources" gave the
+// word two opposite meanings at once: Karpathy's sources are the immutable
+// raw notes, and this folder is precisely the layer derived from them. Even
+// the author kept tripping over it. A card also HAS a `source:` line in its
+// frontmatter — pointing at the raw note — which finally reads correctly now.
 export function wikiSourcesDir(): string {
-  return `${_wikiDir}/sources`;
+  return `${_wikiDir}/cards`;
 }
 export function wikiAnswersDir(): string {
   return `${_wikiDir}/answers`;
@@ -233,7 +239,7 @@ const INDEX_HEADER =
   // Full path, not [[README]]: six files now share that basename (this folder
   // and each of the five below it), and Obsidian resolved the bare link to
   // whichever it liked — in practice chats/README.
-  `> Everything the plugin writes lives here; your own notes are never modified. Full layout and rules: [[${_wikiDir}/README|${_wikiDir}/README]].\n\n` +
+  `> Everything the plugin writes lives here; your own notes are never modified by the plugin — they are yours to edit, and the wiki catches up. Full layout and rules: [[${_wikiDir}/README|${_wikiDir}/README]].\n\n` +
   `## Pages\n\n`;
 
 const LOG_HEADER =
@@ -273,7 +279,7 @@ export function isWikiPage(file: { path: string; basename: string }): boolean {
 export function wikiScaffoldPaths(): { path: string; what: string }[] {
   return [
     { path: `${_wikiDir}/README.md`, what: 'What this folder is, and the rules' },
-    { path: `${wikiSourcesDir()}/`, what: 'One page per ingested note' },
+    { path: `${wikiSourcesDir()}/`, what: 'One summary card per ingested note' },
     { path: `${wikiAnswersDir()}/`, what: 'Chat answers you saved' },
     { path: `${wikiChatsDir()}/`, what: 'Saved conversations' },
     { path: `${wikiConceptsDir()}/`, what: 'Pages built across a shared tag' },
@@ -298,7 +304,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
   [
     () => `${_wikiDir}/README.md`,
     `# ${_wikiDir}\n\n` +
-      `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified — they stay wherever you keep them. *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
+      `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified *by the plugin* — they stay wherever you keep them, and **editing them yourself is normal**: fix the note, and the wiki notices (the card shows as *drifted* on the review board) and offers to catch up. **Fixing the original note is the real fix; editing a card is a temporary patch that the next re-ingest overwrites.** *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
       `> [!info] Where the plugin lives` + `\n` +
       `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill, and save an answer back here.` + `\n` +
       `>` + `\n` +
@@ -318,7 +324,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] File notes into the wiki` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
-      `> | **Ingest this note into wiki** | Reads the open note and writes one page in \`sources/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. **This is the one-note version of Scan.** |` + `\n` +
+      `> | **Ingest this note into wiki** | Reads the open note and writes one card in \`cards/\`: summary, key points, tags, and how confident the model was. The note itself is untouched. **This is the one-note version of Scan.** |` + `\n` +
       `> | **Scan a folder into the wiki** | The same thing over whole folders. It asks which ones, and **shows how many new or changed notes each holds and roughly how long the run takes** before you commit. Then it drafts them all and shows you the batch — **nothing is written until you approve it**. |` + `\n` +
       `> | **Suggest tags & links** | Proposes frontmatter tags and links to related pages, for one note. You review before it writes. |` + `\n\n` +
       `> [!info] Build on top of what is filed` + `\n` +
@@ -388,7 +394,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `>` + `\n` +
       `> **If you went back to your notes while it ran, it does not open.** It waits on the status bar as ✅ until you ask for it. A dialog that steals the window minutes after you started something is an ambush: by then you are typing somewhere else, and it is the first you hear of the whole operation.` + `\n\n` +
       `> [!info] One more mark, in the file explorer` + `\n` +
-      `> A small mark next to a note means it already has a page in \`sources/\`. Decoration only — **the note file itself is untouched**.` + `\n\n` +
+      `> A small mark next to a note means it already has a card in \`cards/\`. Decoration only — **the note file itself is untouched**.` + `\n\n` +
       `## Settings worth knowing about` + `\n\n` +
       `> [!info] The five that change what happens` + `\n` +
       `> | Setting | Why you would touch it |` + `\n` +
@@ -404,7 +410,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] Folders` + `\n` +
       `> | Folder | What lands here |` + `\n` +
       `> |---|---|` + `\n` +
-      `> | \`sources/\` | **One page per note you ingest** — summary, key points, tags, confidence. |` + `\n` +
+      `> | \`cards/\` | **One summary card per note you ingest.** Your note is the source; the card is derived from it. |` + `\n` +
       `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. They become grounding for later questions. |` + `\n` +
       `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |` + `\n` +
       `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
@@ -424,21 +430,24 @@ const FOLDER_READMES: Array<[() => string, string]> = [
   ],
   [
     () => `${wikiSourcesDir()}/README.md`,
-    `# sources\n\n` +
-      `**One page here for each note you have ingested.** These pages are summaries *of* your notes — never the notes themselves. Your originals stay wherever you keep them and are not modified; ingest opens a note, reads it, and closes it.\n\n` +
-      `> [!info] What a page holds\n` +
-      `> A summary, three to five key points, up to three tags, and the entities the note mentions. The frontmatter carries the machinery:\n` +
+    `# cards\n\n` +
+      `**One card here for each note you have ingested** — a model-written summary: key points, tags, and how confident the model was about its own extraction.\n\n` +
+      `> [!info] A card is not your note\n` +
+      `> Your original notes stay wherever you keep them and are **never touched by the plugin**. A card is the wiki's summary *of* a note — the \`source\` line in its frontmatter points back at the real one.\n` +
       `>\n` +
+      `> **Found a mistake while chatting? Fix the original note, not the card.** Edit the note, and the plugin notices: the card shows up on the review board as *drifted*, and re-ingesting rebuilds it from the corrected note.\n` +
+      `>\n` +
+      `> Editing a card directly is a temporary patch — nothing tracks it, and the next re-ingest overwrites it (behind a preview, so you will see it happen).\n\n` +
+      `> [!info] What the frontmatter does\n` +
       `> | Field | What it does |\n` +
       `> |---|---|\n` +
-      `> | \`source\` | The note this page was made from. |\n` +
-      `> | \`source_hash\` | What that note looked like at the time. **This is how drift is caught** — edit the note and the review board reports this page as out of date. |\n` +
+      `> | \`source\` | The raw note this card was made from. |\n` +
+      `> | \`source_hash\` | What that note looked like at the time. **This is how drift is caught** — edit the note and the review board reports this card as out of date. |\n` +
       `> | \`confidence\` | \`high\`, \`med\` or \`low\`, written by the model about its own extraction. Anything below \`high\` lands on the review board. |\n` +
       `> | \`tags\` | One to three topics, drawn from the vocabulary in \`schema.md\`. |\n\n` +
-      `> [!info] Editing and deleting\n` +
-      `> Edit any page freely — it is your note now.\n` +
-      `>\n` +
-      `> **Deleting one breaks nothing:** its entry in \`index.md\` is dropped automatically, and **Reconcile wiki** forces a pass that also clears links pointing at it from other pages.\n`,
+      `> [!info] Deleting\n` +
+      `> **Deleting a card breaks nothing:** its entry in \`index.md\` is dropped automatically, and **Reconcile wiki** clears links pointing at it from other pages.\n`,
+
   ],
   [
     () => `${wikiAnswersDir()}/README.md`,
@@ -470,13 +479,13 @@ const FOLDER_READMES: Array<[() => string, string]> = [
   [
     () => `${wikiConceptsDir()}/README.md`,
     `# concepts\n\n` +
-      `**Pages built *across* other pages.** Everything in \`sources/\` is about one note. A concept page is about a *theme*: pick a tag or a mention that two or more pages share, and the plugin writes a page above them that links down into each one.\n\n` +
+      `**Pages built *across* other pages.** Everything in \`cards/\` is about one note. A concept page is about a *theme*: pick a tag or a mention that two or more pages share, and the plugin writes a page above them that links down into each one.\n\n` +
       `> [!info] Why this folder exists\n` +
       `> A pile of summaries is still a pile.\n` +
       `>\n` +
       `> **This is where the wiki grows a second storey** — the layer where you can ask what you think about a subject, rather than what one note said about it.\n\n` +
       `> [!info] How they differ from ingested pages\n` +
-      `> | | \`sources/\` | \`concepts/\` |\n` +
+      `> | | \`cards/\` | \`concepts/\` |\n` +
       `> |---|---|---|\n` +
       `> | Made from | One note | Every page sharing a tag |\n` +
       `> | Named after | The note | The tag |\n` +
@@ -845,21 +854,6 @@ export interface WikiSkill {
    * careful wording that a hand-typed question would lose.
    */
   fill?: boolean;
-  /**
-   * Put the answer in a file instead of the chat.
-   *
-   * The value is a folder name under the wiki folder. This is the line
-   * between a saved prompt and a tool: everything else here answers into the
-   * conversation and leaves you to save it by hand, which is wrong for the
-   * skills whose output IS an artifact — a set of flashcards is something you
-   * take away, not something you read once and scroll past.
-   *
-   * The write goes through the same preview-approve gate as everything else,
-   * and the folder is deliberately not one of the four page folders, so the
-   * result is never indexed, retrieved or flagged as stale. It is yours to
-   * use, not more material for the wiki to reason about.
-   */
-  writes?: string;
 }
 
 // A skill file is `key: value` frontmatter between --- fences, then the prompt
@@ -908,7 +902,6 @@ function parseSkillFile(name: string, content: string): WikiSkill | null {
     prompt,
     mode,
     fill: front.fill === 'true',
-    writes: front.writes ? front.writes.replace(/^\/+|\/+$/g, '') || undefined : undefined,
   };
 }
 
@@ -936,11 +929,9 @@ function buildSkillFile(
   mode: 'note' | 'wiki' | undefined,
   prompt: string,
   doc?: string,
-  fill = false,
-  writes?: string
+  fill = false
 ): string {
-  const modeLine =
-    (mode ? `mode: ${mode}\n` : '') + (fill ? 'fill: true\n' : '') + (writes ? `writes: ${writes}\n` : '');
+  const modeLine = (mode ? `mode: ${mode}\n` : '') + (fill ? 'fill: true\n' : '');
   // The callout goes above the prompt so the file reads as documentation first;
   // stripCalloutBlocks() removes it again on the way to the model.
   const docBlock = doc ? `${doc}\n\n` : '';
@@ -969,7 +960,6 @@ const SKILLS_README =
   `> | \`icon\` | Any Obsidian (Lucide) icon name. Defaults to \`wand-2\`. |\n` +
   `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, the skill is **shown greyed unless the panel is already in that mode** — it will not switch you into it, because a menu item should not quietly change what the panel is grounded in. Leave it out and the skill runs in whichever mode you are in. |\n` +
   `> | \`fill\` | Optional, \`true\`. Puts the prompt in the input box and waits instead of sending it — for a skill that has to be aimed at something. End the prompt with the blank and the cursor lands there. |\n` +
-  `> | \`writes\` | Optional, a folder name. **The answer becomes a file instead of a chat message**: \`writes: flashcards\` puts it in \`flashcards/<note>.md\`, behind the same preview you approve. For a skill whose output is something you take away rather than read once. |\n` +
   `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
   `> [!info] The three that are not files\n` +
   `> The ⚡ menu also holds **Quiz**, **Flashcards** and **Find gaps**, which ship inside the plugin rather than as files — so this folder will always show fewer things than the menu does. They cannot be edited or deleted; copy one into a file here if you want your own version of it.\n` +
@@ -988,11 +978,7 @@ const SKILLS_README =
   `>\n` +
   `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
   `> [!info] Where the answer goes\n` +
-  `> By default into the chat, where you can read it and save it by hand.\n` +
-  `>\n` +
-  `> With \`writes:\`, into a file instead — one ask, one preview, one write, and the thread is never touched. **Shipped this way: Flashcards**, which lands in \`flashcards/\`.\n` +
-  `>\n` +
-  `> That folder is deliberately not one of the four page folders, so what a skill writes is **never indexed, retrieved, or flagged as stale**. It is yours to use, not more material for the wiki to reason about.\n\n` +
+  `> Into the chat. Under every answer there is a save button — **you decide after reading whether it was worth keeping**, and a saved answer lands in \`answers/\` behind the usual preview.\n\n` +
   `> [!info] What a skill is not\n` +
   `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools. Calling it a skill is generous: it is a saved prompt with a menu entry, plus somewhere for the answer to land.\n` +
   `>\n` +
@@ -1158,16 +1144,40 @@ export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntr
   return scored.slice(0, 3).map((s) => s.e);
 }
 
-export async function loadPages(vault: Vault, entries: IndexEntry[], maxTotalChars: number): Promise<string> {
-  let out = '';
+/**
+ * Load retrieved pages, split into two piles by trust.
+ *
+ * Cards and concept pages summarise the user's notes; a saved answer is the
+ * model's own earlier synthesis. Mixing them into one block made them
+ * indistinguishable in the prompt, so a wrong or stale saved answer carried
+ * the same weight as the material it was derived from — the classic poisoning
+ * loop, and the one gap in Karpathy's design (his gist says explorations
+ * should compound, and says nothing about trust). Keeping the compounding
+ * while ranking answers below pages is the middle path.
+ *
+ * Answers marked `derived: true` (a quiz, flashcards — renderings, not
+ * syntheses) are skipped outright: they contain nothing the pages do not.
+ */
+export async function loadPages(
+  vault: Vault,
+  entries: IndexEntry[],
+  maxTotalChars: number
+): Promise<{ pages: string; answers: string }> {
+  let pages = '';
+  let answers = '';
+  const answersPrefix = `${wikiAnswersDir()}/`;
   for (const e of entries) {
     const content = await readIfExists(vault, `${e.linkPath}.md`);
     if (!content) continue;
-    const block = `### Page: ${e.title}\n${content}\n\n`;
-    if (out.length + block.length > maxTotalChars) break;
-    out += block;
+    if (pages.length + answers.length + content.length > maxTotalChars) break;
+    if (`${e.linkPath}.md`.startsWith(answersPrefix)) {
+      if (/^derived: true$/m.test(content.slice(0, 500))) continue;
+      answers += `### Answer: ${e.title}\n${content}\n\n`;
+    } else {
+      pages += `### Page: ${e.title}\n${content}\n\n`;
+    }
   }
-  return out;
+  return { pages, answers };
 }
 
 // One-hop link expansion (issue #14): given the seed pages the lexical
@@ -1209,23 +1219,59 @@ export function expandByLinks(
   return extra;
 }
 
-export function answerPagePath(question: string): string {
-  return normalizePath(`${wikiAnswersDir()}/${slugify(question).slice(0, 60)}.md`);
+/**
+ * Where a saved answer lands.
+ *
+ * Named by the note it was grounded in plus the question — the question alone
+ * was the whole name, and a canned skill prompt is identical every time, so
+ * running Quiz on note A and then note B silently overwrote A's file with
+ * B's quiz.
+ */
+export function answerPagePath(question: string, groundedIn?: string): string {
+  const q = slugify(question).slice(0, 48);
+  const base = groundedIn ? `${slugify(groundedIn).slice(0, 40)}--${q}` : q;
+  return normalizePath(`${wikiAnswersDir()}/${base}.md`);
 }
 
 export function buildAnswerPage(
   question: string,
   answer: string,
-  sources: { title: string; linkPath: string }[]
+  sources: { title: string; linkPath: string }[],
+  opts: {
+    /**
+     * A rendering rather than a synthesis — a quiz, flashcards, a checklist.
+     * Karpathy's "explorations should compound" is about analyses and
+     * connections, which contain something new; a rendering contains the same
+     * knowledge in a different shape, so feeding it back to retrieval only
+     * hands the model a second copy of what it already has. Derived answers
+     * are saved but never retrieved.
+     */
+    derived?: boolean;
+    /** Short label for the title when the question is a canned prompt. */
+    titleLabel?: string;
+    /** path -> contentHash of each source the answer read, for drift. */
+    sourceHashes?: Record<string, string>;
+  } = {}
 ): string {
   const date = new Date().toISOString().slice(0, 10);
   const sourceLines = sources.map((s) => `- [[${s.linkPath}|${s.title}]]`).join('\n');
+  // A canned prompt makes a terrible H1 ("Create 5 practice questions that
+  // test understanding of this material. Number each..."). Prefer the label.
+  const title = opts.titleLabel ?? (question.length > 90 ? `${question.slice(0, 87)}…` : question);
+  const hashLines = opts.sourceHashes
+    ? Object.entries(opts.sourceHashes)
+        .map(([p, h]) => `  ${p}: ${h}`)
+        .join('\n')
+    : '';
   return (
     `---\n` +
     `tags:\n  - answer\n` +
+    (opts.derived ? `derived: true\n` : '') +
+    (hashLines ? `read_hashes:\n${hashLines}\n` : '') +
     `created: ${date}\n` +
     `---\n\n` +
-    `# ${question}\n\n` +
+    `# ${title}\n\n` +
+    (opts.titleLabel ? `> [!quote]- The exact prompt\n> ${question}\n\n` : '') +
     `${answer.trim()}\n\n` +
     `## Sources\n\n` +
     `${sourceLines}\n`
