@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 03 · Settings — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 03 — Settings</div>
+    <div class="txt">What is not here is the point: no key, no endpoint, no account.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('filed', 'litert'),
+    editor: '',
+});
+
+/* One setting = one row. `.info` carries the name and the explanation,
+   `.ctl` carries the control — same as the real pane. */
+function item(name, desc, ctl, id) {
+    return `<div class="set-item"${id ? ` id="${id}"` : ''}>
+        <div class="info"><div class="nm">${name}</div><div class="ds">${desc}</div></div>
+        <div class="ctl">${ctl}</div>
+    </div>`;
+}
+
+const PANE = `
+<div class="set-nav">
+    <div class="grp">Options</div>
+    <div class="it">Editor</div>
+    <div class="it">Files and links</div>
+    <div class="it">Appearance</div>
+    <div class="grp">Community plugins</div>
+    <div class="it on">Gemma Wiki</div>
+</div>
+<div class="set-pane">
+    <div class="set-title">Gemma Wiki</div>
+    <div class="set-sub">A local model, a folder of pages, and the rules for keeping the two honest.</div>
+
+    <div class="set-head">The model</div>
+    ${item('Local model', 'gemma-4-E4B-it-web · 2.97 GB on disk · runs on your GPU through WebGPU.',
+           '<span class="pill green">Ready</span><button class="set-btn">Re-download</button>')}
+    ${item('Context window',
+           '<span id="ctxDs">Asked for 4096. <b>Granted 4096</b> — read back from the engine after it starts, not assumed.</span>',
+           '<span class="set-slider"><span class="track"><span class="knob" id="knob" style="left:22%"></span></span><span class="val" id="ctxVal">4096</span></span>', 'itCtx')}
+
+    <div class="set-head">The folder</div>
+    ${item('Knowledge folder name', 'Everything the plugin writes lives here. Renaming it moves the whole thing.',
+           '<span class="set-text">gemma-wiki</span>')}
+    ${item('What this plugin created', 'Eight paths, checked live — so you can see what is yours and what is the plugin\'s.',
+           '<button class="set-btn" id="btnCheck">Check</button>', 'itCheck')}
+
+    <div class="set-head">Scanning</div>
+    ${item('Never scan these', 'Folders the batch sweep skips. Templates, daily notes, anything archived.',
+           '<span class="set-text">templates, journal</span>')}
+    ${item('Show a background "to review" count', 'Counts new and changed notes on a timer. Counting is a file sweep — no model, no GPU.',
+           '<span class="set-toggle on"></span>')}
+    ${item('Re-count every', 'How often that sweep runs.', '<span class="set-text" style="min-width:70px">6 hours</span>')}
+
+    <div class="set-head">The rest</div>
+    ${item('Custom skills', 'One <code>.md</code> file in <code>gemma-wiki/skills/</code> is one entry in the ⚡ menu.',
+           '<button class="set-btn">Open folder</button>')}
+    ${item('Developer commands', 'Adds four <code>[Test]</code> entries to the palette. Off unless you are debugging.',
+           '<span class="set-toggle"></span>')}
+</div>`;
+
+GemmaDemo.init([
+    { do: () => {
+        beat('Settings. The first thing to notice is what is <b>not</b> here: no API key field, no endpoint, no account, no model dropdown pointing at somebody else\'s server.');
+        $('#editor').innerHTML = `<div class="ob-settings">${PANE}</div>`;
+    }},
+
+    { lock: 1100, do: () => {
+        beat('The context window is the one number that governs everything else — how much of a note fits, how long an answer can be, how many pages a wiki question can carry. So it is stated twice.');
+        $('#itCtx').classList.add('lit');
+    }},
+
+    { lock: 1400, do: () => {
+        beat('What you <i>asked for</i>, and what the engine actually <b>granted</b>. Those are not always the same number, and a plugin that only prints the request is guessing about the one figure it budgets against.');
+    }},
+
+    { lock: 1600, do: () => {
+        $('#knob').style.left = '100%';
+        $('#ctxVal').textContent = '32768';
+        setTimeout(() => {
+            $('#ctxDs').innerHTML = 'Asked for 32768. <b style="color:#A85639">Granted 8192</b> — your GPU would not allocate the rest. Every budget downstream now uses 8192.';
+        }, 620);
+        beat('Ask for more than the hardware will give and it says so <i>here</i>, in the same line, rather than failing in the middle of a generation twenty minutes later.');
+    }},
+
+    { lock: 1200, do: () => {
+        $('#itCtx').classList.remove('lit');
+        $('#itCheck').classList.add('lit');
+        beat('<b>What this plugin created</b> is the honest version of an uninstall note.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.modal(`
+            <div class="head"><h3>What this plugin created</h3><div class="path">gemma-wiki/</div></div>
+            <div class="scroll">
+                <div class="folder-map">
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/cards/</span><span class="fm-what">One card per filed note</span><span class="fm-state">4 files</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/answers/</span><span class="fm-what">Answers you saved</span><span class="fm-state">present</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/chats/</span><span class="fm-what">Saved conversations</span><span class="fm-state">present</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/concepts/</span><span class="fm-what">Built across a tag</span><span class="fm-state">present</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/skills/</span><span class="fm-what">⚡ menu entries</span><span class="fm-state">2 files</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/index.md</span><span class="fm-what">Every page, listed</span><span class="fm-state">present</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/log.md</span><span class="fm-what">What ran, and when</span><span class="fm-state">present</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/schema.md</span><span class="fm-what">Tag vocabulary</span><span class="fm-state">present</span></div>
+                </div>
+                <p class="hintline" style="margin-top:14px">Delete the folder and the <b>folders</b> come back on next load. The <b>pages inside them do not</b> — that is why this list exists rather than a reassuring sentence.</p>
+            </div>
+            <div class="foot"><span class="note">Nothing outside this folder was ever written to.</span><button class="ob-btn cta">Close</button></div>`, 'narrow');
+    }},
+
+    { do: () => {
+        OB.closeModal();
+        $('#itCheck').classList.remove('lit');
+        beat('Everything else on this page is a preference. Those two are the contract.');
+    }},
+]);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 06 · Stopping — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 06 — Stopping</div>
+    <div class="txt">Stop a run and keep everything it already did.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('empty', 'litert'),
+    editor: `<h1>litert on device</h1><p>Context is 4096 tokens. That is the real constraint on
+everything else — an input plus a same-sized rewrite has to fit inside it.</p>`,
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('A big scan, running. Thirty-one notes at roughly twenty seconds each — you started it, and then you needed your machine back.');
+        status('Drafting 9/31 — 2026-04-12 · Extracting');
+    }},
+
+    { lock: 2400, do: () => {
+        beat('The command palette has the other half of the pair. Not a hidden shortcut — a command, with a name that says what it does.');
+        OB.palette('stop', [{ name: 'Gemma Wiki: Stop the running scan', icon: 'circle-stop' }], {});
+    }},
+
+    { lock: 1400, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        status('Stopping — the note being drafted right now will finish first', { keep: true });
+        notice('ℹ️ Stopping — the note being drafted right now will finish first.', 7000);
+        beat('And here is the sentence the whole scene exists for. It does not say "cancelled". It says <b>what is about to happen</b> — one more note, then it stops.');
+    }},
+
+    { lock: 2000, do: () => {
+        beat('Because a model call cannot be interrupted mid-token without throwing away the work already spent on it. Finishing the current one costs you fifteen seconds; killing it costs you a draft.');
+    }},
+
+    { lock: 1800, do: () => {
+        status(null);
+        statusDone('9 drafts ready to review');
+        beat('Nine drafts survive. Not eight, not zero — <b>everything that was finished is kept</b>, and the review list for those nine is waiting.');
+    }},
+
+    { lock: 1600, do: () => {
+        beat('And it waits in the status bar rather than throwing a dialog at you. You walked away on purpose; a modal appearing over whatever you moved on to would be the plugin overruling that.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.modal(`
+            <div class="head"><h3>Review drafts before they enter the wiki</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">9 drafts generated · stopped at your request. Untick anything that looks wrong, then write the rest. Nothing is saved until you do.</p>
+                <div class="draftlist">
+                    <div class="draftrow"><span class="cb"></span><div class="body"><div class="titlerow"><span class="title">2026-04-12</span><span class="reasons">new · low confidence</span></div><div class="sum">A day of scattered links with no commentary; there is not much here to summarise.</div></div></div>
+                    <div class="draftrow"><span class="cb"></span><div class="body"><div class="titlerow"><span class="title">2026-04-09</span><span class="reasons">new · med confidence</span></div><div class="sum">Notes toward a talk on local inference, half of them arguing with the other half.</div></div></div>
+                    <div class="draftrow"><span class="cb"></span><div class="body"><div class="titlerow"><span class="title">2026-04-02</span><span class="reasons">new · high confidence</span></div><div class="sum">A clean writeup of the WebGPU adapter limits found on three machines, with numbers.</div></div></div>
+                </div>
+                <p class="hintline" style="margin-top:12px">The 22 notes that were not reached are unchanged — they will come up again next scan.</p>
+            </div>
+            <div class="foot"><button class="ob-btn">Toggle all</button><button class="ob-btn cta">Write 9 to wiki</button></div>`, 'wide');
+        reveal('.draftrow', 130);
+        beat('Clicked when you are ready. The twenty-two notes it never reached are simply unchanged — a stopped scan leaves no half-state to clean up.');
+    }},
+
+    { do: () => {
+        OB.closeModal();
+        beat('Stop means stop, and it means <b>keep what you paid for</b>. Those are not the same promise, and most tools only make the first one.');
+    }},
+]);
+
+</script>
+</body>
+</html>

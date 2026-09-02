@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 17 · Review board — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 17 — Review board</div>
+    <div class="txt">Everything worth a second look, in one queue, ordered by urgency.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'index.md', icon: 'file-text' },
+    tree: VAULT.tree('full', 'gw-index'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('Four different signals have been accumulating across this deck: a model unsure of its own draft, a note edited after filing, a concept page whose members moved, and a page nobody has looked at in three months.');
+    }},
+
+    { lock: 1400, do: () => {
+        beat('Four signals in four places is four things to remember. So they arrive in one queue.');
+        OB.palette('review', [{ name: 'Gemma Wiki: Review board (low-confidence, drifted, and stale pages)', icon: 'history' }]);
+    }},
+
+    { lock: 1300, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        OB.modal(`
+            <div class="head"><h3>Wiki review board</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">5 of 9 pages worth a look — low-confidence extractions, changed sources, concept overviews whose members changed, and pages untouched for 90+ days.</p>
+                <div class="rlist">
+                    <div class="ritem bad"><div class="t">litert-on-device <span class="pill red">source changed since ingest</span></div><div class="d">Actionable: re-ingest the note.</div></div>
+                    <div class="ritem bad"><div class="t">on-device <span class="pill red">members changed — rebuild this concept page</span></div><div class="d">Actionable: run Build a concept page on the same tag.</div></div>
+                    <div class="ritem warn"><div class="t">browser-apis <span class="pill amber">low confidence</span></div><div class="d">The model said so itself when it wrote the card.</div></div>
+                    <div class="ritem warn"><div class="t">what keeps coming up… <span class="pill amber">a page this answer was based on has changed</span></div><div class="d">A saved answer standing on a card that moved.</div></div>
+                    <div class="ritem"><div class="t">agent-interfaces <span class="pill">142d since ingest</span></div><div class="d">Not wrong. Just old enough to be worth re-reading.</div></div>
+                </div>
+                <p class="hintline" style="margin-top:12px">Open a flagged page, check its claims against the source note it links to, and re-ingest the source if the summary drifted.</p>
+            </div>
+            <div class="foot"><button class="ob-btn cta">Close</button></div>`, 'wide');
+        reveal('.ritem', 190);
+        beat(null);
+    }},
+
+    { lock: 1900, do: () => {
+        beat('The order is not alphabetical and not chronological — it is <b>by what you can do about it</b>. Drift and stale concept pages first, because both have a button. Low confidence next. Age last.');
+    }},
+
+    { lock: 1900, do: () => {
+        beat('Age is deliberately at the bottom. "142 days old" is not a defect; it is a nudge. Sorting it above a card whose source actually changed would be sorting by anxiety instead of by consequence.');
+    }},
+
+    { lock: 1800, do: () => {
+        beat('And every row here was computed <b>without a model call</b> — frontmatter, hashes, and dates. That is why the count can sit in the status bar and refresh on a timer without ever touching your GPU.');
+    }},
+
+    { lock: 1600, do: () => {
+        OB.closeModal();
+        statusReview(5);
+        beat('Which is where it lives when you are not looking at it. Five, quietly, in the corner. Click it and the queue comes back.');
+    }},
+
+    { do: () => {
+        beat('A wiki that only grows is a wiki you stop trusting around month four. This is the page that keeps it honest — and it is the one thing Karpathy\'s sketch has no equivalent for.');
+    }},
+]);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 13 · Trust layers — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 13 — Trust layers</div>
+    <div class="txt">A wrong saved answer must not outrank the note it came from.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'index.md', icon: 'file-text' },
+    tree: VAULT.tree('full', 'gw-index'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('Here is the failure the last scene sets up. Suppose one of those answers was <b>wrong</b>. It is now a file in your wiki, indistinguishable from the notes you wrote — and it gets retrieved again, forever.');
+    }},
+
+    { lock: 1300, do: () => {
+        beat('Karpathy\'s gist has no answer to this. It says explorations should compound; it does not say what happens when a compounded exploration is garbage. So this plugin adds a ladder.');
+    }},
+
+    { lock: 1200, do: () => {
+        $('#editor').innerHTML = `<div class="md" style="padding:20px 26px"><div class="rlist" id="ladder">
+            <div class="ritem good"><div class="t">Your notes <span class="pill green">ground truth</span></div>
+                <div class="d">Never written to, never retrieved directly. Everything else is derived from these, and every claim can be walked back to one.</div></div>
+            <div class="ritem"><div class="t"><code>cards/</code> <span class="pill violet">retrieved · first</span></div>
+                <div class="d">One card per note. Carries <code>confidence</code> and <code>source_hash</code>, so a card can be flagged as shaky or as out of date with its note.</div></div>
+            <div class="ritem"><div class="t"><code>answers/</code> <span class="pill violet">retrieved · second</span></div>
+                <div class="d">Answers you chose to keep. Retrieved <b>after</b> the cards, under a heading that tells the model which to believe. Carries <code>read_hashes</code>, so drift is caught here too.</div></div>
+            <div class="ritem warn"><div class="t"><code>answers/</code> with <code>derived: true</code> <span class="pill amber">saved · never retrieved</span></div>
+                <div class="d">A quiz, a set of flashcards, a checklist. Same knowledge in a different shape — feeding it back only hands the model a second copy of what it already has.</div></div>
+            <div class="ritem bad"><div class="t"><code>chats/</code> <span class="pill red">archive · never indexed</span></div>
+                <div class="d">A transcript, including everything you asked badly and everything the model got wrong on the way. It is a record, not material.</div></div>
+        </div></div>`;
+        reveal('.ritem', 200);
+        beat('Five rungs, and the only question that matters at each one is: <b>does this get retrieved, and if so, when?</b>');
+    }},
+
+    { lock: 2400, do: () => {
+        beat('The two middle rungs are where the poisoning would happen, so the order is enforced in the prompt itself — not left to the model to work out.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.openFile('the prompt, as assembled', `<div class="md" style="padding:6px 0">
+            <p class="fmtext">## Relevant pages
+[ four cards, in retrieval order ]
+
+## Your earlier saved answers (derived from the pages —
+   where they disagree with a page, trust the page)
+[ one saved answer ]</p>
+            <p class="hintline" style="margin-top:14px">Pages first, answers second, and the heading over the second
+            block says which wins. Two blocks in one context window with no ordering and no instruction is how a
+            saved mistake quietly becomes a source.</p>
+        </div>`, { icon: 'layers' });
+        beat('There it is, in the assembled context: <i>where they disagree with a page, trust the page</i>. One sentence, and it is the difference between a wiki that compounds and one that rots.');
+    }},
+
+    { lock: 1900, do: () => {
+        beat('And the rung above all of it is the one you own. If an answer is wrong, the fix is <b>not</b> to edit the card — it is to fix the note. Everything below regenerates from it.');
+    }},
+
+    { lock: 1500, do: () => {
+        $('#editor').innerHTML = `<div class="md" style="padding:26px 30px">
+            <h1>Where do I fix a mistake?</h1>
+            <div class="kv"><div class="k">A fact is wrong</div><div class="v">Edit <b>your note</b>. The card is flagged as drifted and re-ingested. <i>This is the normal case.</i></div></div>
+            <div class="kv"><div class="k">The card summarised badly</div><div class="v">Re-ingest the note. The card is regenerated, not hand-patched.</div></div>
+            <div class="kv"><div class="k">A saved answer is wrong</div><div class="v">Delete it. It was an exploration, and it did not survive.</div></div>
+            <div class="kv"><div class="k">A card contradicts another</div><div class="v">Neither is authoritative — <b>Find contradictions</b> shows you both, quoted, and you decide.</div></div>
+        </div>`;
+        reveal('.kv', 200);
+        beat('Which is worth saying plainly, because it is the one habit this plugin asks of you: <b>you edit your notes. You do not edit the wiki.</b>');
+    }},
+
+    { do: () => {
+        beat('Everything in <code>gemma-wiki/</code> is disposable — delete the folder and it rebuilds from your notes. That is only true as long as the notes are where the truth lives.');
+    }},
+]);
+
+</script>
+</body>
+</html>

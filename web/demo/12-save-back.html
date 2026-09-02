@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 12 · Save the answer — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 12 — Save the answer</div>
+    <div class="txt">The connection you found becomes material for the next question.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('filed', 'litert'),
+    editor: `<h1>litert on device</h1><p>Context is 4096 tokens. That is the real constraint on
+everything else.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+const ANSWER = 'Three threads run through all four pages. <b>The browser is the runtime</b> — LiteRT-LM in ' +
+    'the renderer, WebGPU for the model, WebMCP through <code>document.modelContext</code>. <b>Identity is missing ' +
+    'everywhere</b> — WebMCP cannot tell two agents apart, and the interface notes hit the same wall from the ' +
+    'design side. <b>The cost is one-time, then flat</b> — shader compilation, adapter setup, tool registration.';
+
+GemmaDemo.init([
+    { do: () => {
+        OB.openRight(GW.panel('', 'wiki', {
+            messages: `<div class="gw-msg user">what keeps coming up across all of these?</div>
+                       <div class="gw-msg bot" id="ans">${ANSWER}${GW.sources(['litert on device','webmcp notes','agent interfaces','browser apis'])}${GW.actions()}</div>`,
+        }));
+        beat('The answer from the last scene. Right now it exists in a chat panel, which means in about four days it does not exist at all.');
+    }},
+
+    { lock: 1200, do: () => {
+        $('#btnSaveBack').classList.add('lit');
+        beat('Karpathy\'s rule for this pattern is that <b>explorations should compound</b> — an insight you had to dig for should be sitting there the next time, not re-derived.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.modal(`
+            <div class="head">
+                <h3>Review wiki page before writing</h3>
+                <div class="path">Will create: gemma-wiki/answers/what-keeps-coming-up--litert-on-device.md</div>
+            </div>
+            <div class="scroll md">
+                <p class="fmtext">---
+tags:
+  - answer
+read_hashes:
+  gemma-wiki/cards/litert-on-device: 9f2c41ab
+  gemma-wiki/cards/webmcp-notes: 3d81e007
+  gemma-wiki/cards/agent-interfaces: b12a7f55
+  gemma-wiki/cards/browser-apis: 60ce9d14
+created: 2026-09-01
+---</p>
+                <h1>what keeps coming up across all of these?</h1>
+                <p>Three threads run through all four pages.</p>
+                <p><strong>The browser is the runtime.</strong> LiteRT-LM in the renderer process, WebGPU for the
+                model, WebMCP through <code>document.modelContext</code> — none of these pages assumes a server.</p>
+                <p><strong>Identity is missing everywhere.</strong> WebMCP has no notion of which agent is calling,
+                and the agent-interface notes reach the same wall from the design side.</p>
+                <p><strong>The cost is one-time, then flat.</strong> Shader compilation, adapter setup, tool
+                registration — a large first call, then a cheap steady state.</p>
+                <h2>Sources</h2>
+                <ul><li><a class="wl">[[litert on device]]</a></li><li><a class="wl">[[webmcp notes]]</a></li>
+                <li><a class="wl">[[agent interfaces]]</a></li><li><a class="wl">[[browser apis]]</a></li></ul>
+            </div>
+            <div class="foot"><span class="note">Same gate as everything else.</span><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok">Approve and write</button></div>`);
+        beat('Same gate as an ingest — preview first, nothing written without approval. A saved answer is a page like any other and gets no shortcut.');
+    }},
+
+    { lock: 1600, do: () => {
+        beat('<code>read_hashes</code> is the interesting field. It records not just <i>which</i> four cards this answer read but <b>what each one looked like when it read them</b>. That is how the plugin can later tell you this answer is out of date.');
+    }},
+
+    { lock: 1300, do: () => {
+        beat('The filename is anchored to the note it was grounded in, not to the question alone. A canned prompt is the same words every time — without the anchor, Quiz on note B would silently overwrite Quiz on note A.');
+    }},
+
+    { lock: 1200, do: () => { $('#ok').classList.add('pressed'); }},
+
+    { lock: 1500, do: () => {
+        OB.closeModal();
+        OB.addRow({ name: 'what-keeps-coming-up--litert', kind: 'file', indent: 2, id: 'a-1' }, 'gw-answers');
+        notice('✅ Saved to wiki: gemma-wiki/answers/what-keeps-coming-up--litert-on-device.md', 6000);
+        beat('It lands in <code>answers/</code>, not in <code>cards/</code>. That separation is the whole subject of the next scene.');
+    }},
+
+    { lock: 1400, do: () => {
+        $('#right').innerHTML = GW.panel('', 'wiki', {
+            messages: `<div class="gw-msg user">so is identity the hard part or is the runtime?</div>` + GW.thinking('a2') });
+        beat('And now the loop closes. Ask a follow-up, and the answer you just filed is in the retrieval pool.');
+    }},
+
+    { lock: 2600, do: () => {
+        const el = $('#a2');
+        typeHTML(el,
+            'Identity. The runtime question is settled in your notes — LiteRT-LM and WebGPU work, with a ' +
+            'measured cost and a known ceiling. Identity is not settled anywhere: WebMCP has no concept of ' +
+            'it, so a page wanting seats has to invent them in its own state, and your interface notes ' +
+            'describe the consequence rather than a solution.',
+            { speed: 11, jitter: 6 });
+    }},
+
+    { lock: 1200, do: () => {
+        GemmaDemo.afterTyped('#a2', () =>
+            $('#a2').insertAdjacentHTML('beforeend',
+                GW.sources(['webmcp notes', 'agent interfaces', 'what keeps coming up…']) + GW.actions()));
+        beat('Three sources, and the third is the answer you saved sixty seconds ago. <b>The exploration compounded</b> — you did not have to find that connection twice.');
+    }},
+
+    { do: () => {
+        beat('This is the part Karpathy\'s sketch calls for and the part nothing implements. It is also the part that goes wrong quietly, which is why it comes with a rule about who wins.');
+    }},
+]);
+
+</script>
+</body>
+</html>

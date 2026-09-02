@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 09 · Attach notes — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 09 — Attach notes</div>
+    <div class="txt">Point at exactly the three you mean.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'agent interfaces', icon: 'file-text' },
+    tree: VAULT.tree('filed', 'agentif'),
+    editor: `<h1>agent interfaces</h1><p>What an agent-facing UI owes a human: reversibility, a visible
+cost, and a way to stop it midway.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+GemmaDemo.init([
+    { do: () => {
+        OB.openRight(GW.panel('agent interfaces', 'note', { filed: true }));
+        beat('Retrieval is good at "what is relevant". It is no good at all when you already know which three notes you mean and want those three and nothing else.');
+    }},
+
+    { lock: 1100, do: () => {
+        $('#btnAttach').classList.add('lit');
+        $('#btnAttach').style.boxShadow = '0 0 0 1.5px rgba(123,108,217,0.5)';
+        beat('So there is a <b>+</b>. It is not a second retrieval mode — it is you overruling retrieval.');
+    }},
+
+    { lock: 1000, do: () => {
+        OB.palette('webmcp', [
+            { name: 'webmcp notes', icon: 'file-text' },
+            { name: 'browser apis', icon: 'file-text' },
+        ]);
+    }},
+
+    { lock: 1300, do: () => {
+        OB.closePalette();
+        $('#pills').innerHTML = `<span class="gw-pill">${icon('file-text')}webmcp notes<span class="x">${icon('x')}</span></span>`;
+        flashKeys(['↵']);
+    }},
+
+    { lock: 900, do: () => {
+        $('#pills').innerHTML += `<span class="gw-pill">${icon('file-text')}browser apis<span class="x">${icon('x')}</span></span>`;
+    }},
+
+    { lock: 900, do: () => {
+        $('#pills').innerHTML += `<span class="gw-pill">${icon('file-text')}litert on device<span class="x">${icon('x')}</span></span>`;
+        $('#btnAttach').style.boxShadow = '';
+        beat('Three pills above the input. They are the whole context now, plus the open note — visible, countable, and removable one at a time.');
+    }},
+
+    { lock: 1200, do: () => {
+        beat(null);
+        typeHTML('#input', 'compare how these three handle the first call being expensive', { speed: 20 });
+    }},
+
+    { lock: 1900, do: () => {
+        $('#input').innerHTML = '<span class="ph">Ask about this note… (Enter to send)</span>';
+        $('#messages').innerHTML = `<div class="gw-msg user">compare how these three handle the first call being expensive</div>` + GW.thinking();
+        flashKeys(['↵']);
+    }},
+
+    { lock: 2600, do: () => {
+        const el = $('#ans');
+        typeHTML(el,
+            '<b>litert on device</b> pays it and says so: 28.1 s of shader compilation, once, then ' +
+            '5-6× faster prefill. The note explicitly worries that people will read the number and ' +
+            'assume it recurs.<br><br>' +
+            '<b>browser apis</b> hides it — the adapter request is made at page load so the cost lands ' +
+            'before anyone is waiting on a result.<br><br>' +
+            '<b>webmcp notes</b> does not have this problem: tool registration is cheap, and the expense ' +
+            'moved to the agent side, where your notes do not measure it.<br><br>' +
+            'So: one discloses, one pre-pays, one exports the cost. Only the first is honest with the ' +
+            'person waiting.',
+            { speed: 10, jitter: 6 });
+    }},
+
+    { lock: 1100, do: () => {
+        GemmaDemo.afterTyped('#ans', () =>
+            $('#ans').insertAdjacentHTML('beforeend',
+                GW.sources(['agent interfaces', 'webmcp notes', 'browser apis', 'litert on device']) + GW.actions()));
+        beat('Four sources: the three you attached, plus the note that was open. Nothing was retrieved — <b>you chose the context, and the Sources row proves it obeyed you</b>.');
+    }},
+
+    { do: () => {
+        beat('Which is the point of an attachment. A question like "compare these three" has no lexical overlap with anything; retrieval would have found the wrong pages confidently.');
+    }},
+]);
+
+</script>
+</body>
+</html>
