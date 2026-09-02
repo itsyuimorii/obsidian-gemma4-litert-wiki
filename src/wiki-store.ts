@@ -492,15 +492,32 @@ const FOLDER_READMES: Array<[() => string, string]> = [
     () => `${wikiAnswersDir()}/README.md`,
     `# answers\n\n` +
       `**Chat replies you decided were worth keeping.** Nothing arrives here on its own: you save an answer with ${ICON_SAVE_TO_WIKI} **Save to wiki** under a message, and it goes through the same review gate as everything else — you see the exact page before it is written.\n\n` +
-      `> [!info] Why bother saving\n` +
-      `> An answer that only lives in a chat panel is gone the moment you clear the thread.\n` +
+      // Three questions, three callouts. They were one, and the one that
+      // mattered — how to promote an answer — was the fifth line of a
+      // paragraph titled "why bother saving".
+      `> [!tip] This folder is an inbox\n` +
+      `> Answers wait here for a decision. Keep the ones worth re-reading, promote the ones worth\n` +
+      `> building on, delete the rest — nothing here is load-bearing until you move it.\n\n` +
+      `> [!info]- Why answers are not used as grounding\n` +
+      `> Saved answers are yours to read, link and search by hand, but a later question never\n` +
+      `> retrieves them. An answer is **output**, not material.\n` +
       `>\n` +
-      `> Saved here it is yours to read, link and search by hand — but it is **not** retrieved as grounding for later questions.\n` +
-      `> An answer is output. When it was grounded, what it says already lives in the cards it came from; when it was not, it is the model's own knowledge. Feeding either back would make it indistinguishable from something you wrote.\n` +
-      `> **To make an answer count as material:** open it and run **Turn this answer into a note**.\n` +
-      `> It writes the text into a folder of your own, recording that a model wrote it and when — which a\n` +
-      `> copy-paste would lose — and the next ingest turns that note into a card the wiki can use.\n` +
-      `> This folder is the inbox; that command is its exit.\n\n` +
+      `> When it was grounded, what it says already lives in the cards it came from — feeding it back\n` +
+      `> adds a second, lossy copy that can drift from its own source. When it was not, it is the\n` +
+      `> model's own knowledge. Either one, retrieved months later, would come back cited to a page in\n` +
+      `> your own wiki and be indistinguishable from something you wrote.\n` +
+      `>\n` +
+      `> Everything the wiki *can* retrieve derives from a note you wrote. That is the whole rule.\n\n` +
+      `> [!check] Making an answer count — the exit from this folder\n` +
+      `> Open the answer and run **Turn this answer into a note** from the command palette.\n` +
+      `>\n` +
+      `> 1. You pick which of **your** folders it goes in — never this one.\n` +
+      `> 2. It is written as a note that records where it came from: that a model wrote it, from which\n` +
+      `>    saved answer, on what day, and which cards were read at the time.\n` +
+      `> 3. Ingest that note, and it becomes a card like any other.\n` +
+      `>\n` +
+      `> Selecting the text and pasting it yourself does the same job while losing step 2 — and step 2\n` +
+      `> is the only reason anyone will be able to tell, later, that a model wrote it.\n\n` +
       `> [!info] What a page holds\n` +
       `> | Part | Why it is kept |\n` +
       `> |---|---|\n` +
