@@ -76,13 +76,50 @@ export interface IndexEntry {
   summary: string;
 }
 
+/**
+ * A tag, and the stem of a generated filename.
+ *
+ * `[^a-z0-9]` erased every script that is not Latin. Twelve of twenty-one
+ * language samples — Chinese, Japanese, Korean, Russian, Greek, Arabic,
+ * Hebrew, Thai, Devanagari — collapsed to the same string, so a vault written
+ * in any of them got one tag called `untitled` and one card called
+ * `untitled.md` that every note overwrote in turn. Latin with diacritics
+ * survived but was mangled: `resume` for `résumé`, `d` for `łódź`.
+ *
+ * `\p{L}` keeps a letter in any script, `\p{N}` any digit, and `\p{M}` the
+ * combining marks that Devanagari, Thai, Arabic and Vietnamese build their
+ * letters out of — without that last class `डिज़ाइन` comes back as `ड-ज-इन`,
+ * because the vowel signs are marks rather than letters and dropping them
+ * splits the word. The result is still only letters, digits and hyphens, so it
+ * is safe as a filename on every platform without a second pass.
+ */
 export function slugify(name: string): string {
   return (
     name
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/[^\p{L}\p{N}\p{M}]+/gu, '-')
       .replace(/^-+|-+$/g, '') || 'untitled'
   );
+}
+
+/**
+ * Whether a slugified tag carries any meaning.
+ *
+ * This catches one class and one only: a slug that is nothing but digits and
+ * hyphens. `4328` and `70-` name nothing, and Obsidian will not render either
+ * as a tag.
+ *
+ * It deliberately does NOT try to catch the other class. Obsidian parses `#45`
+ * in note text as a tag the moment one non-numeric character follows it, and
+ * CJK punctuation counts — so a note mentioning issue `#45）` grows a tag out of
+ * the sentence after it, and the model can echo it back. But `45-打开对应文件`
+ * and `2026-回顾` are the same shape, and any rule sharp enough to drop the
+ * first drops the second. Guessing there would cost real tags to catch junk
+ * whose actual fix is upstream, in how the note was written.
+ */
+export function isUsableTag(tag: string): boolean {
+  const s = slugify(tag);
+  return s !== 'untitled' && !/^[\p{N}\p{M}-]+$/u.test(s);
 }
 
 export function wikiPagePath(sourceBasename: string): string {
@@ -125,9 +162,8 @@ export function buildWikiPage(
 ): string {
   const date = new Date().toISOString().slice(0, 10);
   // Every tag can be filtered away (e.g. all rejected) — omit the block then.
-  const tagsYaml = extraction.tags.length
-    ? `tags:\n${extraction.tags.map((t) => `  - ${slugify(t)}`).join('\n')}\n`
-    : '';
+  const pageTags = extraction.tags.filter(isUsableTag).map((t) => slugify(t));
+  const tagsYaml = pageTags.length ? `tags:\n${pageTags.map((t) => `  - ${t}`).join('\n')}\n` : '';
   const points = extraction.key_points.map((p) => `- ${p}`).join('\n');
   const mentions = extraction.mentions ?? [];
   const mentionsYaml = mentions.length
@@ -898,7 +934,7 @@ export async function queuePendingTags(
   const known = new Set(
     [...schema.tags, ...schema.pending, ...schema.rejected].map((t) => slugify(t))
   );
-  const fresh = tags.map((t) => slugify(t)).filter((t) => t && !known.has(t));
+  const fresh = tags.filter(isUsableTag).map((t) => slugify(t)).filter((t) => !known.has(t));
   if (!fresh.length) return { before, after: before };
   const pending = [...schema.pending, ...fresh];
   const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, pending, schema.rejected);
