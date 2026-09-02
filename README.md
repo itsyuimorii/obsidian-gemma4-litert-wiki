@@ -113,8 +113,9 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 
 - Obsidian 1.11.4+, **desktop only** (macOS / Windows / Linux — no mobile; this plugin is not published in `isDesktopOnly: false` form)
 - A WebGPU-capable GPU and browser runtime (Obsidian's bundled Electron/Chromium)
-- ~3 GB free disk space for the [`litert-community/gemma-4-E4B-it-litert-lm`](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) model, downloaded once and cached via the browser Cache API
-- Network access for the one-time model download only — no network calls after that
+- ~3 GB free disk space for the [`litert-community/gemma-4-E4B-it-litert-lm`](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) model, downloaded once and cached on disk
+- A further ~20-31 MB for the LiteRT-LM WebAssembly runtime, fetched on first use. The runtime ships in four variants and your machine only ever loads one of them, chosen by the library from its own feature probes — so only that one is downloaded
+- Network access for those one-time downloads only — no network calls after that
 
 > **If you sync this vault, exclude the model file.** It is downloaded to
 > `<vault>/.obsidian/plugins/gemma4-litert-wiki/gemma-4-E4B-it-web.litertlm` — Obsidian gives a
