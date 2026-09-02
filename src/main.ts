@@ -17,7 +17,6 @@ import {
   ensureSkillsScaffold,
   ensureWikiScaffold,
   isWikiPage,
-  wikiSourcesDir,
   wikiScaffoldPaths,
   indexPath,
   readSchema,
@@ -662,7 +661,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               new ConfirmModal(this.app, {
                 title: 'Found an existing Gemma Wiki',
                 body:
-                  `This vault already contains "${found}/", which has an index and a sources ` +
+                  `This vault already contains "${found}/", which has an index and a cards ` +
                   `folder — but this machine is configured to use "${wikiDir()}/", which is not ` +
                   'here.\n\nThat usually means the folder was renamed on another machine and the ' +
                   'setting did not sync.\n\nUse the folder that is actually here? Choosing "No" ' +
@@ -679,7 +678,6 @@ export default class LiteRtSpikePlugin extends Plugin {
           }
         }
 
-        await this.migrateSourcesToCards();
         const existedBefore = !!this.app.vault.getAbstractFileByPath(wikiDir());
         const gone = wikiScaffoldPaths()
           .filter((e) => !this.app.vault.getAbstractFileByPath(e.path.replace(/\/$/, '')))
@@ -1210,7 +1208,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   // Small file-explorer badge on raw notes that already have a wiki page.
   // Purely decorative DOM on the explorer item — the note file itself is
-  // never modified, per the raw-sources-are-read-only rule.
+  // never modified by the plugin, per the raw-notes-are-read-only rule.
   refreshIngestBadges() {
     const ingested = getIngestedSourcePaths(this.app);
     for (const leaf of this.app.workspace.getLeavesOfType('file-explorer')) {
@@ -1361,42 +1359,9 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Seed <wiki>/skills/ with a README and two example skills, then open the
   // README. Shared by the command and the settings button.
   // A folder counts as a knowledge base if it holds both an index and a
-  // sources/ subfolder — specific enough not to match someone's own notes.
+  // cards/ subfolder — specific enough not to match someone's own notes.
   // Returns nothing if there is more than one candidate: guessing between two
   // is worse than asking for none.
-  /**
-   * One-time rename: sources/ becomes cards/.
-   *
-   * The folder holds model-generated summary cards, and calling it "sources"
-   * gave the word two opposite meanings — Karpathy's sources are the immutable
-   * raw notes, and this folder is exactly the layer derived from them. Even
-   * the author kept tripping over it in conversation, three times.
-   *
-   * Runs only when the old folder exists and the new one does not, so it can
-   * never merge into or clobber anything. Links in index.md and in every wiki
-   * page are rewritten first, the same way renaming the wiki folder does it.
-   */
-  private async migrateSourcesToCards(): Promise<void> {
-    const oldDir = `${wikiDir()}/sources`;
-    const newDir = wikiSourcesDir();
-    const oldFolder = this.app.vault.getAbstractFileByPath(oldDir);
-    if (!(oldFolder instanceof TFolder)) return;
-    if (this.app.vault.getAbstractFileByPath(newDir)) return;
-    try {
-      for (const file of this.app.vault.getMarkdownFiles()) {
-        if (!file.path.startsWith(`${wikiDir()}/`)) continue;
-        const body = await this.app.vault.read(file);
-        const rewritten = body.split(`[[${oldDir}/`).join(`[[${newDir}/`).split(`](${oldDir}/`).join(`](${newDir}/`);
-        if (rewritten !== body) await this.app.vault.modify(file, rewritten);
-      }
-      await this.app.vault.rename(oldFolder, newDir);
-      notify('info', 'The sources/ folder is now cards/ — same cards, clearer name. Links were rewritten.');
-      await appendLog(this.app.vault, 'migrate', 'sources/ renamed to cards/');
-    } catch (err) {
-      console.error('[gemma4-litert-wiki] sources->cards migration failed', err);
-      notifyAndLog(this.app.vault, 'warn', 'Could not rename sources/ to cards/ — see the console.');
-    }
-  }
 
   private findExistingWiki(): string | null {
     const hits = this.app.vault
@@ -1407,9 +1372,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           f.path &&
           f.path !== wikiDir() &&
           !!this.app.vault.getAbstractFileByPath(`${f.path}/index.md`) &&
-          (!!this.app.vault.getAbstractFileByPath(`${f.path}/cards`) ||
-            // Wikis made before the cards/ rename still say sources/.
-            !!this.app.vault.getAbstractFileByPath(`${f.path}/sources`))
+          !!this.app.vault.getAbstractFileByPath(`${f.path}/cards`)
       )
       .map((f) => f.path);
     return hits.length === 1 ? hits[0] : null;
