@@ -146,6 +146,14 @@ export function buildWikiPage(
     `confidence: ${extraction.confidence}\n` +
     `---\n\n` +
     `# ${sourceBasename}\n\n` +
+    // The line that has to be where the mistake would be made. A card is build
+    // output: the next ingest regenerates it, so anything you fix here is
+    // thrown away silently. Saying it in the folder README is saying it where
+    // nobody is standing when they decide to edit.
+    `> [!info]- Generated card — edit the note, not this\n` +
+    `> This is a summary of [[${sourceBasename}]], rebuilt from it each time you ingest.\n` +
+    `> **Changes made here are replaced on the next ingest.** To correct something,\n` +
+    `> edit the note; the review board will flag this card as drifted and offer to rebuild it.\n\n` +
     `**Summary**: ${extraction.summary}\n\n` +
     `**Source**: [[${sourceBasename}]]\n\n` +
     `## Key points\n\n` +
@@ -274,7 +282,23 @@ function pageDirs(): string[] {
   // material: every wrong turn, every "I don't have information", fed back as
   // if it were a page. Worse than a bad saved answer, which at least passed a
   // review gate first.
-  return [wikiSourcesDir(), wikiAnswersDir(), wikiConceptsDir()];
+  // answers/ is not here either, and that is the whole of the fix for a
+  // laundering path this plugin had built on purpose. A saved answer used to
+  // be retrieved as trusted material, so a sentence Gemma produced from its
+  // own knowledge came back months later cited to a page in your own wiki —
+  // indistinguishable from something you wrote, and unfixable because you no
+  // longer remember which sentence it was.
+  //
+  // An answer is output, not input. When it was grounded, its content already
+  // lives in the cards that produced it, so feeding it back adds a lossy
+  // duplicate that can drift from its own source; when it was not, it adds
+  // world knowledge. Neither belongs in retrieval, which is also why saved
+  // answers were able to outrank the notes they were derived from.
+  //
+  // What survives is structural rather than remembered: everything retrievable
+  // derives from a note you wrote. To make an answer count, put it in a note
+  // and ingest that — a deliberate act, on the rare occasion you mean it.
+  return [wikiSourcesDir(), wikiConceptsDir()];
 }
 
 export function isWikiPage(file: { path: string; basename: string }): boolean {
@@ -379,7 +403,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | ${ICON_COPY} | Copy the answer as markdown. |` + `\n` +
       `> | ${ICON_REGEN} | Ask again from the same question. Useful when an answer starts well and drifts. |` + `\n` +
-      `> | ${ICON_SAVE_TO_WIKI} | Save **this one answer** to \`answers/\` — where it becomes grounding for later questions. |` + `\n\n` +
+      `> | ${ICON_SAVE_TO_WIKI} | Keep **this one answer** in \`answers/\`, to read and link later. It is not retrieved as grounding — see that folder's README. |` + `\n\n` +
       `> [!info] Around the input box` + `\n` +
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -426,7 +450,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Folder | What lands here |` + `\n` +
       `> |---|---|` + `\n` +
       `> | \`cards/\` | **One summary card per note you ingest.** Your note is the source; the card is derived from it. |` + `\n` +
-      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. They become grounding for later questions. |` + `\n` +
+      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. Kept to read, not retrieved as grounding. |` + `\n` +
       `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |` + `\n` +
       `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
       `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
@@ -471,7 +495,9 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] Why bother saving\n` +
       `> An answer that only lives in a chat panel is gone the moment you clear the thread.\n` +
       `>\n` +
-      `> Saved here it becomes part of the wiki: **indexed, searchable, and available as grounding for later questions.** Exploration compounds instead of evaporating.\n\n` +
+      `> Saved here it is yours to read, link and search by hand — but it is **not** retrieved as grounding for later questions.\n` +
+      `> An answer is output. When it was grounded, what it says already lives in the cards it came from; when it was not, it is the model's own knowledge. Feeding either back would make it indistinguishable from something you wrote.\n` +
+      `> **To make an answer count as material, put it in a note and ingest that.**\n\n` +
       `> [!info] What a page holds\n` +
       `> | Part | Why it is kept |\n` +
       `> |---|---|\n` +
@@ -486,14 +512,15 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] Why an archive and not material\n` +
       `> A transcript is the whole run — the wrong turns, the refusals, the question you rephrased three times. Feeding that back would put the model's worst moments into its own context as trusted material, and unlike a saved answer nothing here passed a review gate.\n` +
       `>\n` +
-      `> **Want part of a thread to count?** Save that one answer instead — the ${ICON_SAVE_TO_WIKI} button under it puts it in \`answers/\`, which *is* retrieved.\n\n` +
+      `> **Want part of a thread to count as material?** Neither folder is retrieved. Put it in one of your own notes and ingest that — the one act that makes something yours.\n\n` +
       `> [!info] What a page holds\n` +
       `> Dataview-friendly frontmatter, then the thread as question and answer blocks, each with the sources that were used.\n\n` +
       `> [!info] chats/ or answers/?\n` +
       `> | You want | Use |\n` +
       `> |---|---|\n` +
       `> | The whole thread, for the record | The ${ICON_SAVE_DISK} save button in the header of the ${ICON_BRAND} panel → lands here. |\n` +
-      `> | One good answer, as part of the wiki | ${ICON_SAVE_TO_WIKI} **Save to wiki** under that message → lands in \`answers/\`, and **becomes grounding for future questions**. |\n`,
+      `> | One good answer, kept to re-read | ${ICON_SAVE_TO_WIKI} **Save to wiki** under that message → lands in \`answers/\`. Kept, not retrieved. |\n` +
+      `> | One good answer, as *material* the wiki can use | Put it in a note of your own, then ingest that note. |\n`,
   ],
   [
     () => `${wikiConceptsDir()}/README.md`,
