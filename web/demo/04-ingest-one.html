@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 04 · File one note — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 04 — File one note</div>
+    <div class="txt">A card is proposed. Nothing is written until you approve it.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    words: '146 words',
+    tree: VAULT.tree('empty', 'litert'),
+    editor: `
+<h1>litert on device</h1>
+<p>LiteRT-LM loads the <code>.litertlm</code> bundle straight into the renderer process — there is no
+server and no separate app. The whole thing is Electron plus WebGPU.</p>
+<p>First call is slow and it is <em>not</em> the weights loading. It is shader compilation. Measured
+28.1 s to first token on a 2098-token input, cold.</p>
+<p>Once warm, prefill jumps roughly 5-6× — 495 tok/s on a 1558-token input against 74.7 cold. Decode
+stays flat at about 29 tok/s no matter the input length.</p>
+<p>Context is 4096 tokens. That is the real constraint on everything else.</p>`,
+});
+
+const PAGE = `
+<p class="fmtext">---
+tags:
+  - on-device
+  - webgpu
+  - benchmarks
+source: "research/litert on device.md"
+source_hash: 9f2c41ab
+created: 2026-09-01
+confidence: high
+---</p>
+<h1>litert on device</h1>
+<p><strong>Summary</strong>: LiteRT-LM runs the model in Obsidian's renderer process over WebGPU, with
+no server; the 28.1 s cold-start cost is shader compilation rather than weight loading, and warm
+prefill is 5-6× faster.</p>
+<p><strong>Source</strong>: <a class="wl">[[litert on device]]</a></p>
+<h2>Key points</h2>
+<ul>
+    <li>The <code>.litertlm</code> bundle loads into the renderer process — Electron plus WebGPU, no separate app.</li>
+    <li>Cold start of 28.1 s to first token is shader compilation, paid once per session.</li>
+    <li>Warm prefill 495 tok/s vs 74.7 cold; decode flat at ~29 tok/s regardless of input length.</li>
+    <li>Context is 4096 tokens, which bounds every other budget in the plugin.</li>
+</ul>`;
+
+GemmaDemo.init([
+    { do: () => {
+        OB.openRight(GW.panel('litert on device', 'note'));
+        beat('One note open, and the wiki still empty. The third chip is the one that changes that — and it is drawn as an action, not a question, because it creates a file.');
+    }},
+
+    { lock: 900, do: () => {
+        $$('.gw-chip')[2].classList.add('pressed');
+        $$('.gw-chip')[2].style.boxShadow = '0 0 0 1.5px rgba(123,108,217,0.5)';
+        beat(null);
+        status('Ingesting "litert on device"…');
+    }},
+
+    { lock: 2200, do: () => {
+        status('Ingesting "litert on device" — Extracting', { keep: true });
+        beat('One model call. It is pulling out four things: a summary, the key points, the tags, and how sure it is about any of it.');
+    }},
+
+    { lock: 1600, do: () => {
+        status(null);
+        $$('.gw-chip')[2].style.boxShadow = '';
+        OB.modal(`
+            <div class="head">
+                <h3>Review wiki page before writing</h3>
+                <div class="path">Will create: gemma-wiki/cards/litert-on-device.md</div>
+            </div>
+            <div class="scroll md">${PAGE}</div>
+            <div class="foot">
+                <span class="note">Nothing is on disk yet.</span>
+                <button class="ob-btn">Cancel</button>
+                <button class="ob-btn cta" id="ok">Approve and write</button>
+            </div>`);
+        beat('And then it <b>stops</b>. This is the gate: the page is drafted in memory and shown to you in full before a single byte is written.');
+    }},
+
+    { lock: 1400, do: () => {
+        beat('Read the frontmatter, because that is where the machinery is. <code>source</code> points back at your note. <code>confidence</code> is the model rating its own work. <code>source_hash</code> is what your note looked like at this moment — that one field is how the plugin later notices you changed it.');
+    }},
+
+    { lock: 1200, do: () => {
+        beat('The body is a summary and four key points. It is not the note — it is a <b>card</b>, small enough that a dozen of them fit in a 4096-token window at once. That is the whole reason the wiki layer exists.');
+    }},
+
+    { lock: 1100, do: () => {
+        $('#ok').classList.add('pressed');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.closeModal();
+        OB.addRow({ name: 'litert-on-device', kind: 'file', indent: 2, id: 'c-litert' }, 'gw-cards');
+        OB.badge('litert');
+        notice('✅ Wiki page written: gemma-wiki/cards/litert-on-device.md', 6000);
+        beat('One file, in the folder you were told about, with a badge in the explorer so you can see at a glance which notes are filed.');
+    }},
+
+    { do: () => {
+        beat('Your note was read and closed. Nothing was added to it, nothing was reformatted, nothing moved. <b>The card is the plugin\'s; the note stays yours.</b>');
+    }},
+]);
+
+</script>
+</body>
+</html>
