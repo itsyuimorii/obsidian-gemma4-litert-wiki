@@ -36,9 +36,13 @@ export function wikiDir(): string {
 export function wikiSourcesDir(): string {
   return `${_wikiDir}/cards`;
 }
+// Kept only so the upgrade notice can find leftovers from before answers
+// moved into the user's own vault. NOT in the scaffold and NOT created.
 export function wikiAnswersDir(): string {
   return `${_wikiDir}/answers`;
 }
+// Kept for the same reason as wikiAnswersDir: finding what an older version
+// left behind. Nothing writes here any more.
 export function wikiChatsDir(): string {
   return `${_wikiDir}/chats`;
 }
@@ -343,7 +347,7 @@ const INDEX_HEADER =
   `> [!info]- What this folder is\n` +
   // Full path, not [[README]]: six files now share that basename (this folder
   // and each of the five below it), and Obsidian resolved the bare link to
-  // whichever it liked — in practice chats/README.
+  // whichever it liked.
   `> Everything the plugin writes lives here; your own notes are never modified by the plugin — they are yours to edit, and the wiki catches up. Full layout and rules: [[${_wikiDir}/README|${_wikiDir}/README]].\n\n` +
   `## Pages\n\n`;
 
@@ -373,28 +377,14 @@ const LOG_HEADER =
  * to exclude themselves.
  */
 function pageDirs(): string[] {
-  // chats/ is NOT here. It is an archive — three separate places in these
-  // generated docs already say "retrieval never reads it back" — but the code
-  // was indexing it, so whole transcripts were being retrieved as trusted
-  // material: every wrong turn, every "I don't have information", fed back as
-  // if it were a page. Worse than a bad saved answer, which at least passed a
-  // review gate first.
-  // answers/ is not here either, and that is the whole of the fix for a
-  // laundering path this plugin had built on purpose. A saved answer used to
-  // be retrieved as trusted material, so a sentence Gemma produced from its
-  // own knowledge came back months later cited to a page in your own wiki —
-  // indistinguishable from something you wrote, and unfixable because you no
-  // longer remember which sentence it was.
+  // Two folders, and both are generated from notes you wrote. There is no
+  // third pile to rank below them: an answer you keep is written into your own
+  // vault now, where it is an ordinary note, and the only route by which one
+  // becomes material is the same scan every other note goes through.
   //
-  // An answer is output, not input. When it was grounded, its content already
-  // lives in the cards that produced it, so feeding it back adds a lossy
-  // duplicate that can drift from its own source; when it was not, it adds
-  // world knowledge. Neither belongs in retrieval, which is also why saved
-  // answers were able to outrank the notes they were derived from.
-  //
-  // What survives is structural rather than remembered: everything retrievable
-  // derives from a note you wrote. To make an answer count, put it in a note
-  // and ingest that — a deliberate act, on the rare occasion you mean it.
+  // That is the whole rule, and it holds structurally rather than by
+  // remembering to exclude things: everything retrievable derives from a note
+  // you wrote.
   return [wikiSourcesDir(), wikiConceptsDir()];
 }
 
@@ -407,8 +397,6 @@ export function wikiScaffoldPaths(): { path: string; what: string }[] {
   return [
     { path: `${_wikiDir}/README.md`, what: 'What this folder is, and the rules' },
     { path: `${wikiSourcesDir()}/`, what: 'One summary card per ingested note' },
-    { path: `${wikiAnswersDir()}/`, what: 'Chat answers you saved' },
-    { path: `${wikiChatsDir()}/`, what: 'Saved conversations' },
     { path: `${wikiConceptsDir()}/`, what: 'Pages built across a shared tag' },
     { path: `${wikiSkillsDir()}/`, what: 'One file per ⚡ menu entry' },
     { path: indexPath(), what: 'Catalog — wiki chat reads this first' },
@@ -467,7 +455,7 @@ const SKILLS_README =
   `>\n` +
   `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
   `> [!info] Where the answer goes\n` +
-  `> Into the chat. Under every answer there is a save button — **you decide after reading whether it was worth keeping**, and a saved answer lands in \`answers/\` behind the usual preview.\n\n` +
+  `> Into the chat. Under every answer there is a save button — **you decide after reading whether it was worth keeping** — and it writes the answer into your own notes, beside the note it came from, behind the usual preview.\n\n` +
   `> [!info] What a skill is not\n` +
   `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools. Calling it a skill is generous: it is a saved prompt with a menu entry, plus somewhere for the answer to land.\n` +
   `>\n` +
@@ -571,14 +559,13 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
       `> | **This note** / **Wiki** | Which material the answer is allowed to use. *This note* = the note you have open. *Wiki* = the pages in this folder. Switching also changes the suggestion chips underneath. |` + `\n` +
-      `> | ${ICON_SAVE_DISK} | Save the **whole conversation** to \`chats/\` as one file. |` + `\n` +
       `> | ${ICON_TRASH} | Clear the thread. Nothing is written anywhere. |` + `\n\n` +
       `> [!info] Under each answer` + `\n` +
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
       `> | ${ICON_COPY} | Copy the answer as markdown. |` + `\n` +
       `> | ${ICON_REGEN} | Ask again from the same question. Useful when an answer starts well and drifts. |` + `\n` +
-      `> | ${ICON_SAVE_TO_WIKI} | Keep **this one answer** in \`answers/\`. Not retrieved as grounding — to make it count, write it into a note of your own and ingest that. |` + `\n\n` +
+      `> | ${ICON_SAVE_TO_WIKI} | **Save as note.** Writes the answer into your own notes, beside the note it came from, recording which model wrote it and from which sources. It is then an ordinary note of yours — so the next scan can card it like any other, which is the only way anything becomes material. |` + `\n\n` +
       `> [!info] Around the input box` + `\n` +
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -625,8 +612,6 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Folder | What lands here |` + `\n` +
       `> |---|---|` + `\n` +
       `> | \`cards/\` | **One summary card per note you ingest.** Your note is the source; the card is derived from it. |` + `\n` +
-      `> | \`answers/\` | Chat answers you kept. Kept to re-read, search and link by hand — never retrieved as grounding. |` + `\n` +
-      `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |` + `\n` +
       `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
       `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
       `>` + `\n` +
@@ -664,45 +649,6 @@ const FOLDER_READMES: Array<[() => string, string]> = [
 
   ],
   [
-    () => `${wikiAnswersDir()}/README.md`,
-    `# answers\n\n` +
-      `**Chat replies you decided were worth keeping.** Nothing arrives here on its own: you save an answer with ${ICON_SAVE_TO_WIKI} **Save to wiki** under a message, and it goes through the same review gate as everything else — you see the exact page before it is written.\n\n` +
-      // Three questions, three callouts. They were one, and the one that
-      // mattered — how to promote an answer — was the fifth line of a
-      // paragraph titled "why bother saving".
-      `> [!tip] This folder is an inbox\n` +
-      `> Answers wait here to be re-read: keep the useful ones, delete the rest. Nothing here is load-bearing — a saved answer is a record of what you asked and what came back, not part of what the wiki knows.\n\n` +
-      `> [!info]- Why answers are not used as grounding\n` +
-      `> Saved answers are yours to read, link and search by hand, but a later question never retrieves them. An answer is **output**, not material.\n` +
-      `>\n` +
-      `> When it was grounded, what it says already lives in the cards it came from — feeding it back adds a second, lossy copy that can drift from its own source. When it was not, it is the model's own knowledge. Either one, retrieved months later, would come back cited to a page in your own wiki and be indistinguishable from something you wrote.\n` +
-      `>\n` +
-      `> Everything the wiki *can* retrieve derives from a note you wrote. That is the whole rule.\n\n` +
-      `> [!info] What a page holds\n` +
-      `> | Part | Why it is kept |\n` +
-      `> |---|---|\n` +
-      `> | The question | So the answer is not stranded without what it was answering. |\n` +
-      `> | The answer | The reply as it was given, not a paraphrase. |\n` +
-      `> | The sources | Exactly what the plugin put in the prompt, so months later you can still check what it was based on. |\n`,
-  ],
-  [
-    () => `${wikiChatsDir()}/README.md`,
-    `# chats\n\n` +
-      `**Whole conversations, saved from the header of the chat panel.** An archive, not working material: these files are **not indexed and never retrieved**. They are here so a thread you want to keep does not depend on the panel staying open.\n\n` +
-      `> [!info] Why an archive and not material\n` +
-      `> A transcript is the whole run — the wrong turns, the refusals, the question you rephrased three times. Feeding that back would put the model's worst moments into its own context as trusted material, and unlike a saved answer nothing here passed a review gate.\n` +
-      `>\n` +
-      `> **Want part of a thread to count as material?** Neither folder is retrieved. Put it in one of your own notes and ingest that — the one act that makes something yours.\n\n` +
-      `> [!info] What a page holds\n` +
-      `> Dataview-friendly frontmatter, then the thread as question and answer blocks, each with the sources that were used.\n\n` +
-      `> [!info] chats/ or answers/?\n` +
-      `> | You want | Use |\n` +
-      `> |---|---|\n` +
-      `> | The whole thread, for the record | The ${ICON_SAVE_DISK} save button in the header of the ${ICON_BRAND} panel → lands here. |\n` +
-      `> | One good answer, kept to re-read | ${ICON_SAVE_TO_WIKI} **Save to wiki** under that message → lands in \`answers/\`. Kept, not retrieved. |\n` +
-      `> | One good answer, as *material* the wiki can use | Put it in a note of your own, then ingest that note. |\n`,
-  ],
-  [
     () => `${wikiConceptsDir()}/README.md`,
     `# concepts\n\n` +
       `**Pages built *across* other pages.** Everything in \`cards/\` is about one note. A concept page is about a *theme*: pick a tag or a mention that two or more pages share, and the plugin writes a page above them that links down into each one.\n\n` +
@@ -725,7 +671,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
 // intends to do with your vault until it has already done it. Every call is
 // a no-op once the folders exist.
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [wikiDir(), wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir(), wikiSkillsDir()]) {
+  for (const dir of [wikiDir(), wikiSourcesDir(), wikiConceptsDir(), wikiSkillsDir()]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
@@ -1274,39 +1220,30 @@ export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntr
 }
 
 /**
- * Load retrieved pages, split into two piles by trust.
+ * Load the retrieved pages.
  *
- * Cards and concept pages summarise the user's notes; a saved answer is the
- * model's own earlier synthesis. Mixing them into one block made them
- * indistinguishable in the prompt, so a wrong or stale saved answer carried
- * the same weight as the material it was derived from — the classic poisoning
- * loop, and the one gap in Karpathy's design (his gist says explorations
- * should compound, and says nothing about trust). Keeping the compounding
- * while ranking answers below pages is the middle path.
+ * This used to return two piles — pages, and saved answers ranked below them
+ * under a heading telling the model which to believe. That was the middle path
+ * while answers were retrieved at all. They are not: `pageDirs()` is cards and
+ * concepts, so no answer ever gets an index entry, so no entry reaching here
+ * could have an answers/ prefix and the second pile was always empty.
  *
- * Answers marked `derived: true` (a quiz, flashcards — renderings, not
- * syntheses) are skipped outright: they contain nothing the pages do not.
+ * The rule that replaced it needs no ranking, because it is structural:
+ * everything retrievable derives from a note you wrote.
  */
 export async function loadPages(
   vault: Vault,
   entries: IndexEntry[],
   maxTotalChars: number
-): Promise<{ pages: string; answers: string }> {
+): Promise<string> {
   let pages = '';
-  let answers = '';
-  const answersPrefix = `${wikiAnswersDir()}/`;
   for (const e of entries) {
     const content = await readIfExists(vault, `${e.linkPath}.md`);
     if (!content) continue;
-    if (pages.length + answers.length + content.length > maxTotalChars) break;
-    if (`${e.linkPath}.md`.startsWith(answersPrefix)) {
-      if (/^derived: true$/m.test(content.slice(0, 500))) continue;
-      answers += `### Answer: ${e.title}\n${content}\n\n`;
-    } else {
-      pages += `### Page: ${e.title}\n${content}\n\n`;
-    }
+    if (pages.length + content.length > maxTotalChars) break;
+    pages += `### Page: ${e.title}\n${content}\n\n`;
   }
-  return { pages, answers };
+  return pages;
 }
 
 // One-hop link expansion (issue #14): given the seed pages the lexical
@@ -1349,61 +1286,65 @@ export function expandByLinks(
 }
 
 /**
- * Where a saved answer lands.
+ * A filename from arbitrary text, for a file that lands in the user's vault.
  *
- * Named by the note it was grounded in plus the question — the question alone
- * was the whole name, and a canned skill prompt is identical every time, so
- * running Quiz on note A and then note B silently overwrote A's file with
- * B's quiz.
+ * Not slugify(). That is the right shape for a tag and for a card the plugin
+ * owns, but this file goes among someone's own notes, where `2026 roadmap.md`
+ * is what a person would have typed and `2026-roadmap.md` is the plugin
+ * imposing a house style on a folder that is not its own.
+ *
+ * Keep the words; remove only what a filesystem or Obsidian objects to. The
+ * fallback covers a question that is entirely punctuation — rare, and still
+ * has to produce a file.
  */
-export function answerPagePath(question: string, groundedIn?: string): string {
-  const q = slugify(question).slice(0, 48);
-  const base = groundedIn ? `${slugify(groundedIn).slice(0, 40)}--${q}` : q;
-  return normalizePath(`${wikiAnswersDir()}/${base}.md`);
+export function safeFileName(text: string, fallback: string): string {
+  const cleaned = text
+    .replace(/[\\/:*?"<>|#^[\]]/g, ' ')
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+    .slice(0, 80)
+    .trim();
+  return cleaned || fallback;
 }
 
-export function buildAnswerPage(
+/**
+ * A note written from a chat answer, for the user's own vault.
+ *
+ * The frontmatter is two facts and no bookkeeping. `written_by` and `sources`
+ * are exactly what a copy-paste destroys, and they are why a button beats
+ * Cmd+C at all.
+ *
+ * Deliberately absent: `tags:`, because choosing tags for a file in someone's
+ * own folder is presumptuous — when this note is later ingested its card gets
+ * tags, which is where model-chosen tags belong. And `derived` and
+ * `read_hashes`, both of which were only ever read by code that filters to
+ * wiki pages and so could never see an answer.
+ */
+export function buildAnswerNote(
   question: string,
   answer: string,
   sources: { title: string; linkPath: string }[],
-  opts: {
-    /**
-     * A rendering rather than a synthesis — a quiz, flashcards, a checklist.
-     * This used to decide whether an answer was retrieved; no answer is
-     * retrieved now, so it is a label on the page rather than a switch.
-     * It still earns its place: a rendering is the same knowledge in a
-     * different shape, so it is the kind of answer least worth promoting into
-     * a note of your own.
-     */
-    derived?: boolean;
-    /** Short label for the title when the question is a canned prompt. */
-    titleLabel?: string;
-    /** path -> contentHash of each source the answer read, for drift. */
-    sourceHashes?: Record<string, string>;
-  } = {}
+  opts: { model: string; titleLabel?: string }
 ): string {
   const date = new Date().toISOString().slice(0, 10);
   const sourceLines = sources.map((s) => `- [[${s.linkPath}|${s.title}]]`).join('\n');
   // A canned prompt makes a terrible H1 ("Create 5 practice questions that
   // test understanding of this material. Number each..."). Prefer the label.
   const title = opts.titleLabel ?? (question.length > 90 ? `${question.slice(0, 87)}…` : question);
-  const hashLines = opts.sourceHashes
-    ? Object.entries(opts.sourceHashes)
-        .map(([p, h]) => `  ${p}: ${h}`)
-        .join('\n')
+  const sourcesYaml = sources.length
+    ? `sources:\n${sources.map((x) => `  - "[[${x.title}]]"`).join('\n')}\n`
     : '';
   return (
     `---\n` +
-    `tags:\n  - answer\n` +
-    (opts.derived ? `derived: true\n` : '') +
-    (hashLines ? `read_hashes:\n${hashLines}\n` : '') +
+    `written_by: ${opts.model}\n` +
     `created: ${date}\n` +
+    sourcesYaml +
     `---\n\n` +
     `# ${title}\n\n` +
     (opts.titleLabel ? `> [!quote]- The exact prompt\n> ${question}\n\n` : '') +
-    `${answer.trim()}\n\n` +
-    `## Sources\n\n` +
-    `${sourceLines}\n`
+    `${answer.trim()}\n` +
+    (sourceLines ? `\n## Sources\n\n${sourceLines}\n` : '')
   );
 }
 
@@ -1507,35 +1448,6 @@ export interface ChatTurnRecord {
   sources?: { title: string; linkPath: string }[];
 }
 
-export function chatTranscriptPath(firstQuestion: string, stamp: string): string {
-  return normalizePath(`${wikiChatsDir()}/${stamp}-${slugify(firstQuestion).slice(0, 40)}.md`);
-}
-
-// Render a chat thread as a vault-native markdown file: frontmatter for
-// Dataview/Query reuse, then Q/A blocks with the deterministic sources.
-export function buildChatTranscript(turns: ChatTurnRecord[], mode: string, date: string): string {
-  const title = turns.find((t) => t.role === 'user')?.content.slice(0, 80) ?? 'Chat';
-  let body = `---\ntags:\n  - chat\nmode: ${mode}\ncreated: ${date}\n---\n\n# ${title}\n\n`;
-  for (const t of turns) {
-    if (t.role === 'user') {
-      // Blockquote, not a heading — H2 per question rendered huge and
-      // cluttered the outline. Quote reads as "the question asked".
-      const quoted = t.content
-        .trim()
-        .split('\n')
-        .map((line) => `> ${line}`)
-        .join('\n');
-      body += `${quoted}\n\n`;
-    } else {
-      body += `${t.content.trim()}\n\n`;
-      if (t.sources?.length) {
-        body += `*Sources: ${t.sources.map((sc) => `[[${sc.linkPath}|${sc.title}]]`).join(', ')}*\n\n`;
-      }
-      body += `---\n\n`;
-    }
-  }
-  return body.trimEnd() + '\n';
-}
 
 // Strip boilerplate from web-clipped notes before ingest. Local models
 // have only 4096 tokens of context, and a clipped article carries a lot

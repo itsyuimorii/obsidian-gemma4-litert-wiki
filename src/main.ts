@@ -33,6 +33,8 @@ import {
   readIndexEntries,
   slugify,
   setWikiDir,
+  wikiAnswersDir,
+  wikiChatsDir,
   wikiDir,
   cardPathFor,
   writeWikiPage,
@@ -737,6 +739,14 @@ export default class LiteRtSpikePlugin extends Plugin {
               '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.'
           );
         }
+
+        // Leftovers from before answers moved into the user's own vault.
+        // Said once, and nothing is moved: relocating a hundred files on
+        // upgrade is exactly the kind of help nobody asked for, and this
+        // plugin does not touch files in a vault that it did not just write.
+        // Empty folders are left too — deleting a directory in someone's vault
+        // to tidy up our own scaffold is not proportionate.
+        await this.noteRetiredFolders();
       })();
     });
     this.app.workspace.onLayoutReady(() => this.rescheduleAutoScan());
@@ -1398,6 +1408,36 @@ export default class LiteRtSpikePlugin extends Plugin {
   // get it back. Repeating it on every launch would be nagging — after the
   // first time there is nothing new in it, and Obsidian restores the panel with
   // the rest of the workspace anyway.
+  /**
+   * Say once that answers/ and chats/ are no longer written to.
+   *
+   * Only when they actually hold something. A folder that exists and is empty
+   * is a scaffold leftover nobody will miss, and a notice about it would be
+   * the plugin talking about its own housekeeping.
+   */
+  private async noteRetiredFolders(): Promise<void> {
+    if (this.settings.retiredFoldersNoticed) return;
+    const counts: string[] = [];
+    for (const dir of [wikiAnswersDir(), wikiChatsDir()]) {
+      const folder = this.app.vault.getAbstractFileByPath(dir);
+      if (!(folder instanceof TFolder)) continue;
+      const n = folder.children.filter((c) => c instanceof TFile && c.name !== 'README.md').length;
+      if (n) counts.push(`${dir}/ — ${n} file${n === 1 ? '' : 's'}`);
+    }
+    this.settings.retiredFoldersNoticed = true;
+    await this.saveSettings();
+    if (!counts.length) return;
+    notifyAndLog(
+      this.app.vault,
+      'info',
+      'Saved answers now go into your own notes, beside the note they came from.\n\n' +
+        `These two folders are no longer written to and nothing was moved:\n${counts.join('\n')}\n\n` +
+        'Anything worth keeping can go wherever you keep notes — and once it is there, ' +
+        'a scan can turn it into a wiki card like any other note.',
+      DURATION.LONG
+    );
+  }
+
   showSetupCard() {
     new ScaffoldCreatedModal(
       this.app,
