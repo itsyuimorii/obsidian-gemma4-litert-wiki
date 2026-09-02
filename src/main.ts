@@ -34,7 +34,7 @@ import {
   slugify,
   setWikiDir,
   wikiDir,
-  wikiPagePath,
+  cardPathFor,
   writeWikiPage,
   type IndexEntry,
   type NoteExtraction,
@@ -1330,7 +1330,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       else if (typeof rawTags === 'string') rawTags.split(/[,\s]+/).forEach((t) => t && existing.add(slugify(t)));
       const newTags = extraction.tags.map((t) => slugify(t)).filter((t) => t && !existing.has(t));
 
-      const selfLink = wikiPagePath(file.basename).replace(/\.md$/, '');
+      const selfLink = cardPathFor(this.app, file).replace(/\.md$/, '');
       const candidates = (await this.liveIndexEntries()).filter((e) => e.linkPath !== selfLink);
       const related = candidates.length ? await this.pickRelatedPages(extraction.summary, candidates) : [];
       this.statusEnd();
@@ -2319,7 +2319,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // frontmatter-only, and unchanged notes before the 20-40s model
       // call. "Unchanged" compares a content hash against the existing
       // page's source_hash.
-      const pagePathForCheck = wikiPagePath(file.basename);
+      const pagePathForCheck = cardPathFor(this.app, file);
       const existingHash = getIngestedSourceHashes(this.app).get(file.path);
       const skip = precheckNote(content, existingHash);
       if (skip === 'empty' || skip === 'frontmatter-only') {
@@ -2376,7 +2376,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         this.statusEnd();
 
         const sourceHash = contentHash(content);
-        const pagePath = wikiPagePath(file.basename);
+        const pagePath = cardPathFor(this.app, file);
         const selfLink = pagePath.replace(/\.md$/, '');
         const candidates = (await this.liveIndexEntries()).filter(
           (e) => e.linkPath !== selfLink
@@ -2567,6 +2567,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     // (A draft the user then unticks can leave a link to a page that was
     // never written — the post-write prune below clears exactly that.)
     const batchEntries: IndexEntry[] = [];
+    // Card paths minted so far in this run. Drafting happens before any write,
+    // so without this two new notes with the same basename both see the name
+    // free and the second replaces the first between the review list and disk —
+    // the user approves four pages and gets three, with nothing saying which.
+    const reservedPaths = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (this.scanCancelled) {
         cancelled = true;
@@ -2581,7 +2586,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`);
         });
         const sourceHash = contentHash(content);
-        const pagePath = wikiPagePath(file.basename);
+        const pagePath = cardPathFor(this.app, file, reservedPaths);
         const selfLink = pagePath.replace(/\.md$/, '');
         const candidates = [...(await this.liveIndexEntries()), ...batchEntries].filter(
           (e) => e.linkPath !== selfLink
