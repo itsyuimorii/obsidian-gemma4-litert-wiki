@@ -75,6 +75,18 @@ export class IngestPreviewModal extends Modal {
       cls: 'gemma4-ingest-path',
       text: this.overwriting ? `Will overwrite: ${this.pagePath}` : `Will create: ${this.pagePath}`,
     });
+    // "Will overwrite" names the file and not the loss. A card is regenerated
+    // from its note, so any correction made by hand in the card is destroyed
+    // here — silently, at the one moment the user could still say no. Say it
+    // where it happens rather than in the folder's README.
+    if (this.overwriting) {
+      contentEl.createDiv({
+        cls: 'gemma4-ingest-overwrite-warning',
+        text:
+          'Anything edited by hand in that file will be replaced. Cards are rebuilt from ' +
+          'the note each time — to keep a correction, put it in the note instead.',
+      });
+    }
 
     const preview = contentEl.createDiv({ cls: 'gemma4-ingest-preview' });
     void MarkdownRenderer.render(this.app, this.pageContent, preview, this.pagePath, this.renderHost);

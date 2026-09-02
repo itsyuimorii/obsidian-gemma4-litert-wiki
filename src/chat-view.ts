@@ -28,7 +28,6 @@ import {
   readLogTail,
   readSkills,
   scoreEntries,
-  upsertIndexEntry,
   writeWikiPage,
   type ChatTurnRecord,
 } from './wiki-store';
@@ -857,13 +856,14 @@ export class ChatView extends ItemView {
         sourceHashes: Object.keys(readHashes).length ? readHashes : undefined,
       });
       const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
-      const indexTitle = skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : question;
       new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
         void (async () => {
           await ensureWikiScaffold(this.app.vault);
           await writeWikiPage(this.app.vault, pagePath, pageContent);
-          const summary = answer.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 140) ?? question;
-          await upsertIndexEntry(this.app.vault, pagePath, indexTitle, summary);
+          // Deliberately NOT indexed. The query path reads index.md to decide
+          // which pages to open, so an entry here is what makes a page count as
+          // your material — and an answer is not material, it is output. Keep
+          // it, read it, link it; it just does not come back as grounding.
           await appendLog(this.app.vault, 'answer', question);
           notify('done', `Saved to wiki: ${pagePath}`);
         })();
@@ -998,9 +998,28 @@ export class ChatView extends ItemView {
             ? 'the full text of the wiki pages, as many as fit. Work across all of them — this ' +
               'is about the collection, not about one page. '
             : 'the full text of the most relevant pages. ') +
-          'Never bring in outside knowledge, and never invent detail that is not there.\n\n' +
-          'If the user asks a question and this material does not answer it, say so plainly ' +
-          'rather than guessing. If the user asks you to work with the material instead, carry ' +
+          // The same four cases as note mode, because the bug was the same and
+          // fixing only one mode left the other echoing. Asked what a term
+          // means, a wiki whose pages name it without defining it could only
+          // repeat one of them back.
+          //
+          // What is genuinely different here is the stake, not the rule. In
+          // note mode the note is open beside the answer; here the answer
+          // stands for pages you are not looking at, and the Sources row is
+          // what you would check it against — so the separation between what
+          // your pages say and what a term means has to be visible in the
+          // text, or the row implies the whole answer came from them.
+          'Never claim your material says something it does not, and never invent detail and ' +
+          'present it as the user\'s.\n\n' +
+          'If the user asks a question about their own material — what is in it, what they ' +
+          'recorded, what connects — answer only from what is below, and say plainly when it ' +
+          'does not answer rather than guessing.\n\n' +
+          'If they ask what something MEANS — a term, a claim, a concept the pages use — ' +
+          'explain it, using ordinary knowledge of the subject. The pages give you the topic, ' +
+          'not the only words you may use. Repeating a page\'s own sentence back is not an ' +
+          'answer. Keep the two apart in what you write, so it is never unclear which is which: ' +
+          'what the pages state, then what it means.\n\n' +
+          'If the user asks you to work with the material instead, carry ' +
           'that out from what is here — the instruction comes from the user, so do not look for ' +
           'it inside the pages.\n\n' +
           'If you cannot tell what is being asked — the request is a fragment, a single word, or ' +
@@ -1056,21 +1075,43 @@ export class ChatView extends ItemView {
     }
     return {
       systemPrompt:
-        // Two kinds of request, and the old prompt only knew one. It said
-        // "answer the user's question ... if the answer is not in them, say
-        // so", which is right for a question and actively wrong for an
-        // instruction: asked to make flashcards, the model went looking for
-        // flashcards IN the note, did not find any, and refused — "the notes
-        // do not contain a specific command or skill for generating
-        // flashcards". Every skill is a transformation, not a lookup.
+        // Three kinds of request. The prompt learned the first two the hard
+        // way and the third was still missing.
         //
-        // The grounding promise is unchanged: only this material, no outside
-        // knowledge, no invented detail. What changes is that carrying out an
-        // instruction is no longer mistaken for failing to find one.
-        'Use ONLY the notes below. Never bring in outside knowledge, and never invent detail ' +
-        'that is not there.\n\n' +
-        'If the user asks a question and the notes do not answer it, say so plainly rather than ' +
-        'guessing.\n\n' +
+        // 1. A question of fact about the note — grounded, and honestly
+        //    refused when the note does not answer it.
+        // 2. An instruction to work on the note. "Use ONLY the notes" used to
+        //    turn this into a lookup: asked to make flashcards, the model went
+        //    looking for flashcards IN the note, did not find any, and refused.
+        //    Every skill is a transformation, not a lookup.
+        // 3. Asking what something MEANS — and this one failed worse than a
+        //    refusal. Asked what a line about store-and-forward transmission
+        //    meant, the model repeated that line back verbatim: the note
+        //    contains the term but not an explanation of it, so under "never
+        //    bring in outside knowledge" an echo was the only compliant
+        //    answer. Retrieval succeeded and the answer was still useless,
+        //    which is worse than saying no, because it looks like an answer.
+        //
+        // Grounding this panel in a note means the note is the SUBJECT, not
+        // the vocabulary the model is allowed. Someone reading their own
+        // lecture notes and asking what a term means is asking about the note.
+        // What must never happen is misreporting what the note says, or
+        // passing off general knowledge as something the note stated — so the
+        // rule that survives is attribution, not ignorance.
+        //
+        // Wiki mode keeps the strict rule: a claim about a body of pages you
+        // cannot eyeball is exactly where invented detail does damage, and
+        // that is the mode whose Sources row is load-bearing.
+        'The note below is what the user is asking about. Answer them properly.\n\n' +
+        'Never misreport the note: do not claim it says something it does not, and do not ' +
+        'invent detail and present it as theirs.\n\n' +
+        'If they ask a question of fact about their own material and the note does not answer ' +
+        'it, say so plainly rather than guessing.\n\n' +
+        'If they ask what something MEANS — a term, a line, a concept the note uses — explain ' +
+        'it properly, using ordinary knowledge of the subject. The note gives you the topic, ' +
+        'not the only words you may use. Repeating the note\'s own sentence back is not an ' +
+        'answer. Keep the two apart so they are never confused: say what the note states, then ' +
+        'explain it.\n\n' +
         'If the user asks you to work with the material — summarise it, turn it into questions ' +
         'or flashcards, list the actions it implies, point out what is unclear — carry that out ' +
         'from what the notes contain. The instruction comes from the user; do not look for it ' +
