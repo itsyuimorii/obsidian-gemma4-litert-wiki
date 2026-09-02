@@ -1056,21 +1056,43 @@ export class ChatView extends ItemView {
     }
     return {
       systemPrompt:
-        // Two kinds of request, and the old prompt only knew one. It said
-        // "answer the user's question ... if the answer is not in them, say
-        // so", which is right for a question and actively wrong for an
-        // instruction: asked to make flashcards, the model went looking for
-        // flashcards IN the note, did not find any, and refused — "the notes
-        // do not contain a specific command or skill for generating
-        // flashcards". Every skill is a transformation, not a lookup.
+        // Three kinds of request. The prompt learned the first two the hard
+        // way and the third was still missing.
         //
-        // The grounding promise is unchanged: only this material, no outside
-        // knowledge, no invented detail. What changes is that carrying out an
-        // instruction is no longer mistaken for failing to find one.
-        'Use ONLY the notes below. Never bring in outside knowledge, and never invent detail ' +
-        'that is not there.\n\n' +
-        'If the user asks a question and the notes do not answer it, say so plainly rather than ' +
-        'guessing.\n\n' +
+        // 1. A question of fact about the note — grounded, and honestly
+        //    refused when the note does not answer it.
+        // 2. An instruction to work on the note. "Use ONLY the notes" used to
+        //    turn this into a lookup: asked to make flashcards, the model went
+        //    looking for flashcards IN the note, did not find any, and refused.
+        //    Every skill is a transformation, not a lookup.
+        // 3. Asking what something MEANS — and this one failed worse than a
+        //    refusal. Asked what a line about store-and-forward transmission
+        //    meant, the model repeated that line back verbatim: the note
+        //    contains the term but not an explanation of it, so under "never
+        //    bring in outside knowledge" an echo was the only compliant
+        //    answer. Retrieval succeeded and the answer was still useless,
+        //    which is worse than saying no, because it looks like an answer.
+        //
+        // Grounding this panel in a note means the note is the SUBJECT, not
+        // the vocabulary the model is allowed. Someone reading their own
+        // lecture notes and asking what a term means is asking about the note.
+        // What must never happen is misreporting what the note says, or
+        // passing off general knowledge as something the note stated — so the
+        // rule that survives is attribution, not ignorance.
+        //
+        // Wiki mode keeps the strict rule: a claim about a body of pages you
+        // cannot eyeball is exactly where invented detail does damage, and
+        // that is the mode whose Sources row is load-bearing.
+        'The note below is what the user is asking about. Answer them properly.\n\n' +
+        'Never misreport the note: do not claim it says something it does not, and do not ' +
+        'invent detail and present it as theirs.\n\n' +
+        'If they ask a question of fact about their own material and the note does not answer ' +
+        'it, say so plainly rather than guessing.\n\n' +
+        'If they ask what something MEANS — a term, a line, a concept the note uses — explain ' +
+        'it properly, using ordinary knowledge of the subject. The note gives you the topic, ' +
+        'not the only words you may use. Repeating the note\'s own sentence back is not an ' +
+        'answer. Keep the two apart so they are never confused: say what the note states, then ' +
+        'explain it.\n\n' +
         'If the user asks you to work with the material — summarise it, turn it into questions ' +
         'or flashcards, list the actions it implies, point out what is unclear — carry that out ' +
         'from what the notes contain. The instruction comes from the user; do not look for it ' +
