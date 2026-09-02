@@ -8,15 +8,14 @@ import {
   setTooltip,
   TFile,
   WorkspaceLeaf,
+  normalizePath,
 } from 'obsidian';
 import type { Conversation } from '@litert-lm/core';
 import type LiteRtSpikePlugin from './main';
 import {
-  answerPagePath,
   appendLog,
-  buildAnswerPage,
-  buildChatTranscript,
-  chatTranscriptPath,
+  buildAnswerNote,
+  safeFileName,
   clampToTokens,
   contentHash,
   ensureWikiScaffold,
@@ -33,6 +32,11 @@ import {
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
 import { notify } from './notify';
+
+// What `written_by` records on a saved answer. The bundle filename without its
+// extension: specific enough to tell two model versions apart in six months,
+// which is the whole point of writing it down.
+const MODEL_LABEL = 'gemma-4-E4B-it-web';
 
 // Chat with the currently active note, entirely local. This is the
 // "narrow" version of Query from the wiki roadmap — grounded in one open
@@ -388,32 +392,6 @@ export class ChatView extends ItemView {
     }
   }
 
-  // Persist the thread as a vault-native markdown file (Copilot-style):
-  // frontmatter for Dataview/Query reuse, Q/A blocks with sources. Goes
-  // through the same review-gated write path as saved answers.
-  private async saveConversation() {
-    if (!this.turns.length) {
-      notify('noop', 'Nothing to save yet — ask something first.');
-      return;
-    }
-    const firstQ = this.turns.find((t) => t.role === 'user')?.content ?? 'chat';
-    const stamp = window.moment().format('YYYY-MM-DD-HHmmss');
-    const pagePath = chatTranscriptPath(firstQ, stamp);
-    const content = buildChatTranscript(this.turns, this.mode, stamp.slice(0, 10));
-    new IngestPreviewModal(this.app, pagePath, content, false, () => {
-      void (async () => {
-        await ensureWikiScaffold(this.app.vault);
-        await writeWikiPage(this.app.vault, pagePath, content);
-        // Index it too (issue #17) — without an index entry, Wiki-mode
-        // retrieval and lint can never see the saved transcript, so it was
-        // effectively write-only.
-        // Deliberately not indexed: chats/ is an archive, not material.
-        await appendLog(this.app.vault, 'chat', firstQ.slice(0, 60));
-        notify('done', `Conversation saved: ${pagePath}`);
-      })();
-    }).open();
-  }
-
   private clearChat() {
     if (this.busy) this.activeConversation?.cancel();
     this.lastQuestion = null;
@@ -489,14 +467,6 @@ export class ChatView extends ItemView {
     // Grouped at the right so the two icons sit together, not pushed to
     // opposite ends by the title's auto margin.
     const headerActions = titleRow.createDiv({ cls: 'gemma4-chat-header-actions' });
-    const saveConvBtn = headerActions.createEl('button', {
-      cls: 'gemma4-chat-clear',
-      attr: { 'aria-label': 'Save conversation to wiki' },
-    });
-    setIcon(saveConvBtn, 'save');
-    setTooltip(saveConvBtn, 'Save conversation to wiki');
-    saveConvBtn.addEventListener('click', () => void this.saveConversation());
-
     const clearBtn = headerActions.createEl('button', {
       cls: 'gemma4-chat-clear',
       attr: { 'aria-label': 'Clear chat' },
@@ -827,48 +797,77 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Save answer to wiki' },
     });
     setIcon(saveBtn, 'file-plus-2');
-    setTooltip(saveBtn, 'Save answer to wiki');
+    setTooltip(saveBtn, 'Save as note');
     saveBtn.addEventListener('click', () => void (async () => {
       const answer = getAnswer();
-      // Anchored to the note it was grounded in: a canned prompt is the same
-      // words every time, so naming the file by the question alone made Quiz
-      // on note B overwrite Quiz on note A.
-      const pagePath = answerPagePath(question, sources[0]?.title);
-      // Record what this answer read, and what it looked like, so the review
-      // board can flag the answer when a source changes — same drift idea as
-      // the cards, extended to the layer above them.
-      const readHashes: Record<string, string> = {};
-      for (const src of sources) {
-        const f = this.app.vault.getAbstractFileByPath(`${src.linkPath}.md`);
-        if (f instanceof TFile) {
-          try {
-            readHashes[src.linkPath] = contentHash(await this.app.vault.read(f));
-          } catch {
-            /* best-effort */
+      const folder = this.answerFolder(sources);
+      // The question is the title, as a person would have typed it. slugify()
+      // is right for a tag and for a card the plugin owns; this file lands in
+      // someone's own folder, where a kebab-cased filename is the plugin
+      // imposing a house style on a directory that is not its own.
+      const label = skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : question;
+      const stem = safeFileName(label, `answer ${window.moment().format('YYYY-MM-DD HHmmss')}`);
+      const notePath = this.freePath(folder, stem);
+      const content = buildAnswerNote(question, answer, sources, {
+        model: MODEL_LABEL,
+        titleLabel: skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : undefined,
+      });
+      // Never `overwriting`. This folder is the user's; appending " 2" costs a
+      // duplicate, and silently replacing a file in someone's own notes costs
+      // whatever was in it.
+      new IngestPreviewModal(this.app, notePath, content, false, () => {
+        void (async () => {
+          const dir = notePath.slice(0, notePath.lastIndexOf('/'));
+          if (dir && !this.app.vault.getAbstractFileByPath(dir)) {
+            await this.app.vault.createFolder(dir).catch(() => {});
           }
+          await this.app.vault.create(notePath, content);
+          await appendLog(this.app.vault, 'answer', notePath);
+          notify('done', `Saved: ${notePath}`);
+        })();
+      }, 'Review note before writing').open();
+    })());
+  }
+
+  /**
+   * Which folder a saved answer goes in.
+   *
+   * Beside the note it came from, because that is the answer a person would
+   * give if asked where it should live, and because the complaint this fixes is
+   * not knowing where things went. In Wiki mode the answer read cards rather
+   * than notes, so the first source is followed back through its `source:`
+   * frontmatter to the note it summarises.
+   *
+   * The setting overrides all of it for anyone who would rather have one pile
+   * they chose than several they did not.
+   */
+  private answerFolder(sources: { title: string; linkPath: string }[]): string {
+    const configured = this.plugin.settings.answerFolder.trim();
+    if (configured) return configured.replace(/\/+$/, '');
+    const first = sources[0];
+    if (first) {
+      const card = this.app.vault.getAbstractFileByPath(`${first.linkPath}.md`);
+      if (card instanceof TFile) {
+        const src = this.app.metadataCache.getFileCache(card)?.frontmatter?.source;
+        if (typeof src === 'string' && src) {
+          const noteDir = src.slice(0, src.lastIndexOf('/'));
+          if (noteDir) return noteDir;
+          return '';
         }
       }
-      const pageContent = buildAnswerPage(question, answer, sources, {
-        // A skill's output is a rendering of the material, not a synthesis —
-        // saved for you, but never fed back to retrieval.
-        derived: !!skillLabel,
-        titleLabel: skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : undefined,
-        sourceHashes: Object.keys(readHashes).length ? readHashes : undefined,
-      });
-      const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
-      new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
-        void (async () => {
-          await ensureWikiScaffold(this.app.vault);
-          await writeWikiPage(this.app.vault, pagePath, pageContent);
-          // Deliberately NOT indexed. The query path reads index.md to decide
-          // which pages to open, so an entry here is what makes a page count as
-          // your material — and an answer is not material, it is output. Keep
-          // it, read it, link it; it just does not come back as grounding.
-          await appendLog(this.app.vault, 'answer', question);
-          notify('done', `Saved to wiki: ${pagePath}`);
-        })();
-      }).open();
-    })());
+    }
+    const active = this.app.workspace.getActiveFile();
+    return active?.parent?.path && active.parent.path !== '/' ? active.parent.path : '';
+  }
+
+  /** `<folder>/<stem>.md`, with " 2", " 3" … appended rather than overwriting. */
+  private freePath(folder: string, stem: string): string {
+    const dir = folder ? `${folder}/` : '';
+    let path = normalizePath(`${dir}${stem}.md`);
+    for (let n = 2; this.app.vault.getAbstractFileByPath(path) && n <= 99; n++) {
+      path = normalizePath(`${dir}${stem} ${n}.md`);
+    }
+    return path;
   }
 
   private scrollToBottom() {
@@ -966,21 +965,19 @@ export class ChatView extends ItemView {
       const retrieved = [...selected, ...expanded];
       const loaded = retrieved.length
         ? await loadPages(this.app.vault, retrieved, this.plugin.budget('chat') * 3)
-        : { pages: '', answers: '' };
+        : '';
       // Catalog + recent log always ride along: they are small, and they
       // make meta-questions answerable ("what is in my wiki?", "what did
       // I add today?") — pure page retrieval left those as dead ends.
       const catalog = entries.map((e) => `- ${e.title} — ${e.summary}`).join('\n');
       const logTail = await readLogTail(this.app.vault, 12);
       const attachments = await this.readAttachments();
-      // Pages first, answers after and under their own heading, so a saved
-      // answer never outranks the material it was derived from.
+      // One pile. There used to be a second, ranked below this one under a
+      // heading that told the model which to believe when they disagreed —
+      // needed while saved answers were retrieved, and dead since they stopped
+      // being. Everything here derives from a note the user wrote.
       const clampedWiki = clampToTokens(
-        (loaded.pages ? `## Relevant pages\n${loaded.pages}\n\n` : '') +
-          (loaded.answers
-            ? `## Your earlier saved answers (derived from the pages — where they disagree with a page, trust the page)\n${loaded.answers}\n\n`
-            : '') +
-          attachments.blocks,
+        (loaded ? `## Relevant pages\n${loaded}\n\n` : '') + attachments.blocks,
         this.plugin.budget('chat')
       );
       if (clampedWiki.truncated) {

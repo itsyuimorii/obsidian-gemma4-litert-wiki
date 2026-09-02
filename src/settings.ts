@@ -22,6 +22,15 @@ export interface GemmaWikiSettings {
   // the background count uses the same scope. Blank until your first scan.
   scanInclude: string;
   scanExclude: string; // comma-separated path prefixes to skip (within the allow-list)
+  // Where "Save as note" writes. Blank means beside the note the answer came
+  // from, which is the answer a person gives when asked where it should live.
+  // A folder here overrides that, for anyone who would rather have one pile
+  // they chose than several they did not.
+  answerFolder: string;
+  // Whether the one-time "answers/ and chats/ are retired" notice has been
+  // shown. A flag rather than a check, because the folders can legitimately
+  // still hold files for as long as the user wants them to.
+  retiredFoldersNoticed: boolean;
   // Background scan (issue #2): periodically COUNT new/changed notes and
   // show a status-bar chip. Counting is deterministic (no model / no GPU);
   // drafting only runs when the user clicks the chip. Default OFF.
@@ -42,6 +51,8 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   scanQuietHours: 3,
   scanInclude: '',
   scanExclude: '',
+  answerFolder: '',
+  retiredFoldersNoticed: false,
   autoScanEnabled: false,
   autoScanIntervalHours: 6,
   hasChatted: false,
@@ -362,6 +373,24 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           'wiki is empty. It asks which folders, shows how many notes each one holds, and ' +
           'remembers your last pick. "Stop the running scan" cancels — whatever was drafted ' +
           'before you stopped is still offered for review.'
+      );
+
+    new Setting(containerEl)
+      .setName('Save answers into')
+      .setDesc(
+        'Where the save button under an answer writes. Leave blank and it goes beside the note ' +
+          'the answer came from — in Wiki mode, the note behind its first source. Name a folder ' +
+          'here to put every saved answer in one place instead. Either way it is an ordinary ' +
+          'note of yours, so the next scan can turn it into a wiki card like any other.'
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder('beside the note it came from')
+          .setValue(this.plugin.settings.answerFolder)
+          .onChange(async (v) => {
+            this.plugin.settings.answerFolder = v;
+            await this.plugin.saveSettings();
+          })
       );
 
     new Setting(containerEl)
