@@ -122,8 +122,70 @@ export function isUsableTag(tag: string): boolean {
   return s !== 'untitled' && !/^[\p{N}\p{M}-]+$/u.test(s);
 }
 
-export function wikiPagePath(sourceBasename: string): string {
-  return normalizePath(`${wikiSourcesDir()}/${slugify(sourceBasename)}.md`);
+/**
+ * Where a note's card lives.
+ *
+ * This used to be `slugify(file.basename)` and nothing else, which made the
+ * filename the note's identity. Obsidian vaults are full of same-named files in
+ * different folders — a README per project, a date per daily folder, an
+ * index.md wherever — and every such pair mapped to one card. The second ingest
+ * overwrote the first, which then lost its card, which made it a new candidate
+ * again on the next scan, which overwrote the second. Two notes could bounce
+ * off each other forever, and nothing said so.
+ *
+ * Identity now comes from the note, not from its name. A card records its
+ * source in frontmatter, so the card a note already has can be found by
+ * reading it — which also means existing vaults keep every card they have
+ * rather than re-drafting the lot under new names.
+ *
+ * Only when a note has no card yet is a name minted, and then the plain
+ * basename is still tried first: `cards/readme.md` is what you want to see
+ * until the day two notes want it.
+ *
+ * `reserved` holds paths minted earlier in the same batch. A scan drafts
+ * before it writes, so two new same-named notes would otherwise both find the
+ * name free and the second would silently replace the first between the review
+ * list and the disk.
+ */
+export function cardPathFor(app: App, file: TFile, reserved?: Set<string>): string {
+  const existing = existingCardPath(app, file.path);
+  if (existing) return existing;
+
+  const dir = wikiSourcesDir();
+  const parent = file.parent?.name ?? '';
+  const stem = file.path.replace(/\.md$/, '');
+  // Widening: the name alone, then qualified by its folder, then by the whole
+  // path, then counted. Every step is derived from the note, so the answer is
+  // the same on every call for the same note.
+  const candidates = [
+    slugify(file.basename),
+    parent ? `${slugify(parent)}-${slugify(file.basename)}` : '',
+    slugify(stem),
+  ].filter(Boolean);
+  for (let n = 2; n <= 99; n++) candidates.push(`${slugify(file.basename)}-${n}`);
+
+  for (const c of candidates) {
+    const path = normalizePath(`${dir}/${c}.md`);
+    if (reserved?.has(path)) continue;
+    const taken = app.vault.getAbstractFileByPath(path);
+    if (!taken) {
+      reserved?.add(path);
+      return path;
+    }
+  }
+  // 99 notes sharing a basename and a folder is not a real vault, but returning
+  // undefined here would be worse than one deterministic collision.
+  return normalizePath(`${dir}/${slugify(file.path)}.md`);
+}
+
+/** The card this note already has, by its recorded source. Null if none. */
+export function existingCardPath(app: App, notePath: string): string | null {
+  const prefix = `${wikiSourcesDir()}/`;
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(prefix)) continue;
+    if (app.metadataCache.getFileCache(f)?.frontmatter?.source === notePath) return f.path;
+  }
+  return null;
 }
 
 export function conceptPagePath(tag: string): string {
