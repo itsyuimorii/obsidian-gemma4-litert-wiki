@@ -642,10 +642,22 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   if (!vault.getAbstractFileByPath(logPath())) {
     await vault.create(logPath(), LOG_HEADER);
   }
-  // schema.md used to appear only after "Organize tags", so the rules the
-  // retag pass obeys were invisible until you went looking for them.
-  if (!vault.getAbstractFileByPath(schemaPath())) {
+  // schema.md is mixed ownership, and regeneration is what enforces the
+  // split: the five data slots (tags, naming, threshold, pending, rejected)
+  // ride through the parser untouched, everything around them is rebuilt from
+  // the current template. Deleted a callout? It is back next start. Edited
+  // your tags? Never overwritten. No stamp, no hash, no state — the parser
+  // itself is the definition of what is yours.
+  const schemaFile = vault.getAbstractFileByPath(schemaPath());
+  if (!schemaFile) {
     await vault.create(schemaPath(), buildSchemaFile([])).catch(() => {});
+  } else if (schemaFile instanceof TFile) {
+    const current = await vault.read(schemaFile).catch(() => null);
+    if (current !== null) {
+      const d = parseSchema(current);
+      const rebuilt = buildSchemaFile(d.tags, d.naming, d.conceptThreshold, d.pending, d.rejected);
+      if (rebuilt !== current) await vault.modify(schemaFile, rebuilt).catch(() => {});
+    }
   }
   // READMEs are the plugin's own documentation and are rewritten on every
   // start — each one says so in its first line. There used to be a stamp here
@@ -768,34 +780,43 @@ export function buildSchemaFile(
   const rejectedLines = rejected.length
     ? rejected.map((t) => `- ${slugify(t)}`).join('\n')
     : '(none)';
-  // One or two "> " lines of hint per section, then the data. This used to be
-  // ~70 lines of collapsed callouts around ~5 lines of config (issues #43,
-  // #50) — self-explanation taken to where the file stopped being usable. The
-  // flaw: "[!info]-" only collapses in reading view, and a file you edit by
-  // hand is open in source view, where every line of teaching is expanded and
-  // the one line that takes your tag is buried under ten explaining it.
+  // Docs as collapsed callouts, data in the open. In live preview — where
+  // people actually edit — a "[!info]-" renders as a one-line pill until
+  // clicked, so each section costs one line of chrome. (An earlier pass
+  // removed the callouts on the argument that source view unfolds them; that
+  // argument was wrong for live preview, which is the common case.)
   //
-  // Hints use "> " because the parser already ignores those lines everywhere
-  // (the threshold section drops them explicitly — keep digits out of hints
-  // regardless). The long-form guidance lives in the wiki README, which is
-  // regenerated and can afford to be long.
+  // The split that matters is ownership, and it is enforced by regeneration,
+  // not by a stamp: on every start the file is parsed and rebuilt from this
+  // template, so the callouts always match the running version — delete one
+  // and it is back next start — while the five data slots ride through the
+  // parse untouched. The parser ignores every "> " line, which is exactly why
+  // the docs may live in callouts (keep digits out of the threshold one).
   return (
     `# Wiki Schema\n\n` +
-    `Tag rules for ingest — plain markdown, read before every ingest, and it never changes without your approval. This file stays small on purpose; the full guide is in [[${_wikiDir}/README|the wiki README]].\n\n` +
+    `> [!info]- How this file works\n` +
+    `> The wiki's tag rules — plain markdown, read before every ingest. **The lists are yours; the explanations are the plugin's.** Edit tags freely and they are never overwritten; the callouts (this one included) are rewritten on every start, so deleting or editing them does not stick. Anything else you write in this file will not survive a restart either — your own notes belong in your own notes.\n` +
+    `>\n` +
+    `> Three ways it changes, all yours: edit by hand (read before every ingest) · **Organize tags** rebuilds the vocabulary from the tags in use · **Retag wiki pages** brings existing pages in line afterwards. Nothing changes without an approval of yours.\n\n` +
     `## Tags\n\n` +
-    `> Your vocabulary — one \`- tag\` per line, right below this hint. Ingest reuses these instead of coining synonyms. Build the list with **Organize tags**; edit by hand for precision.\n\n` +
+    `> [!info]- What goes here\n` +
+    `> Your vocabulary — **one \`- tag\` per line, right below this box.** Ingest reuses these instead of coining near-synonyms (\`llm-eval\` vs \`evals\`), which is what lets pages cluster into concept pages. Build the list with **Organize tags**; edit by hand when precision matters.\n\n` +
     `${tagLines}\n\n` +
     `## Naming\n\n` +
-    `> \`concept:\` steers how new tags are named. A nudge to a small model, not a guarantee.\n\n` +
+    `> [!info]- What this does\n` +
+    `> \`concept:\` is fed into the tag-naming prompt — a nudge to a small model, not a guarantee. File names are lower-cased and hyphenated mechanically no matter what this says.\n\n` +
     `${namingLines}\n\n` +
     `## Concept threshold\n\n` +
-    `> How many pages must share a tag before **Build a concept page** offers the cluster.\n\n` +
+    `> [!info]- What this does\n` +
+    `> How many pages must share a tag before **Build a concept page** offers the cluster. Leave it blank and it falls back to the default.\n\n` +
     `${conceptThreshold}\n\n` +
     `## Pending\n\n` +
-    `> New tags ingest coined, waiting on you. Move a line up into \`## Tags\` to keep it; delete it to reject; move it down to \`## Rejected\` to ban it. **Organize tags** clears the queue wholesale, behind a preview.\n\n` +
+    `> [!info]- How to clear these\n` +
+    `> New tags ingest coined, waiting on you. Move a line up into \`## Tags\` to keep it · delete it to reject it · move it down into \`## Rejected\` to ban it. **Organize tags** clears the queue wholesale, behind a preview. A tag waiting here already helps later ingests reuse it.\n\n` +
     `${pendingLines}\n\n` +
     `## Rejected\n\n` +
-    `> Your veto — never re-proposed, never applied, never queued. Deleting from \`## Tags\` alone lasts only until the next Organize; a line here is permanent.\n\n` +
+    `> [!info]- What this is\n` +
+    `> Your veto, and it outranks everything: never re-proposed, never applied, never queued. Deleting a tag from \`## Tags\` alone lasts only until the next Organize — a page still carrying it brings it back. A line here is permanent.\n\n` +
     `${rejectedLines}\n`
   );
 }
