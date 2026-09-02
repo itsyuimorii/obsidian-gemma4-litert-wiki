@@ -508,7 +508,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Folder | What lands here |` + `\n` +
       `> |---|---|` + `\n` +
       `> | \`cards/\` | **One summary card per note you ingest.** Your note is the source; the card is derived from it. |` + `\n` +
-      `> | \`answers/\` | Chat answers you kept. An inbox: read them, and promote the good ones into notes of your own with **Turn this answer into a note**. Not retrieved as grounding. |` + `\n` +
+      `> | \`answers/\` | Chat answers you kept. Kept to re-read, search and link by hand — never retrieved as grounding. |` + `\n` +
       `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |` + `\n` +
       `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
       `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
@@ -554,21 +554,13 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       // mattered — how to promote an answer — was the fifth line of a
       // paragraph titled "why bother saving".
       `> [!tip] This folder is an inbox\n` +
-      `> Answers wait here for a decision. Keep the ones worth re-reading, promote the ones worth building on, delete the rest — nothing here is load-bearing until you move it.\n\n` +
+      `> Answers wait here to be re-read: keep the useful ones, delete the rest. Nothing here is load-bearing — a saved answer is a record of what you asked and what came back, not part of what the wiki knows.\n\n` +
       `> [!info]- Why answers are not used as grounding\n` +
       `> Saved answers are yours to read, link and search by hand, but a later question never retrieves them. An answer is **output**, not material.\n` +
       `>\n` +
       `> When it was grounded, what it says already lives in the cards it came from — feeding it back adds a second, lossy copy that can drift from its own source. When it was not, it is the model's own knowledge. Either one, retrieved months later, would come back cited to a page in your own wiki and be indistinguishable from something you wrote.\n` +
       `>\n` +
       `> Everything the wiki *can* retrieve derives from a note you wrote. That is the whole rule.\n\n` +
-      `> [!check] Making an answer count — the exit from this folder\n` +
-      `> Open the answer and run **Turn this answer into a note** from the command palette.\n` +
-      `>\n` +
-      `> 1. You pick which of **your** folders it goes in — never this one.\n` +
-      `> 2. It is written as a note that records where it came from: that a model wrote it, from which saved answer, on what day, and which cards were read at the time.\n` +
-      `> 3. Ingest that note, and it becomes a card like any other.\n` +
-      `>\n` +
-      `> Selecting the text and pasting it yourself does the same job while losing step 2 — and step 2 is the only reason anyone will be able to tell, later, that a model wrote it.\n\n` +
       `> [!info] What a page holds\n` +
       `> | Part | Why it is kept |\n` +
       `> |---|---|\n` +
@@ -1330,53 +1322,11 @@ export function buildAnswerPage(
     (opts.titleLabel ? `> [!quote]- The exact prompt\n> ${question}\n\n` : '') +
     `${answer.trim()}\n\n` +
     `## Sources\n\n` +
-    `${sourceLines}\n\n` +
-    // answers/ is an inbox, and an inbox needs a visible exit. Saying it on
-    // the page is the only place it is in front of you at the moment the
-    // question ("do I want to keep this properly?") actually arises.
-    `> [!info]- Want this to count as material?\n` +
-    `> Answers are kept, not retrieved — nothing here grounds a later question.\n` +
-    `> Run **Turn this answer into a note** from the command palette with this file open.\n` +
-    `> It writes the text into a note of your own, recording where it came from, and the next ingest turns that note into a card the wiki can use.\n`
+    `${sourceLines}\n`
   );
 }
 
-/** True for a page in answers/ — the only pages the promote command acts on. */
-export function isAnswerPage(file: { path: string }): boolean {
-  return file.path.startsWith(`${wikiAnswersDir()}/`);
-}
 
-/**
- * The note a saved answer becomes when you promote it.
- *
- * Told to "put it in a note and ingest that", people copy and paste — which
- * silently destroys the one fact worth keeping, that a model wrote this. The
- * note records its own origin instead, so when ingest later turns it into a
- * card, the chain back to a chat on a given day survives.
- */
-export function buildPromotedNote(
-  title: string,
-  body: string,
-  opts: { fromPath: string; sources?: string[] } = { fromPath: '' }
-): string {
-  const date = new Date().toISOString().slice(0, 10);
-  const sourceLines = (opts.sources ?? []).length
-    ? `read_when_written:\n${(opts.sources ?? []).map((x) => `  - "${x.replace(/"/g, '')}"`).join('\n')}\n`
-    : '';
-  return (
-    `---\n` +
-    `origin: chat-answer\n` +
-    `promoted_from: "${opts.fromPath}"\n` +
-    sourceLines +
-    `created: ${date}\n` +
-    `---\n\n` +
-    `# ${title}\n\n` +
-    `> [!info]- Where this came from\n` +
-    `> Written by the local model in a chat on ${date}, then promoted into a note by you.\n` +
-    `> It is a note like any other now — edit it, and the wiki follows the edit.\n\n` +
-    `${body.trim()}\n`
-  );
-}
 
 // Which raw notes already have a wiki page: read the source frontmatter of
 // every page under wiki/. Used for the file-explorer badge and the chat

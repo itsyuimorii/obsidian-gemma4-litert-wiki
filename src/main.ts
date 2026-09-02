@@ -16,9 +16,7 @@ import {
   buildWikiPage,
   conceptPagePath,
   ensureSkillsScaffold,
-  buildPromotedNote,
   ensureWikiScaffold,
-  isAnswerPage,
   isWikiPage,
   wikiScaffoldPaths,
   indexPath,
@@ -293,31 +291,6 @@ class ConceptTagModal extends FuzzySuggestModal<TagCluster> {
   }
   onChooseItem(c: TagCluster): void {
     this.onPick(c);
-  }
-}
-
-// Where a promoted answer lands is the user's call, not the plugin's: the one
-// promise this whole thing rests on is that your notes stay where you keep
-// them. So it asks, rather than inventing a folder or borrowing the scan
-// setting for something it was not about.
-class FolderPickerModal extends FuzzySuggestModal<string> {
-  private folders: string[];
-  private onPick: (folder: string) => void;
-
-  constructor(app: App, folders: string[], onPick: (folder: string) => void) {
-    super(app);
-    this.folders = folders;
-    this.onPick = onPick;
-    this.setPlaceholder('Which of your folders should this note go in?');
-  }
-  getItems(): string[] {
-    return this.folders;
-  }
-  getItemText(f: string): string {
-    return f === '/' ? '(vault root)' : f;
-  }
-  onChooseItem(f: string): void {
-    this.onPick(f);
   }
 }
 
@@ -971,17 +944,6 @@ export default class LiteRtSpikePlugin extends Plugin {
               'and any related links pointing at them.'
           );
         }
-      },
-    });
-
-    this.addCommand({
-      id: 'litert-promote-answer',
-      name: 'Turn this answer into a note',
-      checkCallback: (checking: boolean) => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file || !isAnswerPage(file)) return false;
-        if (!checking) void this.promoteAnswerToNote(file);
-        return true;
       },
     });
 
@@ -2038,75 +2000,6 @@ export default class LiteRtSpikePlugin extends Plugin {
   // gate it behind the same preview as everything else. Convergent (given a
   // fixed member list, write one overview) rather than open multi-step
   // generation.
-  // The exit from answers/. Saved answers are kept but never retrieved, so
-  // this is how one becomes material: it goes into a note of YOURS, and the
-  // next ingest cards that note like any other.
-  //
-  // The alternative people actually do — select the text and paste it into a
-  // note — loses the only thing worth keeping, that a model wrote it. Written
-  // here, the note records its own origin, so the chain survives into the card.
-  async promoteAnswerToNote(answerFile: TFile) {
-    const raw = await this.app.vault.read(answerFile);
-    // Strip the answer page's own frontmatter and its trailing guidance
-    // callout; what is left is the text the user actually wants to keep.
-    const body = raw
-      .replace(/^---\n[\s\S]*?\n---\n+/, '')
-      .replace(/\n> \[!info\]- Want this to count as material\?[\s\S]*$/, '')
-      .trim();
-    const titleMatch = /^#\s+(.+)$/m.exec(body);
-    const title = titleMatch?.[1]?.trim() || answerFile.basename;
-    const withoutTitle = body.replace(/^#\s+.+$/m, '').trim();
-
-    const sources = Array.from(raw.matchAll(/^- \[\[([^\]|]+)\|([^\]]+)\]\]$/gm)).map((m) => m[2]);
-
-    // Every folder except the plugin's own — writing a promoted note back into
-    // the wiki layer would be the laundering this whole design closes.
-    const folders = this.app.vault
-      .getAllLoadedFiles()
-      .filter((f): f is TFolder => f instanceof TFolder)
-      .map((f) => f.path)
-      .filter((p) => p !== wikiDir() && !p.startsWith(`${wikiDir()}/`))
-      .sort((a, b) => a.localeCompare(b));
-
-    const folder = await new Promise<string | null>((resolve) => {
-      const modal = new FolderPickerModal(this.app, folders, (f) => resolve(f));
-      modal.onClose = () => setTimeout(() => resolve(null), 0);
-      modal.open();
-    });
-    if (!folder) return;
-
-    // Obsidian rejects these in a filename; the title keeps them in the H1.
-    const safe = title.replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
-    const dir = folder === '/' ? '' : `${folder}/`;
-    let notePath = `${dir}${safe || answerFile.basename}.md`;
-    // Never silently replace one of the user's own notes.
-    let n = 2;
-    while (this.app.vault.getAbstractFileByPath(notePath)) {
-      notePath = `${dir}${safe || answerFile.basename} ${n++}.md`;
-    }
-
-    const content = buildPromotedNote(title, withoutTitle, {
-      fromPath: answerFile.path,
-      sources,
-    });
-
-    new IngestPreviewModal(
-      this.app,
-      notePath,
-      content,
-      false,
-      () => {
-        void (async () => {
-          await this.app.vault.create(notePath, content);
-          const created = this.app.vault.getAbstractFileByPath(notePath);
-          if (created instanceof TFile) await this.app.workspace.getLeaf(true).openFile(created);
-          notify('done', `Wrote ${notePath}. Ingest it to make it part of the wiki.`);
-        })();
-      },
-      'Review the note before writing'
-    ).open();
-  }
-
   async createConceptPage() {
     // Concept threshold (issue #39): a tag only becomes a concept-page
     // candidate once at least this many pages share it. Read from schema.md
