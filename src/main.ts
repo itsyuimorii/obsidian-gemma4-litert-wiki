@@ -553,7 +553,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
     this.parked = { label, open };
     this.renderStatusBar();
-    notify('done', `${label} — click "${label}" in the status bar when you are ready.`, DURATION.NORMAL);
+    // The label goes in once. Interpolating it twice built the message out of
+    // itself — «"X" is drafted — review it — click ""X" is drafted — review
+    // it" in the status bar» — which read as a malfunction at the exact moment
+    // the plugin was trying to say where the result went.
+    notify('done', `${label} — click it in the status bar to review.`, DURATION.NORMAL);
   }
 
   /** Begin watching whether the user's attention leaves during a run. */
@@ -2449,7 +2453,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             this.refreshIngestBadges();
           })();
         });
-        this.presentResult(`"${file.basename}" is drafted — review it`, () => previewModal.open());
+        this.presentResult(`"${file.basename}" is drafted`, () => previewModal.open());
       } catch (err) {
         this.statusFail('Ingest', err);
       }
@@ -2691,7 +2695,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Drafting a batch takes minutes. If you went back to your notes while it
     // ran, this dialog waits on the status bar rather than jumping in front
     // of whatever you are typing.
-    const label = `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}`;
+    const label = `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready${capNote}`;
     this.presentResult(label, () => reviewModal.open());
   }
 
@@ -2895,7 +2899,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // A multi-pass rewrite is minutes of GPU time. Same rule as scan: if you
       // walked away, the preview waits on the status bar instead of taking the
       // window back.
-      this.presentResult(`"${file.basename}" is rewritten — review it`, () => previewModal.open());
+      this.presentResult(`"${file.basename}" is rewritten`, () => previewModal.open());
     } catch (err) {
       this.statusFail('Improve', err);
     }
