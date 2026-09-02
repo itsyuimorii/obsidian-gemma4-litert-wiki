@@ -1327,7 +1327,10 @@
 /* Shown only when a preview would replace an existing file. "Will overwrite"
    names the file; this names what is lost. */
 .gemma4-ingest-overwrite-warning {
-  margin-top: 8px;
+  /* The path line above already provides its own 10px, and the preview panel
+     below sets no top margin — so without this the warning sat flush against
+     the preview and read as its header rather than as a warning about it. */
+  margin: 0 0 10px;
   padding: 8px 10px;
   border-radius: 6px;
   font-size: var(--font-ui-smaller);
