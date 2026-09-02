@@ -306,12 +306,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   // What is running right now, if anything — the status bar's first duty.
   private runningText: string | null = null;
   // A finished run whose dialog is waiting for you to ask for it.
-  private parked: { label: string; open: () => void } | null = null;
   // How many notes the background count last found worth reviewing.
   private reviewCount = 0;
   // Did attention leave while the current run was going? Decides whether the
   // result opens itself or waits.
-  private userMovedOn = false;
   private chatBusy = false;
   private runStartedAt = 0;
   // The pinned toast for the running operation, and whether the user closed
@@ -500,12 +498,6 @@ export default class LiteRtSpikePlugin extends Plugin {
       el.show();
       return;
     }
-    if (this.parked) {
-      el.setText(`✅ ${this.parked.label}`);
-      el.setAttr('aria-label', `${this.parked.label} — click to open`);
-      el.show();
-      return;
-    }
     if (this.reviewCount > 0 && this.settings.autoScanEnabled) {
       el.setText(`📥 ${this.reviewCount} to review`);
       el.setAttr('aria-label', 'New or changed notes — click to scan and review');
@@ -521,48 +513,15 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.reopenRunNotice();
       return;
     }
-    const parked = this.parked;
-    if (parked) {
-      this.parked = null;
-      this.renderStatusBar();
-      parked.open();
-      return;
-    }
     void this.scanAndReviewIngest(
       this.settings.scanInclude.split(',').map((v) => v.trim()).filter(Boolean)
     );
   }
 
-  /**
-   * Show a result dialog — but only as an interruption if you are still here
-   * for it.
-   *
-   * A dialog that opens by itself minutes after you started something is an
-   * ambush: by then your attention has moved, and the first you hear of the
-   * whole operation is a modal stealing focus out of a note you were typing
-   * in. So if you did anything else while it ran, the dialog waits on the
-   * status bar instead and opens when you ask for it.
-   *
-   * If you never looked away, you are waiting on this, and making you click
-   * again would be its own small insult.
-   */
-  private presentResult(label: string, open: () => void) {
-    if (!this.userMovedOn) {
-      open();
-      return;
-    }
-    this.parked = { label, open };
-    this.renderStatusBar();
-    // The label goes in once. Interpolating it twice built the message out of
-    // itself — «"X" is drafted — review it — click ""X" is drafted — review
-    // it" in the status bar» — which read as a malfunction at the exact moment
-    // the plugin was trying to say where the result went.
-    notify('done', `${label} — click it in the status bar to review.`, DURATION.NORMAL);
-  }
+
 
   /** Begin watching whether the user's attention leaves during a run. */
   private beginRun() {
-    this.userMovedOn = false;
   }
 
   /** Report a thrown error through the status toast, in the house style. */
@@ -689,14 +648,6 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.scanStatusEl.hide();
     this.scanStatusEl.addEventListener('click', () => this.onStatusBarClick());
 
-    // "Did you look away?" — the signal that decides whether a finished run
-    // opens its dialog or waits for you. Switching notes or typing in one is
-    // the whole of it; a run you sat and watched fires neither.
-    const movedOn = () => {
-      if (this.runningText !== null) this.userMovedOn = true;
-    };
-    this.registerEvent(this.app.workspace.on('active-leaf-change', movedOn));
-    this.registerEvent(this.app.workspace.on('editor-change', movedOn));
     // Build the wiki folders on first load rather than on first write. Until
     // this ran, a freshly installed plugin had created nothing at all, so
     // there was no way to see what it was going to do with the vault — and
@@ -2453,7 +2404,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             this.refreshIngestBadges();
           })();
         });
-        this.presentResult(`"${file.basename}" is drafted`, () => previewModal.open());
+        previewModal.open();
       } catch (err) {
         this.statusFail('Ingest', err);
       }
@@ -2666,7 +2617,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       return;
     }
 
-    const capNote = cancelled ? ' — you stopped it, the rest is offered next scan' : '';
+    // The label this used to ride on is gone with the parking mechanism, but
+    // the fact is not: a stopped scan leaves notes undrafted, and you should
+    // hear that once rather than infer it from a shorter list than you expected.
+    if (cancelled) {
+      notify('info', 'You stopped the scan — the notes it had not reached are offered again next time.');
+    }
     const reviewModal = new AutoIngestReviewModal(this.app, drafts, failed, async (approved) => {
       if (!approved.length) return;
       await ensureWikiScaffold(this.app.vault);
@@ -2692,11 +2648,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       void this.refreshScanBadge();
       notify('done', `Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`);
     });
-    // Drafting a batch takes minutes. If you went back to your notes while it
-    // ran, this dialog waits on the status bar rather than jumping in front
-    // of whatever you are typing.
-    const label = `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready${capNote}`;
-    this.presentResult(label, () => reviewModal.open());
+    // Drafting a batch takes minutes, and this dialog opens wherever you are
+    // when it finishes. It used to park on the status bar if you had switched
+    // notes or typed while it ran — which asked you to sit and watch a
+    // multi-minute run to get the ordinary behaviour, and hid the result of
+    // exactly the run you were least likely to go looking for.
+    reviewModal.open();
   }
 
   // The one write operation that touches a raw note — and therefore the
@@ -2899,7 +2856,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // A multi-pass rewrite is minutes of GPU time. Same rule as scan: if you
       // walked away, the preview waits on the status bar instead of taking the
       // window back.
-      this.presentResult(`"${file.basename}" is rewritten`, () => previewModal.open());
+      previewModal.open();
     } catch (err) {
       this.statusFail('Improve', err);
     }
