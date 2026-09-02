@@ -309,8 +309,12 @@ export class ChatView extends ItemView {
     // are that move; they just look like decoration until something says so.
     if (!this.plugin.settings.hasChatted) {
       const nudge = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-nudge' });
+      // Name a chip that is actually on screen. This said "press Summarize"
+      // in both modes, and Wiki mode has no Summarize chip — a first-run hint
+      // pointing at a button that is not there is worse than no hint.
+      const first = suggestionsFor(this.mode)[0];
       nudge.appendText('New here? Press ');
-      nudge.createEl('b', { text: 'Summarize' });
+      nudge.createEl('b', { text: first?.label ?? 'a chip' });
       nudge.appendText(' below, or just ask a question.');
     }
   }

@@ -638,14 +638,18 @@ export default class LiteRtSpikePlugin extends Plugin {
           const pages = lost
             ? `${lost} page${lost === 1 ? '' : 's'} went with it. `
             : 'It was empty. ';
-          new Notice(
-            `⚠️ Deleted "${file.path}". ${pages}` +
+          // Through the shared vocabulary, and into log.md — this is exactly
+          // the notice worth a record, since the toast fades and the pages
+          // that went with the folder do not come back.
+          notifyAndLog(
+            this.app.vault,
+            'warn',
+            `Deleted "${file.path}". ${pages}` +
               'The folder comes back when Obsidian restarts, or from Settings → Repair folders — ' +
               (lost
                 ? 'the pages do not. Undo now with Cmd/Ctrl+Z, or restore them from Obsidian\'s ' +
                   'trash, then run "Reconcile wiki" if you decide to let them go.'
-                : 'nothing was lost.'),
-            lost ? 15000 : 7000
+                : 'nothing was lost.')
           );
         })();
       })
