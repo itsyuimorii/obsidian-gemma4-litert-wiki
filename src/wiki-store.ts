@@ -152,8 +152,7 @@ export function buildWikiPage(
     // nobody is standing when they decide to edit.
     `> [!info]- Generated card — edit the note, not this\n` +
     `> This is a summary of [[${sourceBasename}]], rebuilt from it each time you ingest.\n` +
-    `> **Changes made here are replaced on the next ingest.** To correct something,\n` +
-    `> edit the note; the review board will flag this card as drifted and offer to rebuild it.\n\n` +
+    `> **Changes made here are replaced on the next ingest.** To correct something, edit the note; the review board will flag this card as drifted and offer to rebuild it.\n\n` +
     `**Summary**: ${extraction.summary}\n\n` +
     `**Source**: [[${sourceBasename}]]\n\n` +
     `## Key points\n\n` +
@@ -330,7 +329,66 @@ export function wikiScaffoldPaths(): { path: string; what: string }[] {
 //
 // Excluded from every page enumeration by isWikiPage(), so documenting a folder
 // never costs you a phantom wiki page in lint or the review board.
+const SKILLS_README =
+  `# skills\n\n` +
+  `**Each \`.md\` file in this folder is a custom skill** — a one-shot prompt that appears in the ⚡ menu of the chat panel. Add a file, get a menu item; delete it, and it is gone. Same "config as a note" idea as \`schema.md\`: the rules live as plain notes you can read, edit and version, not as a hidden setting.\n\n` +
+  `> [!info] The file format\n` +
+  `> Frontmatter, then the prompt as ordinary markdown:\n` +
+  `>\n` +
+  `> \`\`\`\n` +
+  `> ---\n` +
+  `> name: Counter-argument\n` +
+  `> icon: scale\n` +
+  `> mode: note\n` +
+  `> ---\n` +
+  `>\n` +
+  `> Argue the strongest case against what this note claims.\n` +
+  `> \`\`\`\n` +
+  `>\n` +
+  `> | Key | Meaning |\n` +
+  `> |---|---|\n` +
+  `> | \`name\` | What shows in the menu. Defaults to the filename. |\n` +
+  `> | \`icon\` | Any Obsidian (Lucide) icon name. Defaults to \`wand-2\`. |\n` +
+  `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, the skill is **shown greyed unless the panel is already in that mode** — it will not switch you into it, because a menu item should not quietly change what the panel is grounded in. Leave it out and the skill runs in whichever mode you are in. |\n` +
+  `> | \`fill\` | Optional, \`true\`. Puts the prompt in the input box and waits instead of sending it — for a skill that has to be aimed at something. End the prompt with the blank and the cursor lands there. |\n` +
+  `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
+  `> [!info] The three that are not files\n` +
+  `> The ⚡ menu also holds **Quiz**, **Flashcards** and **Find gaps**, which ship inside the plugin rather than as files — so this folder will always show fewer things than the menu does. They cannot be edited or deleted; copy one into a file here if you want your own version of it.\n` +
+  `>\n` +
+  `> | | Asks |\n` +
+  `> |---|---|\n` +
+  `> | **Quiz** | Practice questions on the open note, answers included |\n` +
+  `> | **Flashcards** | Q/A pairs you can paste into a flashcard app |\n` +
+  `> | **Find gaps** | What the **topic** raises but never answers |\n` +
+  `>\n` +
+  `> All three are note-scoped, like everything shipped here: run against a whole wiki they retrieve nothing, because the words in a prompt like "create practice questions" match no page summary.\n\n` +
+  `> [!info] Documenting a skill\n` +
+  `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`unclear-bits.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
+      `>\n` +
+      `> The two files that ship here carry a \`stamp:\` line in their frontmatter. **Leave it alone and the plugin keeps the file current when a release improves it; edit anything in the file and it is yours, permanently.** Deleting the stamp opts out too.\n` +
+  `>\n` +
+  `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
+  `> [!info] Where the answer goes\n` +
+  `> Into the chat. Under every answer there is a save button — **you decide after reading whether it was worth keeping**, and a saved answer lands in \`answers/\` behind the usual preview.\n\n` +
+  `> [!info] What a skill is not\n` +
+  `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools. Calling it a skill is generous: it is a saved prompt with a menu entry, plus somewhere for the answer to land.\n` +
+  `>\n` +
+  `> Files named \`README\` (this one) are ignored.\n`;
+
+// Every README opens with the same line, because the rule is the same for all
+// of them and the only place it can be read at the moment it matters is the
+// file itself. The plugin used to stamp each one with a hash of its own text
+// and freeze it the moment you edited it — which meant an edited README stayed
+// frozen on whatever a release said the day you touched it, silently
+// describing behaviour the plugin no longer had, with nothing to tell you
+// which of the two states you were in. Generated documentation is build
+// output, the same as a card; one rule for both is one rule to remember.
+const README_PREAMBLE =
+  `> [!info] Generated file — your edits are replaced when Obsidian starts\n` +
+  `> The plugin owns every \`README\` in this folder and rewrites them on startup, so they always describe the version you are running. Nothing here is a setting. **Anything you want to keep belongs in a note of your own.**\n\n`;
+
 const FOLDER_READMES: Array<[() => string, string]> = [
+  [() => `${wikiSkillsDir()}/README.md`, SKILLS_README],
   [
     () => `${_wikiDir}/README.md`,
     `# ${_wikiDir}\n\n` +
@@ -496,28 +554,21 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       // mattered — how to promote an answer — was the fifth line of a
       // paragraph titled "why bother saving".
       `> [!tip] This folder is an inbox\n` +
-      `> Answers wait here for a decision. Keep the ones worth re-reading, promote the ones worth\n` +
-      `> building on, delete the rest — nothing here is load-bearing until you move it.\n\n` +
+      `> Answers wait here for a decision. Keep the ones worth re-reading, promote the ones worth building on, delete the rest — nothing here is load-bearing until you move it.\n\n` +
       `> [!info]- Why answers are not used as grounding\n` +
-      `> Saved answers are yours to read, link and search by hand, but a later question never\n` +
-      `> retrieves them. An answer is **output**, not material.\n` +
+      `> Saved answers are yours to read, link and search by hand, but a later question never retrieves them. An answer is **output**, not material.\n` +
       `>\n` +
-      `> When it was grounded, what it says already lives in the cards it came from — feeding it back\n` +
-      `> adds a second, lossy copy that can drift from its own source. When it was not, it is the\n` +
-      `> model's own knowledge. Either one, retrieved months later, would come back cited to a page in\n` +
-      `> your own wiki and be indistinguishable from something you wrote.\n` +
+      `> When it was grounded, what it says already lives in the cards it came from — feeding it back adds a second, lossy copy that can drift from its own source. When it was not, it is the model's own knowledge. Either one, retrieved months later, would come back cited to a page in your own wiki and be indistinguishable from something you wrote.\n` +
       `>\n` +
       `> Everything the wiki *can* retrieve derives from a note you wrote. That is the whole rule.\n\n` +
       `> [!check] Making an answer count — the exit from this folder\n` +
       `> Open the answer and run **Turn this answer into a note** from the command palette.\n` +
       `>\n` +
       `> 1. You pick which of **your** folders it goes in — never this one.\n` +
-      `> 2. It is written as a note that records where it came from: that a model wrote it, from which\n` +
-      `>    saved answer, on what day, and which cards were read at the time.\n` +
+      `> 2. It is written as a note that records where it came from: that a model wrote it, from which saved answer, on what day, and which cards were read at the time.\n` +
       `> 3. Ingest that note, and it becomes a card like any other.\n` +
       `>\n` +
-      `> Selecting the text and pasting it yourself does the same job while losing step 2 — and step 2\n` +
-      `> is the only reason anyone will be able to tell, later, that a model wrote it.\n\n` +
+      `> Selecting the text and pasting it yourself does the same job while losing step 2 — and step 2 is the only reason anyone will be able to tell, later, that a model wrote it.\n\n` +
       `> [!info] What a page holds\n` +
       `> | Part | Why it is kept |\n` +
       `> |---|---|\n` +
@@ -597,38 +648,23 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   // forever.
   for (const [pathOf, body] of FOLDER_READMES) {
     const path = normalizePath(pathOf());
+    const text = README_PREAMBLE + body;
     const existing = vault.getAbstractFileByPath(path);
     if (!existing) {
-      await vault.create(path, stampReadme(body)).catch(() => {});
+      await vault.create(path, text).catch(() => {});
       continue;
     }
     if (!(existing instanceof TFile)) continue;
+    // Compared, not stamped: writing only on a real difference keeps every
+    // start from touching five files for nothing, but the comparison is
+    // against the current default rather than against what we last wrote.
+    // There is no state for a vault to be in.
     const current = await vault.read(existing).catch(() => null);
-    if (current === null || !isUnmodifiedReadme(current)) continue;
-    if (stripReadmeStamp(current) === body) continue;
-    await vault.modify(existing, stampReadme(body)).catch(() => {});
+    if (current === text) continue;
+    await vault.modify(existing, text).catch(() => {});
   }
 }
 
-// The stamp is an HTML comment: invisible in reading view, harmless in source
-// view, and it survives round-tripping through Obsidian untouched.
-const README_STAMP = /\n?<!-- gemma-wiki: generated, edit freely — edits are never overwritten \(([0-9a-f]{8})\) -->\n?$/;
-
-function stampReadme(body: string): string {
-  return `${body}\n<!-- gemma-wiki: generated, edit freely — edits are never overwritten (${contentHash(body)}) -->\n`;
-}
-
-export function stripReadmeStamp(text: string): string {
-  return text.replace(README_STAMP, '');
-}
-
-// True only when the file still hashes to what the plugin wrote. Any edit,
-// including deleting the stamp, makes this false and the file is left alone.
-export function isUnmodifiedReadme(text: string): boolean {
-  const m = README_STAMP.exec(text);
-  if (!m) return false;
-  return contentHash(stripReadmeStamp(text)) === m[1];
-}
 
 export async function writeWikiPage(vault: Vault, pagePath: string, content: string): Promise<void> {
   await writeFile(vault, pagePath, content);
@@ -1004,51 +1040,6 @@ function buildSkillFile(
   return `---\nname: ${name}\nicon: ${icon}\n${modeLine}---\n\n${docBlock}${prompt}\n`;
 }
 
-const SKILLS_README =
-  `# skills\n\n` +
-  `**Each \`.md\` file in this folder is a custom skill** — a one-shot prompt that appears in the ⚡ menu of the chat panel. Add a file, get a menu item; delete it, and it is gone. Same "config as a note" idea as \`schema.md\`: the rules live as plain notes you can read, edit and version, not as a hidden setting.\n\n` +
-  `> [!info] The file format\n` +
-  `> Frontmatter, then the prompt as ordinary markdown:\n` +
-  `>\n` +
-  `> \`\`\`\n` +
-  `> ---\n` +
-  `> name: Counter-argument\n` +
-  `> icon: scale\n` +
-  `> mode: note\n` +
-  `> ---\n` +
-  `>\n` +
-  `> Argue the strongest case against what this note claims.\n` +
-  `> \`\`\`\n` +
-  `>\n` +
-  `> | Key | Meaning |\n` +
-  `> |---|---|\n` +
-  `> | \`name\` | What shows in the menu. Defaults to the filename. |\n` +
-  `> | \`icon\` | Any Obsidian (Lucide) icon name. Defaults to \`wand-2\`. |\n` +
-  `> | \`mode\` | Optional, \`note\` or \`wiki\`. If set, the skill is **shown greyed unless the panel is already in that mode** — it will not switch you into it, because a menu item should not quietly change what the panel is grounded in. Leave it out and the skill runs in whichever mode you are in. |\n` +
-  `> | \`fill\` | Optional, \`true\`. Puts the prompt in the input box and waits instead of sending it — for a skill that has to be aimed at something. End the prompt with the blank and the cursor lands there. |\n` +
-  `> | body | Everything after the closing \`---\` is the prompt. |\n\n` +
-  `> [!info] The three that are not files\n` +
-  `> The ⚡ menu also holds **Quiz**, **Flashcards** and **Find gaps**, which ship inside the plugin rather than as files — so this folder will always show fewer things than the menu does. They cannot be edited or deleted; copy one into a file here if you want your own version of it.\n` +
-  `>\n` +
-  `> | | Asks |\n` +
-  `> |---|---|\n` +
-  `> | **Quiz** | Practice questions on the open note, answers included |\n` +
-  `> | **Flashcards** | Q/A pairs you can paste into a flashcard app |\n` +
-  `> | **Find gaps** | What the **topic** raises but never answers |\n` +
-  `>\n` +
-  `> All three are note-scoped, like everything shipped here: run against a whole wiki they retrieve nothing, because the words in a prompt like "create practice questions" match no page summary.\n\n` +
-  `> [!info] Documenting a skill\n` +
-  `> A \`> [!info]\` callout anywhere in the body is **documentation, not prompt** — it is stripped before the model sees the file. That is how \`unclear-bits.md\` and \`action-items.md\` explain themselves without those words reaching Gemma.\n` +
-      `>\n` +
-      `> The two files that ship here carry a \`stamp:\` line in their frontmatter. **Leave it alone and the plugin keeps the file current when a release improves it; edit anything in the file and it is yours, permanently.** Deleting the stamp opts out too.\n` +
-  `>\n` +
-  `> Plain blockquotes are left alone, in case you want one inside a prompt.\n\n` +
-  `> [!info] Where the answer goes\n` +
-  `> Into the chat. Under every answer there is a save button — **you decide after reading whether it was worth keeping**, and a saved answer lands in \`answers/\` behind the usual preview.\n\n` +
-  `> [!info] What a skill is not\n` +
-  `> Each skill is **one structured ask** against the current chat context — the mode plus any attached notes. It is not a multi-step agent, and it cannot chain tools. Calling it a skill is generous: it is a saved prompt with a menu entry, plus somewhere for the answer to land.\n` +
-  `>\n` +
-  `> Files named \`README\` (this one) are ignored.\n`;
 
 // Seed the skills folder with a README and two example skills, the first time
 // the user asks for it. Never overwrites an existing file, so re-running is safe.
@@ -1058,7 +1049,6 @@ export async function ensureSkillsScaffold(vault: Vault): Promise<void> {
     await vault.createFolder(dir).catch(() => {});
   }
   const seeds: Array<[string, string]> = [
-    [`${wikiSkillsDir()}/README.md`, SKILLS_README],
     // Replaces feynman.md, which had no job of its own: its first half was
     // Summarize and its second was close to Find gaps. The real Feynman
     // technique is YOU explaining and noticing where you stumble, which needs
@@ -1347,8 +1337,7 @@ export function buildAnswerPage(
     `> [!info]- Want this to count as material?\n` +
     `> Answers are kept, not retrieved — nothing here grounds a later question.\n` +
     `> Run **Turn this answer into a note** from the command palette with this file open.\n` +
-    `> It writes the text into a note of your own, recording where it came from, and the next\n` +
-    `> ingest turns that note into a card the wiki can use.\n`
+    `> It writes the text into a note of your own, recording where it came from, and the next ingest turns that note into a card the wiki can use.\n`
   );
 }
 
