@@ -404,7 +404,7 @@ export class ChatView extends ItemView {
         // Index it too (issue #17) — without an index entry, Wiki-mode
         // retrieval and lint can never see the saved transcript, so it was
         // effectively write-only.
-        await upsertIndexEntry(this.app.vault, pagePath, firstQ.slice(0, 80), `Saved ${this.mode} chat: ${firstQ.slice(0, 100)}`);
+        // Deliberately not indexed: chats/ is an archive, not material.
         await appendLog(this.app.vault, 'chat', firstQ.slice(0, 60));
         notify('done', `Conversation saved: ${pagePath}`);
       })();
