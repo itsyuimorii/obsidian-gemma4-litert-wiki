@@ -403,7 +403,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | ${ICON_COPY} | Copy the answer as markdown. |` + `\n` +
       `> | ${ICON_REGEN} | Ask again from the same question. Useful when an answer starts well and drifts. |` + `\n` +
-      `> | ${ICON_SAVE_TO_WIKI} | Keep **this one answer** in \`answers/\`, to read and link later. It is not retrieved as grounding — see that folder's README. |` + `\n\n` +
+      `> | ${ICON_SAVE_TO_WIKI} | Keep **this one answer** in \`answers/\`. Not retrieved as grounding — but you can promote it into a note of your own from there. |` + `\n\n` +
       `> [!info] Around the input box` + `\n` +
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -450,7 +450,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | Folder | What lands here |` + `\n` +
       `> |---|---|` + `\n` +
       `> | \`cards/\` | **One summary card per note you ingest.** Your note is the source; the card is derived from it. |` + `\n` +
-      `> | \`answers/\` | Chat answers you chose to keep, via **Save to wiki**. Kept to read, not retrieved as grounding. |` + `\n` +
+      `> | \`answers/\` | Chat answers you kept. An inbox: read them, and promote the good ones into notes of your own with **Turn this answer into a note**. Not retrieved as grounding. |` + `\n` +
       `> | \`chats/\` | Whole conversations, saved from the panel header. An archive — retrieval never reads it back. |` + `\n` +
       `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
       `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
@@ -497,7 +497,10 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `>\n` +
       `> Saved here it is yours to read, link and search by hand — but it is **not** retrieved as grounding for later questions.\n` +
       `> An answer is output. When it was grounded, what it says already lives in the cards it came from; when it was not, it is the model's own knowledge. Feeding either back would make it indistinguishable from something you wrote.\n` +
-      `> **To make an answer count as material, put it in a note and ingest that.**\n\n` +
+      `> **To make an answer count as material:** open it and run **Turn this answer into a note**.\n` +
+      `> It writes the text into a folder of your own, recording that a model wrote it and when — which a\n` +
+      `> copy-paste would lose — and the next ingest turns that note into a card the wiki can use.\n` +
+      `> This folder is the inbox; that command is its exit.\n\n` +
       `> [!info] What a page holds\n` +
       `> | Part | Why it is kept |\n` +
       `> |---|---|\n` +
@@ -1286,11 +1289,11 @@ export function buildAnswerPage(
   opts: {
     /**
      * A rendering rather than a synthesis — a quiz, flashcards, a checklist.
-     * Karpathy's "explorations should compound" is about analyses and
-     * connections, which contain something new; a rendering contains the same
-     * knowledge in a different shape, so feeding it back to retrieval only
-     * hands the model a second copy of what it already has. Derived answers
-     * are saved but never retrieved.
+     * This used to decide whether an answer was retrieved; no answer is
+     * retrieved now, so it is a label on the page rather than a switch.
+     * It still earns its place: a rendering is the same knowledge in a
+     * different shape, so it is the kind of answer least worth promoting into
+     * a note of your own.
      */
     derived?: boolean;
     /** Short label for the title when the question is a canned prompt. */
@@ -1320,7 +1323,52 @@ export function buildAnswerPage(
     (opts.titleLabel ? `> [!quote]- The exact prompt\n> ${question}\n\n` : '') +
     `${answer.trim()}\n\n` +
     `## Sources\n\n` +
-    `${sourceLines}\n`
+    `${sourceLines}\n\n` +
+    // answers/ is an inbox, and an inbox needs a visible exit. Saying it on
+    // the page is the only place it is in front of you at the moment the
+    // question ("do I want to keep this properly?") actually arises.
+    `> [!info]- Want this to count as material?\n` +
+    `> Answers are kept, not retrieved — nothing here grounds a later question.\n` +
+    `> Run **Turn this answer into a note** from the command palette with this file open.\n` +
+    `> It writes the text into a note of your own, recording where it came from, and the next\n` +
+    `> ingest turns that note into a card the wiki can use.\n`
+  );
+}
+
+/** True for a page in answers/ — the only pages the promote command acts on. */
+export function isAnswerPage(file: { path: string }): boolean {
+  return file.path.startsWith(`${wikiAnswersDir()}/`);
+}
+
+/**
+ * The note a saved answer becomes when you promote it.
+ *
+ * Told to "put it in a note and ingest that", people copy and paste — which
+ * silently destroys the one fact worth keeping, that a model wrote this. The
+ * note records its own origin instead, so when ingest later turns it into a
+ * card, the chain back to a chat on a given day survives.
+ */
+export function buildPromotedNote(
+  title: string,
+  body: string,
+  opts: { fromPath: string; sources?: string[] } = { fromPath: '' }
+): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const sourceLines = (opts.sources ?? []).length
+    ? `read_when_written:\n${(opts.sources ?? []).map((x) => `  - "${x.replace(/"/g, '')}"`).join('\n')}\n`
+    : '';
+  return (
+    `---\n` +
+    `origin: chat-answer\n` +
+    `promoted_from: "${opts.fromPath}"\n` +
+    sourceLines +
+    `created: ${date}\n` +
+    `---\n\n` +
+    `# ${title}\n\n` +
+    `> [!info]- Where this came from\n` +
+    `> Written by the local model in a chat on ${date}, then promoted into a note by you.\n` +
+    `> It is a note like any other now — edit it, and the wiki follows the edit.\n\n` +
+    `${body.trim()}\n`
   );
 }
 
