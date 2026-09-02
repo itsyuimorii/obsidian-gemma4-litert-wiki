@@ -443,6 +443,25 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> **Improve formatting** is the only thing here that writes into a note of yours. It fixes headings, lists and spacing — **it does not rewrite your words**, and the rewritten note is shown to you in full before anything is saved.` + `\n` +
       `>` + `\n` +
       `> A long note is split on its own headings and done in several passes; you are told how many before it starts. Select a section first to aim it at just that part.` + `\n\n` +
+      `## schema.md — the tag rules` + `\n\n` +
+      `> [!info] The file is deliberately small` + `\n` +
+      `> You edit \`schema.md\` in source view, where collapsed explanations do not collapse — so the explanations live here instead, and the file itself is a dozen lines you can take in at a glance. Each section there carries a one-line hint saying what goes where.` + `\n\n` +
+      `> [!info] Three ways it changes, and all three are yours` + `\n` +
+      `> | | How | Good for |` + `\n` +
+      `> |---|---|---|` + `\n` +
+      `> | **By hand** | Edit \`schema.md\` and save — it is read before every ingest. | A tag or two, precisely |` + `\n` +
+      `> | **Organize tags** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → *Organize tags* | Rebuilding the vocabulary from the tags your pages actually use |` + `\n` +
+      `> | **Retag wiki pages** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → *Retag* | Bringing existing pages in line after the vocabulary changed |` + `\n` +
+      `>` + `\n` +
+      `> Editing affects **future** ingests only. Pages already written keep their tags until you run *Retag*, which shows every change before writing. Nothing in the file ever changes without an approval of yours.` + `\n\n` +
+      `> [!info] What each section holds` + `\n` +
+      `> | Section | What goes there |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | **Tags** | The vocabulary, one \`- tag\` per line. Ingest reuses these instead of coining near-synonyms (\`llm-eval\` vs \`evals\`), which is what lets pages cluster into concept pages. Expect the occasional odd borrow from a small model — curate by hand when precision matters. |` + `\n` +
+      `> | **Naming** | \`concept:\` is fed into the tag-naming prompt. A nudge, not a guarantee; file names are lower-cased and hyphenated mechanically either way. |` + `\n` +
+      `> | **Concept threshold** | How many pages must share a tag before **Build a concept page** offers the cluster. Blank falls back to 4. |` + `\n` +
+      `> | **Pending** | Tags ingest coined, waiting on you. Move a line up into Tags to keep it, delete it to reject it, move it into Rejected to ban it. A tag waiting here already helps later ingests reuse it. |` + `\n` +
+      `> | **Rejected** | The veto, and it outranks everything: never re-proposed, never applied, never queued. Deleting from Tags alone lasts until the next Organize — a page still carrying the tag brings it back. A line here is permanent. |` + `\n\n` +
       `## The chat panel` + `\n\n` +
       `> [!info] Every answer ends with its Sources` + `\n` +
       `> **The plugin lists what it put in the prompt. The model is never asked to cite anything.** Citation is exactly the thing a small local model would get wrong in a way nobody notices — an invented page name reads as well as a real one.` + `\n` +
@@ -461,7 +480,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> |---|---|` + `\n` +
       `> | ${ICON_COPY} | Copy the answer as markdown. |` + `\n` +
       `> | ${ICON_REGEN} | Ask again from the same question. Useful when an answer starts well and drifts. |` + `\n` +
-      `> | ${ICON_SAVE_TO_WIKI} | Keep **this one answer** in \`answers/\`. Not retrieved as grounding — but you can promote it into a note of your own from there. |` + `\n\n` +
+      `> | ${ICON_SAVE_TO_WIKI} | Keep **this one answer** in \`answers/\`. Not retrieved as grounding — to make it count, write it into a note of your own and ingest that. |` + `\n\n` +
       `> [!info] Around the input box` + `\n` +
       `> | Control | What it does |` + `\n` +
       `> |---|---|` + `\n` +
@@ -749,86 +768,34 @@ export function buildSchemaFile(
   const rejectedLines = rejected.length
     ? rejected.map((t) => `- ${slugify(t)}`).join('\n')
     : '(none)';
-  // Every section carries its own collapsed callout (issues #43, #50) so the
-  // rules explain themselves where you are looking, instead of in a preamble
-  // you scroll past. These MUST be emitted here rather than hand-added:
-  // queuePendingTags and Organize tags regenerate the whole file, so anything
-  // written by hand outside the parsed values is lost on the next ingest.
+  // One or two "> " lines of hint per section, then the data. This used to be
+  // ~70 lines of collapsed callouts around ~5 lines of config (issues #43,
+  // #50) — self-explanation taken to where the file stopped being usable. The
+  // flaw: "[!info]-" only collapses in reading view, and a file you edit by
+  // hand is open in source view, where every line of teaching is expanded and
+  // the one line that takes your tag is buried under ten explaining it.
   //
-  // Parser-safe by construction: every callout line starts with "> ". The Tags
-  // and Pending parsers read only "- " lines, Naming matches "key: value" at
-  // line start, and the threshold parser strips "> " lines before looking for
-  // its number — so no callout text can be mistaken for a value.
+  // Hints use "> " because the parser already ignores those lines everywhere
+  // (the threshold section drops them explicitly — keep digits out of hints
+  // regardless). The long-form guidance lives in the wiki README, which is
+  // regenerated and can afford to be long.
   return (
     `# Wiki Schema\n\n` +
-    `This file is the wiki's own configuration — what Andrej Karpathy calls "config as a note".\n` +
-    `It is plain markdown you can read and edit by hand, and the plugin parses it before every\n` +
-    `ingest. Keeping the rules as a note (not a hidden setting) means they version with your wiki,\n` +
-    `stay visible, and follow the same "everything is a file you can open" idea as the rest of the\n` +
-    `wiki. Each section below explains itself — click a ▸ to expand it.\n\n` +
-    `## How this file changes\n\n` +
-    `> [!info] Three ways, and all three are yours\n` +
-    `> A note cannot hold a button, so nothing here is clickable. These are the exact ways in:\n` +
-    `>\n` +
-    `> | | How | Good for |\n` +
-    `> |---|---|---|\n` +
-    `> | **By hand** | Edit this file and save. The plugin reads it before every ingest. | A tag or two, precisely |\n` +
-    `> | **Organize tags** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → type *Organize tags*. Also Settings → Schema. | Rebuilding the vocabulary from the tags your pages actually use |\n` +
-    `> | **Retag wiki pages to vocabulary** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → type *Retag* | Bringing pages you already have in line after the vocabulary changed |\n` +
-    `>\n` +
-    `> **Editing this file affects future ingests only.** Pages already written keep their tags until you run *Retag*, which shows every change before writing.\n` +
-    `>\n` +
-    `> Nothing here ever changes on its own — a rebuild still ends in a preview you approve.\n\n` +
+    `Tag rules for ingest — plain markdown, read before every ingest, and it never changes without your approval. This file stays small on purpose; the full guide is in [[${_wikiDir}/README|the wiki README]].\n\n` +
     `## Tags\n\n` +
-    `> [!info]- What this is\n` +
-    `> Your controlled vocabulary. On ingest the model reuses these exact tags instead of coining\n` +
-    `> synonyms (\`llm-eval\` vs \`llm-evaluation\` vs \`evals\`), so pages that belong together share one\n` +
-    `> tag — and can then reach the concept-page threshold below.\n` +
-    `> You do **not** hand-write this list: run **Organize tags** (<kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>, type *Organize tags*)\n` +
-    `> and the model builds it from the tags your ingested notes already produced. You review the\n` +
-    `> result before anything is written. One tag per line.\n` +
-    `> Tags are model-suggested, so expect the occasional odd borrow — a tag coined in one domain\n` +
-    `> reused in another (coffee's \`extraction\` on a data note). When precision matters, curate by\n` +
-    `> hand: promote the tags you want from **Pending** below instead of relying on Organize alone.\n` +
-    `> Editing it affects **future** ingests only. To bring already-written pages in line after the\n` +
-    `> vocabulary changes, run **Retag wiki pages to vocabulary** — it shows every change first.\n\n` +
+    `> Your vocabulary — one \`- tag\` per line, right below this hint. Ingest reuses these instead of coining synonyms. Build the list with **Organize tags**; edit by hand for precision.\n\n` +
     `${tagLines}\n\n` +
     `## Naming\n\n` +
-    `> [!info]- What this does\n` +
-    `> The \`concept:\` line is fed into the tag-naming prompt, so editing it changes how new tags are\n` +
-    `> named (e.g. asking for a singular noun). It is guidance, not a guarantee — the local model is\n` +
-    `> small, so treat it as a nudge.\n` +
-    `> File and page names are lower-case and hyphenated no matter what this says: that part is done\n` +
-    `> mechanically, not by the model.\n\n` +
+    `> \`concept:\` steers how new tags are named. A nudge to a small model, not a guarantee.\n\n` +
     `${namingLines}\n\n` +
     `## Concept threshold\n\n` +
-    `> [!info]- What this does\n` +
-    `> When this many pages share a tag — or share a mention — **Build a concept page** offers that\n` +
-    `> cluster as a candidate. Raise it to be shown only well-established clusters, lower it to see\n` +
-    `> thin ones. Leave the value blank and it falls back to ${DEFAULT_CONCEPT_THRESHOLD}.\n\n` +
+    `> How many pages must share a tag before **Build a concept page** offers the cluster.\n\n` +
     `${conceptThreshold}\n\n` +
     `## Pending\n\n` +
-    `> [!info]- How to clear these\n` +
-    `> New tags ingest used that aren't in your vocabulary yet. Ingest also reads this list, so a tag\n` +
-    `> waiting here already helps later notes reuse it instead of coining a near-duplicate.\n` +
-    `> Two ways to clear them, and **both are your approval**:\n` +
-    `> - **By hand** (retail) — cut a line up into \`## Tags\` to keep it; delete the line to reject it.\n` +
-    `>   Precise, good for a few tags.\n` +
-    `> - **Organize tags** (wholesale, <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>) — rebuilds the vocabulary from the tags currently in use, merges\n` +
-    `>   near-synonyms, and clears this list. You approve the result in a preview first.\n` +
-    `> "The vocabulary never changes on its own" means exactly that: no action of yours — a hand-edit,\n` +
-    `> or the command plus **Approve** — no change. Approving the preview *is* your approval, just\n` +
-    `> wholesale instead of retail.\n` +
-    `> Either way it takes effect for **future** ingests; pages you already have are never touched.\n\n` +
+    `> New tags ingest coined, waiting on you. Move a line up into \`## Tags\` to keep it; delete it to reject; move it down to \`## Rejected\` to ban it. **Organize tags** clears the queue wholesale, behind a preview.\n\n` +
     `${pendingLines}\n\n` +
     `## Rejected\n\n` +
-    `> [!info]- What this is\n` +
-    `> Tags you've banned — your veto, and it outranks everything: **Organize tags** will never\n` +
-    `> re-propose one, ingest will never apply one, and Pending will never queue one.\n` +
-    `> Deleting a tag from \`## Tags\` alone only lasts until the next Organize, because rebuilds\n` +
-    `> read the tags still in use on your pages — a page still carrying it brings it back. Moving\n` +
-    `> the line HERE instead makes the removal permanent. (To clear a banned tag off pages you\n` +
-    `> already have, run **Retag wiki pages to vocabulary** — <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd>, type *Retag*.)\n\n` +
+    `> Your veto — never re-proposed, never applied, never queued. Deleting from \`## Tags\` alone lasts only until the next Organize; a line here is permanent.\n\n` +
     `${rejectedLines}\n`
   );
 }
