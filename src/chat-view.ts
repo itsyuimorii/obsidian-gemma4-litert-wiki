@@ -301,6 +301,17 @@ export class ChatView extends ItemView {
       cls: 'gemma4-chat-empty-hint',
       text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine.',
     });
+
+    // Until the first message is sent, point at the chips. Someone opening this
+    // for the first time is not short of explanation — there is a setup card, a
+    // tooltip and a README — they are short of a first move. The chips already
+    // are that move; they just look like decoration until something says so.
+    if (!this.plugin.settings.hasChatted) {
+      const nudge = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-nudge' });
+      nudge.appendText('New here? Press ');
+      nudge.createEl('b', { text: 'Summarize' });
+      nudge.appendText(' below, or just ask a question.');
+    }
   }
 
   // Suggestion chips live above the input, permanently — they used to sit
@@ -869,6 +880,12 @@ export class ChatView extends ItemView {
     if (typed) this.inputEl.value = '';
     this.autoGrowInput();
     this.lastQuestion = question;
+    // One message is enough: the nudge has done its job and should not come
+    // back on the next empty panel.
+    if (!this.plugin.settings.hasChatted) {
+      this.plugin.settings.hasChatted = true;
+      void this.plugin.saveSettings();
+    }
     this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
     await this.runGeneration(question, false, opts.wholeWiki ?? false);
