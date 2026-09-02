@@ -28,7 +28,6 @@ import {
   readLogTail,
   readSkills,
   scoreEntries,
-  upsertIndexEntry,
   writeWikiPage,
   type ChatTurnRecord,
 } from './wiki-store';
@@ -857,13 +856,14 @@ export class ChatView extends ItemView {
         sourceHashes: Object.keys(readHashes).length ? readHashes : undefined,
       });
       const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
-      const indexTitle = skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : question;
       new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
         void (async () => {
           await ensureWikiScaffold(this.app.vault);
           await writeWikiPage(this.app.vault, pagePath, pageContent);
-          const summary = answer.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 140) ?? question;
-          await upsertIndexEntry(this.app.vault, pagePath, indexTitle, summary);
+          // Deliberately NOT indexed. The query path reads index.md to decide
+          // which pages to open, so an entry here is what makes a page count as
+          // your material — and an answer is not material, it is output. Keep
+          // it, read it, link it; it just does not come back as grounding.
           await appendLog(this.app.vault, 'answer', question);
           notify('done', `Saved to wiki: ${pagePath}`);
         })();
