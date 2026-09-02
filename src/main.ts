@@ -2695,7 +2695,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Drafting a batch takes minutes. If you went back to your notes while it
     // ran, this dialog waits on the status bar rather than jumping in front
     // of whatever you are typing.
-    const label = `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review${capNote}`;
+    const label = `${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready${capNote}`;
     this.presentResult(label, () => reviewModal.open());
   }
 
