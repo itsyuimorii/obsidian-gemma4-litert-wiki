@@ -2,10 +2,12 @@
   "name": "litert-spike",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "node build.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:release": "node scripts/check-release.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
