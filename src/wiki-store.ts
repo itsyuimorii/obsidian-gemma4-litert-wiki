@@ -628,16 +628,11 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   if (!vault.getAbstractFileByPath(schemaPath())) {
     await vault.create(schemaPath(), buildSchemaFile([])).catch(() => {});
   }
-  // These READMEs are documentation the plugin maintains, not user content —
-  // when a release explains a feature better, an existing vault should get the
-  // better text instead of being frozen on whatever shipped the day it was
-  // created. But an edited README is the user's, and silently reverting it
-  // would be the worst thing this function could do.
-  //
-  // So each generated file carries a stamp of its own text. On startup: no
-  // file, write it. Stamp still matches the body, nobody has touched it, safe
-  // to refresh. Stamp missing or stale, the user edited it — leave it alone,
-  // forever.
+  // READMEs are the plugin's own documentation and are rewritten on every
+  // start — each one says so in its first line. There used to be a stamp here
+  // that froze a README forever the moment it was edited; that left stale
+  // documentation in the vault with nothing marking it stale, and it made a
+  // second rule where the card already set one: build output gets rebuilt.
   for (const [pathOf, body] of FOLDER_READMES) {
     const path = normalizePath(pathOf());
     const text = README_PREAMBLE + body;
