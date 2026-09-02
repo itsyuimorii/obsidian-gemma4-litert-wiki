@@ -268,7 +268,13 @@ const LOG_HEADER =
  * to exclude themselves.
  */
 function pageDirs(): string[] {
-  return [wikiSourcesDir(), wikiAnswersDir(), wikiChatsDir(), wikiConceptsDir()];
+  // chats/ is NOT here. It is an archive — three separate places in these
+  // generated docs already say "retrieval never reads it back" — but the code
+  // was indexing it, so whole transcripts were being retrieved as trusted
+  // material: every wrong turn, every "I don't have information", fed back as
+  // if it were a page. Worse than a bad saved answer, which at least passed a
+  // review gate first.
+  return [wikiSourcesDir(), wikiAnswersDir(), wikiConceptsDir()];
 }
 
 export function isWikiPage(file: { path: string; basename: string }): boolean {
@@ -309,6 +315,15 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> Click ${ICON_BRAND} in the ribbon down the left edge of the window to open the chat panel. That is where you ask about a note or about the whole wiki, run a skill, and save an answer back here.` + `\n` +
       `>` + `\n` +
       `> Everything else is a command: press <kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd> and type *Gemma Wiki*.` + `\n\n` +
+      `> [!info] Your notes stay where they are` + `\n` +
+      `> **You do not reorganise anything to use this.** Your notes are the first layer already — wherever they live, whatever the folders are called. Nothing has to move.` + `\n` +
+      `>` + `\n` +
+      `> | To file | Do this |` + `\n` +
+      `> |---|---|` + `\n` +
+      `> | One note | Open it → the **Ingest this note into wiki** chip, or <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> |` + `\n` +
+      `> | A batch | **Scan a folder into the wiki** — it lists every folder with a count and you tick the ones you want |` + `\n` +
+      `>` + `\n` +
+      `> Web-clipped articles work the same way, and clipper boilerplate — *Subscribe*, *Share this*, cookie banners, nav link runs — is stripped before the model reads it, so the card is about the article. If you use **Obsidian Web Clipper**, giving it one landing folder (*Templates → your template → Note location*) is worth doing for your own sake: clips arrive in one place, so scanning them is one tick instead of hunting. **The plugin does not care which folder that is, or whether you have one.**` + `\n\n` +
       `> [!info] Before it can answer anything` + `\n` +
       `> The model is downloaded once — about 3 GB — and cached. It is not bundled with the plugin, so the first question you ask (or **Settings → Download model**) starts the download; you can keep working while it runs, and it resumes if interrupted.` + `\n` +
       `>` + `\n` +
@@ -441,7 +456,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] What the frontmatter does\n` +
       `> | Field | What it does |\n` +
       `> |---|---|\n` +
-      `> | \`source\` | The raw note this card was made from. |\n` +
+      `> | \`source\` | The note this card was made from, wherever it lives in your vault. |\n` +
       `> | \`source_hash\` | What that note looked like at the time. **This is how drift is caught** — edit the note and the review board reports this card as out of date. |\n` +
       `> | \`confidence\` | \`high\`, \`med\` or \`low\`, written by the model about its own extraction. Anything below \`high\` lands on the review board. |\n` +
       `> | \`tags\` | One to three topics, drawn from the vocabulary in \`schema.md\`. |\n\n` +
@@ -467,7 +482,11 @@ const FOLDER_READMES: Array<[() => string, string]> = [
   [
     () => `${wikiChatsDir()}/README.md`,
     `# chats\n\n` +
-      `**Whole conversations, saved from the header of the chat panel.** This is an archive, not working material — the query path never reads these files back. They are here so a thread you want to keep does not depend on the panel staying open.\n\n` +
+      `**Whole conversations, saved from the header of the chat panel.** An archive, not working material: these files are **not indexed and never retrieved**. They are here so a thread you want to keep does not depend on the panel staying open.\n\n` +
+      `> [!info] Why an archive and not material\n` +
+      `> A transcript is the whole run — the wrong turns, the refusals, the question you rephrased three times. Feeding that back would put the model's worst moments into its own context as trusted material, and unlike a saved answer nothing here passed a review gate.\n` +
+      `>\n` +
+      `> **Want part of a thread to count?** Save that one answer instead — the ${ICON_SAVE_TO_WIKI} button under it puts it in \`answers/\`, which *is* retrieved.\n\n` +
       `> [!info] What a page holds\n` +
       `> Dataview-friendly frontmatter, then the thread as question and answer blocks, each with the sources that were used.\n\n` +
       `> [!info] chats/ or answers/?\n` +
