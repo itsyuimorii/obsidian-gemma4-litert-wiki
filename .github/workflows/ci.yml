@@ -20,3 +20,5 @@ jobs:
         run: npm run build
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
+      - name: Release requirements (manifest, versions.json, LICENSE)
+        run: npm run check:release
