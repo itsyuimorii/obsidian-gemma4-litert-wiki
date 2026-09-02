@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 10 · Skills — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 10 — Skills</div>
+    <div class="txt">Five entries in a menu, and two of them are files you can edit.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('filed', 'litert'),
+    editor: `<h1>litert on device</h1>
+<p>First call is slow and it is <em>not</em> the weights loading. It is shader compilation. Measured
+28.1 s to first token on a 2098-token input, cold.</p>
+<p>Once warm, prefill jumps roughly 5-6× — 495 tok/s against 74.7 cold. Decode stays flat at about
+29 tok/s. Context is 4096 tokens.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+GemmaDemo.init([
+    { do: () => {
+        OB.openRight(GW.panel('litert on device', 'note', { filed: true }));
+        beat('The chip row holds actions. The ⚡ menu holds <i>questions</i> — the ones you ask often enough that typing them again is a waste.');
+    }},
+
+    { lock: 900, do: () => {
+        $('#btnSkills').classList.add('lit');
+        OB.menu(GW.skillMenu());
+        beat(null);
+    }},
+
+    { lock: 1300, do: () => {
+        beat('Five entries. The rule splits them: <b>Quiz</b>, <b>Flashcards</b> and <b>Find gaps</b> ship inside the plugin. <b>Action items</b> and <b>Unclear bits</b> are <code>.md</code> files sitting in <code>gemma-wiki/skills/</code> — seeds, written so you can open one and see the shape.');
+    }},
+
+    { lock: 1400, do: () => {
+        $$('.ob-menu .mi')[4].classList.add('hot');
+        beat('Because a skill file is not a plugin API. It is frontmatter and a prompt. Drop a markdown file in that folder and it is in this menu the next time you open it — no reload, no manifest, no registration.');
+    }},
+
+    { lock: 1500, do: () => {
+        OB.closeMenu();
+        OB.openFile('unclear-bits.md', `
+<p class="fmtext">---
+label: Unclear bits
+icon: circle-help
+mode: note
+---</p>
+<p>Which parts of this material are ambiguous, underspecified, or could be read two different ways?
+Quote the exact sentence, then say what the two readings are.</p>`, { rowId: 'gw-skills' });
+        beat('That is the entire file. A label, an icon, which mode it belongs to — and then the prompt, which is the part that does the work.');
+    }},
+
+    { lock: 1600, do: () => {
+        beat('<code>mode: note</code> matters more than it looks. Run these three against the wiki and they retrieve <b>nothing</b>: the scorer matches question words against page summaries, and "create practice questions from this material" shares no vocabulary with a page about compound interest.');
+    }},
+
+    { lock: 1500, do: () => {
+        OB.openFile('litert on device', `<h1>litert on device</h1>
+<p>First call is slow and it is <em>not</em> the weights loading. It is shader compilation. Measured
+28.1 s to first token on a 2098-token input, cold.</p>`, { rowId: 'litert' });
+        $('#modeNote').classList.remove('on');
+        $('#modeWiki').classList.add('on');
+        OB.menu(GW.skillMenu({ wrongMode: true }));
+        beat('So in Wiki mode they show <b>greyed, with the reason attached</b>. A menu that silently changes length teaches you nothing; a greyed row that says <i>switch to This note</i> teaches you where they work.');
+    }},
+
+    { lock: 1600, do: () => {
+        $('#modeWiki').classList.remove('on');
+        $('#modeNote').classList.add('on');
+        OB.menu(GW.skillMenu());
+        beat('An earlier version switched you into the right mode on click. That is a menu item quietly changing what the panel is grounded in — you pressed Flashcards and landed somewhere else, with nothing saying so.');
+    }},
+
+    { lock: 1200, do: () => {
+        $$('.ob-menu .mi')[1].classList.add('hot');
+    }},
+
+    { lock: 1300, do: () => {
+        OB.closeMenu();
+        $('#btnSkills').classList.remove('lit');
+        $('#messages').innerHTML = `<div class="gw-msg user">Flashcards</div>` + GW.thinking();
+    }},
+
+    { lock: 2600, do: () => {
+        const el = $('#ans');
+        typeHTML(el,
+            '<b>Q:</b> What actually causes the 28.1 s cold start?<br>' +
+            '<b>A:</b> Shader compilation — building the GPU pipeline for the shapes the model uses. Not weight loading.<br><br>' +
+            '<b>Q:</b> How much does warming up improve prefill?<br>' +
+            '<b>A:</b> Roughly 5-6× — 495 tok/s warm against 74.7 cold.<br><br>' +
+            '<b>Q:</b> Does decode speed change with input length?<br>' +
+            '<b>A:</b> No. It stays flat at about 29 tok/s, warm or cold.<br><br>' +
+            '<b>Q:</b> What is the context window, and why does it matter?<br>' +
+            '<b>A:</b> 4096 tokens — it bounds every other budget, including how much of a note can be rewritten in one pass.',
+            { speed: 8, jitter: 5 });
+    }},
+
+    { do: () => {
+        GemmaDemo.afterTyped('#ans', () =>
+            $('#ans').insertAdjacentHTML('beforeend',
+                GW.sources(['litert on device']) + GW.actions({ saveLabel: 'Save to wiki' })));
+        beat('Grounded like any other answer, sourced like any other answer. A skill is a saved prompt — <b>it gets no special powers, only a shorter path</b>.');
+    }},
+]);
+
+</script>
+</body>
+</html>

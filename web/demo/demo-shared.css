@@ -328,6 +328,15 @@ body, html {
 .gw-msg ul { margin: 6px 0 0 16px; }
 .gw-msg li { margin-bottom: 3px; }
 
+/* A single thin ring, shadcn-style — quieter than bouncing dots. */
+.gw-spinner {
+    display: block; width: 15px; height: 15px; border-radius: 50%;
+    border: 1.8px solid var(--background-modifier-border);
+    border-top-color: var(--text-muted-ob);
+    animation: gwspin 0.75s linear infinite;
+}
+@keyframes gwspin { to { transform: rotate(360deg); } }
+
 /* The deterministic Sources row: listed by the plugin, never cited by the model. */
 .gw-sources {
     margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--background-modifier-border);
@@ -353,14 +362,26 @@ body, html {
 .gw-msg-actions .a svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 .gw-msg-actions .a.lit { color: var(--background-primary); background: var(--text-normal); border-color: var(--text-normal); }
 
+/* The open note is already filed — a tick on the chip, the same signal as the
+   badge in the file explorer. */
+.gw-chip-check { display: inline-flex; margin-left: 5px; }
+.gw-chip-check svg { width: 11px; height: 11px; stroke: var(--energy-dark); fill: none; stroke-width: 2.4; }
+
 /* Starter chips: Summarize / Key points / Formatting. */
 .gw-suggestions { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 14px 10px; }
 .gw-chip {
+    display: inline-flex; align-items: center; gap: 6px;
     font-size: 12px; color: var(--text-normal);
     background: var(--background-secondary); border-radius: 999px; padding: 5px 12px;
 }
-/* Formatting writes to your note, so it never looks like the two that only read. */
-.gw-chip.write { background: transparent; border: 1px solid var(--background-modifier-border); }
+/* A chip that DOES carries a glyph. Same pill, same text colour — the icon is
+   the whole signal, because a border at this size reads as a font change. */
+.gw-chip.write svg { width: 12px; height: 12px; flex: 0 0 auto; opacity: 0.75; stroke: currentColor; fill: none; stroke-width: 1.8; }
+/* While a scan runs, its chip is the stop control. */
+.gw-chip.stop svg { fill: currentColor; opacity: 0.9; }
+/* Something else is spending the engine: take the button away rather than let
+   it be pressed and refuse. */
+.gw-chip.off { opacity: 0.4; }
 
 /* Composer: the textarea is its own box and the toolbar sits below it, not
    wrapped together in one card. */
@@ -406,19 +427,87 @@ body, html {
     border-top: 1px solid var(--background-modifier-border);
     font-size: 11px; color: var(--text-faint);
 }
-.ob-chip {
-    display: inline-flex; align-items: center; gap: 6px;
+/* The one status-bar slot, and its three claimants. It is clickable in all
+   three states, because in all three there is something behind it to come
+   back to — the dismissed toast, the parked result, the notes to review. */
+.ob-status-run {
+    margin-right: auto; display: inline-flex; align-items: center; gap: 7px;
+    font-variant-numeric: tabular-nums;
     color: var(--text-muted-ob); border-radius: 5px; padding: 2px 8px;
-    transition: all 0.3s ease;
+    transition: color 0.3s ease, background 0.3s ease;
+    cursor: default;
 }
-.ob-chip.hidden { opacity: 0; }
-.ob-chip.lit { color: var(--energy-dark); background: var(--energy-soft); }
-.ob-chip .d { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-/* The status line the plugin occupies while the model runs. */
-.ob-status-run { margin-right: auto; display: flex; align-items: center; gap: 7px; color: var(--text-muted-ob); }
 .ob-status-run.hidden { display: none; }
-.ob-status-run .d { width: 5px; height: 5px; border-radius: 50%; background: var(--energy-core); box-shadow: 0 0 7px var(--energy-glow); animation: pulse 1s infinite ease-in-out; }
+.ob-status-run.parked { color: var(--energy-dark); background: var(--energy-soft); }
+.ob-status-run.review { color: var(--text-accent); background: var(--tag-bg); }
 @keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+/* ---------- Obsidian's dropdown (the zap button opens one) ---------- */
+.ob-menu {
+    position: absolute; z-index: 70; min-width: 214px;
+    padding: 5px; border-radius: 9px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    box-shadow: 0 18px 40px -12px rgba(16, 24, 40, 0.4);
+    animation: menuIn 0.18s cubic-bezier(.2,1,.3,1) both;
+}
+.ob-menu.hidden { display: none; }
+@keyframes menuIn { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+.ob-menu .mi {
+    display: flex; align-items: center; gap: 9px;
+    padding: 6px 9px; border-radius: 6px;
+    font-size: 12.6px; color: var(--text-normal);
+}
+.ob-menu .mi svg { width: 14px; height: 14px; stroke: var(--text-muted-ob); fill: none; stroke-width: 1.8; flex-shrink: 0; }
+.ob-menu .mi .noic { width: 14px; flex-shrink: 0; }
+.ob-menu .mi .l { flex: 1; min-width: 0; }
+/* A skill in the wrong mode shows greyed WITH its reason, rather than
+   vanishing — a menu that silently changes length teaches nothing. */
+.ob-menu .mi.off { color: var(--text-faint); }
+.ob-menu .mi.off svg { stroke: var(--text-faint); }
+.ob-menu .mi .n { font-size: 10.5px; color: var(--text-faint); flex-shrink: 0; }
+.ob-menu .mi.hot { background: var(--background-modifier-hover); }
+.ob-menu .sep { height: 1px; margin: 5px 7px; background: var(--background-modifier-border); }
+
+/* The per-answer escape hatch: retrieval found nothing, so offer the one
+   thing the wiki cannot give — and label what it costs. */
+.gw-hatch { margin-top: 10px; }
+.gw-hatch .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--text-muted-ob);
+    border: 1px dashed var(--background-modifier-border); border-radius: 7px; padding: 6px 11px;
+}
+.gw-hatch .btn svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.gw-hatch .btn.lit { color: var(--text-accent); border-color: rgba(123,108,217,0.5); border-style: solid; }
+/* An ungrounded answer gets a warning where a grounded one gets its Sources
+   row, so the two can never be read as the same kind of thing. */
+.gw-sources.warn .lb { color: #A85639; background: var(--amber-soft); }
+
+/* ---------- ScanFolderModal: pick folders, see the bill first ---------- */
+.scanlist { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 2px; }
+.scanrow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 2px; font-size: 12.6px;
+}
+.scanrow + .scanrow { border-top: 1px solid var(--background-modifier-border); }
+.scanrow .cb {
+    width: 14px; height: 14px; border-radius: 3.5px; flex-shrink: 0; position: relative;
+    background: var(--interactive-accent); border: 1px solid var(--interactive-accent);
+}
+.scanrow .cb::after {
+    content: ''; position: absolute; left: 4px; top: 1px;
+    width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(42deg);
+}
+.scanrow.off .cb { background: transparent; border-color: var(--text-faint); }
+.scanrow.off .cb::after { display: none; }
+.scanrow.off { color: var(--text-faint); }
+.scanrow .p { font-family: var(--font-mono); font-size: 11.5px; }
+.scanrow .c { margin-left: auto; font-size: 11.5px; color: var(--text-faint); }
+/* The cost of the run, stated before you commit to it. */
+.scancount { margin-top: 12px; font-size: 12.4px; color: var(--text-normal); line-height: 1.55; }
+.scancount .sub { font-size: 11.5px; color: var(--text-faint); margin-top: 4px; line-height: 1.5; }
+.scanlede { font-size: 12.3px; color: var(--text-muted-ob); line-height: 1.6; margin-bottom: 10px; }
+.scanlede.aside { color: var(--text-faint); font-size: 11.6px; }
 
 /* ---------- Command palette ---------- */
 .ob-palette-scrim {
@@ -502,17 +591,6 @@ body, html {
 .kv .v { flex: 1; min-width: 0; }
 .kv .v ul { margin-left: 15px; }
 .kv .v li { margin-bottom: 3px; }
-.kv-row { opacity: 0; transform: translateY(5px); transition: all 0.4s cubic-bezier(.2,1,.3,1); }
-.kv-row.on { opacity: 1; transform: none; }
-
-.conf { display: inline-flex; align-items: center; gap: 7px; }
-.conf .track { display: block; width: 92px; height: 5px; border-radius: 3px; background: var(--background-secondary-alt); overflow: hidden; }
-/* display:block is required: these fills are often written as <span>, and an
-   inline element ignores width. */
-.conf .fill { display: block; height: 100%; width: 0; background: var(--energy-core); border-radius: 3px; transition: width 0.8s cubic-bezier(.2,1,.3,1); }
-.conf .fill.mid { background: var(--amber); }
-.conf .fill.low { background: var(--red); }
-.conf .n { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted-ob); }
 
 /* Generic result list. */
 .rlist { display: flex; flex-direction: column; gap: 8px; }
@@ -542,7 +620,7 @@ body, html {
 .quote { font-size: 12px; line-height: 1.6; color: var(--text-muted-ob); border-left: 2px solid var(--background-modifier-border); padding-left: 10px; }
 .quote em { color: var(--text-normal); font-style: normal; background: var(--energy-soft); border-radius: 3px; padding: 0 3px; }
 
-/* Progress bar: model download, and the multi-pass rewrite. */
+/* Progress bar: the model download. */
 .prog { display: block; height: 7px; border-radius: 4px; background: var(--background-secondary-alt); overflow: hidden; }
 .prog .bar { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--interactive-accent); transition: width 0.5s linear; }
 .prog .bar.green { background: var(--energy-core); }
@@ -693,48 +771,13 @@ body, html {
 .beat i { color: var(--violet); font-style: normal; }
 .beat code { font-family: var(--font-mono); font-size: 11.5px; color: var(--violet); background: var(--violet-soft); border-radius: 4px; padding: 1px 5px; }
 
-/* A column of source chips: a flex column stretches inline-flex children to
-   full width, so the container has to align them left explicitly. */
-.srcstack { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.srcrow { display: flex; flex-wrap: wrap; gap: 6px; }
+/* The small grey line under a modal's content — the caveat, the scope, the
+   "nothing was changed". */
 .hintline { font-size: 11.5px; color: var(--text-faint); line-height: 1.55; }
 .hintline code { font-family: var(--font-mono); font-size: 11px; background: var(--background-secondary); border-radius: 3px; padding: 0 4px; }
 
-/* The retrieval trace in the panel: read the index first, then decide which
-   pages to open. */
-.gw-trace {
-    font-family: var(--font-mono); font-size: 10px; line-height: 1.9;
-    color: var(--text-faint);
-    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
-    border-radius: 8px; padding: 8px 10px;
-}
-.gw-trace .ln { display: flex; gap: 7px; opacity: 0; transition: opacity 0.3s ease; }
-.gw-trace .ln.on { opacity: 1; }
-.gw-trace .ok { color: var(--energy-dark); }
-.gw-trace b { color: var(--text-muted-ob); font-weight: 700; }
-
-/* Refusal: if it is not in the material, say so rather than invent it. */
-.gw-refuse {
-    border-left: 2px solid var(--amber); padding-left: 10px;
-    color: var(--text-normal);
-}
-
-/* Per-pass progress for Improve. */
-.passlist { display: flex; flex-direction: column; gap: 7px; }
-.passrow {
-    display: flex; align-items: center; gap: 9px;
-    font-size: 12.3px; color: var(--text-faint);
-    border: 1px solid var(--background-modifier-border); border-radius: 7px; padding: 7px 10px;
-    transition: all 0.3s ease;
-}
-.passrow .n { font-family: var(--font-mono); font-size: 10px; min-width: 30px; }
-.passrow .sp { flex: 1; }
-.passrow.run { color: var(--text-normal); border-color: rgba(123,108,217,0.5); background: rgba(123,108,217,0.06); }
-.passrow.done { color: var(--text-normal); border-color: rgba(60,218,107,0.45); background: var(--energy-soft); }
-.passrow .tick { width: 13px; height: 13px; stroke: var(--energy-dark); fill: none; stroke-width: 2.4; opacity: 0; transition: opacity 0.3s; }
-.passrow.done .tick { opacity: 1; }
-
-/* Side by side: original and rewritten. */
+/* Two pages, quoted side by side, when Find contradictions has them
+   disagreeing. */
 .sxs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .sxs .col h4 {
     font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase;
@@ -759,8 +802,10 @@ body, html {
 .md strong { font-weight: 700; }
 .md a.wl { color: var(--text-accent); text-decoration: none; }
 .md code { font-family: var(--font-mono); font-size: 12px; background: var(--background-secondary); border-radius: 4px; padding: 1px 5px; }
-/* Through MarkdownRenderer, frontmatter is a rule, plain text, and another rule. */
-.md .fmtext { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted-ob); white-space: pre; line-height: 1.6; margin-bottom: 0; }
+/* Through MarkdownRenderer, frontmatter is a rule, plain text, and another rule.
+   Not scoped under .md: the retag confirm dialog shows a pre-line change list
+   with no markdown around it. */
+.fmtext { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted-ob); white-space: pre-wrap; line-height: 1.6; margin-bottom: 0; }
 
 /* ---------- AutoIngestReviewModal: the batch review list ---------- */
 .lint-summary { font-size: 12.3px; color: var(--text-muted-ob); line-height: 1.55; margin-bottom: 12px; }

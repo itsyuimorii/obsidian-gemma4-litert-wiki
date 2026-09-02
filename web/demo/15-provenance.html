@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 15 · Provenance — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 15 — Provenance</div>
+    <div class="txt">Every claim walked back to the note it came from.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'browser-apis', icon: 'file-text' },
+    tree: VAULT.tree('full', 'c-browserapi'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('A summary is a lossy compression of a note, produced by a 4-billion-parameter model. Sometimes it adds a fact that was never there — fluently, and in the same voice as the four that were.');
+    }},
+
+    { lock: 1300, do: () => {
+        OB.openFile('browser-apis', `<div class="md" style="padding:22px 26px">
+            <p class="fmtext">---
+tags:
+  - browser-apis
+  - webgpu
+source: "research/browser apis.md"
+source_hash: 60ce9d14
+confidence: low
+---</p>
+            <h1>browser apis</h1>
+            <p><strong>Summary</strong>: Notes on File System Access, Web Serial and WebGPU, with commentary on which are usable today.</p>
+            <h2>Key points</h2>
+            <ul id="pts">
+                <li>File System Access needs a user gesture per directory handle, and the handle can be persisted in IndexedDB.</li>
+                <li>Web Serial is Chromium-only and requires an explicit port prompt every session.</li>
+                <li>WebGPU adapter limits differ enough between machines that a fixed buffer size is a bug.</li>
+                <li>Safari shipped WebGPU in version 18 with full compute-shader support.</li>
+            </ul>
+        </div>`, { rowId: 'c-browserapi' });
+        beat('Four key points on a card. Read them: every one is plausible, and every one is written in exactly the same tone.');
+    }},
+
+    { lock: 1800, do: () => {
+        OB.palette('provenance', [{ name: 'Gemma Wiki: Provenance spot-check (local Gemma)', icon: 'shield-check' }]);
+    }},
+
+    { lock: 1200, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        status('Sampling wiki pages…');
+        beat(null);
+    }},
+
+    { lock: 2200, do: () => {
+        status('Checking 4/6 — browser-apis…', { keep: true });
+        beat('It takes each key point and asks one question against the original note: <b>is this actually in there?</b> One pass per page, and it reads the note rather than the card — otherwise it would be checking the summary against itself.');
+    }},
+
+    { lock: 2000, do: () => {
+        status(null);
+        OB.modal(`
+            <div class="head"><h3>Provenance spot-check</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">Checked 6 pages. 1 has key points the source note may not support — candidates to re-ingest, not verdicts.</p>
+                <div class="rlist">
+                    <div class="ritem bad"><div class="t">browser-apis</div>
+                        <div class="d">Not supported by the source note:</div>
+                        <div class="why">"Safari shipped WebGPU in version 18 with full compute-shader support." — the note mentions Safari once, in a line reading <i>"still waiting on Safari"</i>. Nothing about version 18, and nothing about compute shaders.</div></div>
+                </div>
+                <p class="hintline" style="margin-top:12px">Open the page, check each flagged point against its source note, and re-ingest if the summary drifted. Nothing was changed.</p>
+            </div>
+            <div class="foot"><button class="ob-btn cta">Close</button></div>`, 'wide');
+        reveal('.ritem', 200);
+        beat('One of the four was invented. Not corrupted, not garbled — <b>added</b>, with the confidence of the three real ones beside it.');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('And the report quotes both sides: the claim on the card, and what the note actually says. You are not being asked to trust a second model\'s verdict — you are being shown the evidence and left to judge.');
+    }},
+
+    { lock: 1700, do: () => {
+        beat('Which is why the summary line says <b>candidates, not verdicts</b>. The checker is the same small model that wrote the card. It is useful as a flashlight, not as a court.');
+    }},
+
+    { lock: 1600, do: () => {
+        OB.closeModal();
+        beat('That card was already marked <code>confidence: low</code> when it was written, and it sorted to the top of the review list for exactly this reason. The two signals agree, which is the point of having both.');
+    }},
+
+    { do: () => {
+        beat('This is the check no RAG tool ships, because it costs a model call per page and it finds your own product lying. It is also the only thing that makes a generated wiki safe to rely on.');
+    }},
+]);
+
+</script>
+</body>
+</html>
