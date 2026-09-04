@@ -123,7 +123,7 @@ Quote the exact sentence, then say what the two readings are.</p>`, { rowId: 'gw
     { do: () => {
         GemmaDemo.afterTyped('#ans', () =>
             $('#ans').insertAdjacentHTML('beforeend',
-                GW.sources(['litert on device']) + GW.actions({ saveLabel: 'Save to wiki' })));
+                GW.sources(['litert on device']) + GW.actions({ saveLabel: 'Save as note' })));
         beat('Grounded like any other answer, sourced like any other answer. A skill is a saved prompt — <b>it gets no special powers, only a shorter path</b>.');
     }},
 ]);

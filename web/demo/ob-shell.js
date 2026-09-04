@@ -37,7 +37,7 @@ const VAULT = {
          'none'    the plugin has not run yet
          'empty'   scaffolded, nothing filed
          'filed'   four cards
-         'full'    cards, an answer, a concept page                        */
+         'full'    cards plus a concept page                              */
     wiki(stage = 'empty') {
         if (stage === 'none') return [];
         const rows = [
@@ -52,11 +52,9 @@ const VAULT = {
                 { name: 'browser-apis', kind: 'file', indent: 2, id: 'c-browserapi' },
             );
         }
-        rows.push({ name: 'answers', kind: 'folder', indent: 1, id: 'gw-answers' });
-        if (stage === 'full') {
-            rows.push({ name: 'is-the-28s-per-message', kind: 'file', indent: 2, id: 'a-28s' });
-        }
-        rows.push({ name: 'chats', kind: 'folder', indent: 1, id: 'gw-chats' });
+        // No answers/ and no chats/. An answer you keep is written into your own
+        // notes now, where it is an ordinary file — so there is nothing here
+        // the plugin writes and never reads.
         rows.push({ name: 'concepts', kind: 'folder', indent: 1, id: 'gw-concepts' });
         if (stage === 'full') {
             rows.push({ name: 'on-device', kind: 'file', indent: 2, id: 'k-ondevice' });
@@ -419,7 +417,7 @@ const GW = {
         <div class="gw-msg-actions">
             <span class="a">${icon('copy')}Copy</span>
             <span class="a">${icon('refresh-cw')}Regenerate</span>
-            <span class="a" id="btnSaveBack">${icon('file-plus-2')}${opts.saveLabel || 'Save to wiki'}</span>
+            <span class="a" id="btnSaveBack">${icon('file-plus-2')}${opts.saveLabel || 'Save as note'}</span>
         </div>`;
     },
 
