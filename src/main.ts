@@ -87,8 +87,17 @@ declare const BUILD_STAMP: string;
 // was drafted. findIngestCandidates still wants a number.
 const NO_SCAN_CAP = Number.MAX_SAFE_INTEGER;
 
+// One debug channel, off unless Developer commands is on. Twenty-one log lines
+// in someone's console is noise from a plugin they installed to read notes, and
+// the setting already means "I am debugging this". Module-level so a helper can
+// log without holding the plugin; set once on load, which means anything before
+// settings load is silent — the correct meaning of quiet by default.
+let debugLogging = false;
+export function setDebugLogging(on: boolean) {
+  debugLogging = on;
+}
 function log(...args: unknown[]) {
-  console.log('[litert-spike]', ...args);
+  if (debugLogging) console.log('[gemma4-litert-wiki]', ...args);
 }
 
 async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
@@ -1289,7 +1298,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_CHAT);
+    // No detachLeavesOfType here. Obsidian's guidelines say not to, and the
+    // reason is concrete: it discards the user's layout on every reload, so a
+    // plugin update silently closes a panel they had docked where they wanted
+    // it. Obsidian tears the view down on its own.
     this.server?.close();
     this.server = null;
     this.serverBaseUrl = null;
@@ -1981,7 +1993,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // Only accept a mapping into the vocabulary; anything else keeps the tag.
         if (slug && vocabSet.has(slug)) out.set(t, slug);
       }
-      console.log('[gemma4-litert-wiki] retag mapping', Object.fromEntries(out));
+      log('retag mapping', Object.fromEntries(out));
       return out;
     } finally {
       await conversation?.delete().catch(() => {});
@@ -2182,7 +2194,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       const contradict =
         v === true || (typeof v === 'string' && ['yes', 'true', 'y'].includes(v.trim().toLowerCase()));
       const verdict = { contradict, reason: typeof parsed.reason === 'string' ? parsed.reason : '' };
-      console.log('[gemma4-litert-wiki] contradiction verdict', {
+      log('contradiction verdict', {
         a: titleA,
         b: titleB,
         raw: v,
@@ -3198,10 +3210,15 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   async loadSettings() {
     this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
+    setDebugLogging(this.settings.devCommands);
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
+    // Follows the toggle immediately: turning Developer commands on to
+    // investigate something and then having to reload to see any output would
+    // make the setting useless for the one thing it is for.
+    setDebugLogging(this.settings.devCommands);
   }
 
   // Rename the wiki folder and rewrite the internal links that name it.
