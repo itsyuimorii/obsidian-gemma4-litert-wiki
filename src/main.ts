@@ -1928,10 +1928,10 @@ export default class LiteRtSpikePlugin extends Plugin {
       // otherwise be asked about, so running them first is fewer calls.
       if (chosen.has('reconcile')) await this.reconcileWiki();
       if (chosen.has('relink')) await this.relinkWikiPages();
-      if (chosen.has('tags')) {
-        await this.suggestTagVocabulary();
-        await this.retagPagesToVocabulary();
-      }
+      // Two independent boxes: rebuild, apply, or both. Chaining them was the
+      // merge quietly deleting the "I edited schema.md by hand" path.
+      if (chosen.has('organize')) await this.suggestTagVocabulary();
+      if (chosen.has('retag')) await this.retagPagesToVocabulary();
     }).open();
   }
 
