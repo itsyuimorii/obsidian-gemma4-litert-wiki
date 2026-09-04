@@ -71,14 +71,11 @@ GemmaDemo.init([
         OB.modal(`
             <div class="head"><h3>Wiki review board</h3></div>
             <div class="scroll">
-                <p class="lint-summary">3 of 6 pages worth a look — low-confidence extractions, changed sources, concept overviews whose members changed, and pages untouched for 90+ days.</p>
+                <p class="lint-summary">2 of 6 pages worth a look — low-confidence extractions, changed sources, concept overviews whose members changed, and pages untouched for 90+ days.</p>
                 <div class="rlist">
                     <div class="ritem bad"><div class="t">litert-on-device <span class="pill red">source changed since ingest</span></div>
                         <div class="d">gemma-wiki/cards/litert-on-device.md</div>
                         <div class="why">The note behind this card has been edited. Its key points may now describe something you no longer believe.</div></div>
-                    <div class="ritem warn"><div class="t">what keeps coming up… <span class="pill amber">a page this answer was based on has changed</span></div>
-                        <div class="d">gemma-wiki/answers/what-keeps-coming-up--litert-on-device.md</div>
-                        <div class="why">Drift is tracked one layer up as well, through <code>read_hashes</code>. A saved answer built on a card that moved is exactly the stale claim that would otherwise sit in retrieval forever.</div></div>
                     <div class="ritem warn"><div class="t">on-device <span class="pill amber">members changed — rebuild this concept page</span></div>
                         <div class="d">gemma-wiki/concepts/on-device.md</div>
                         <div class="why">The overview was written across four cards, and one of them is no longer what it was.</div></div>
@@ -87,11 +84,11 @@ GemmaDemo.init([
             </div>
             <div class="foot"><button class="ob-btn cta">Close</button></div>`, 'wide');
         reveal('.ritem', 220);
-        beat('Three flags from one sentence — and the second is the one that matters. <b>Drift propagates upward.</b> The card knows its note changed; the saved answer knows its card changed.');
+        beat('Two flags from one sentence, and the second is the one you would never have found by hand. <b>Drift propagates upward.</b> The card knows its note changed — and the concept page knows one of the four cards it was written across is no longer what it was.');
     }},
 
     { lock: 2400, do: () => {
-        beat('That is the failure mode of Karpathy\'s "explorations should compound", caught. Without <code>read_hashes</code>, a saved answer built on a fact you later corrected stays in the retrieval pool making the same wrong claim.');
+        beat('Which is the failure this whole layer exists to catch. A generated page has no way of knowing the ground moved under it, so the plugin remembers what the ground looked like — <code>source_hash</code> on a card, membership on a concept page — and compares.');
     }},
 
     { lock: 1600, do: () => {
