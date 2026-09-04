@@ -16,13 +16,25 @@ const GemmaDemo = (() => {
     const $ = (sel, root = document) => root.querySelector(sel);
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+    /* ---- A small deterministic generator, so the keystroke wobble is a wobble
+       and not a source of variation between takes. Reset on load, which is what
+       R does — press it and the retake is frame-for-frame the one before. ---- */
+    let seed = 0x2f6e2b1;
+    function rnd() {
+        // xorshift32: cheap, no state to manage, same sequence every load.
+        seed ^= seed << 13; seed >>>= 0;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;  seed >>>= 0;
+        return seed / 0x100000000;
+    }
+
     /* ---- Typewriter. Emits HTML one character at a time; tags are written
        instantly so markup costs no time on screen. ---- */
     function typeHTML(el, html, opts = {}) {
         if (typeof el === 'string') el = $(el);
         if (!el) return;
         const speed = opts.speed ?? 22;      // base milliseconds per character
-        const jitter = opts.jitter ?? 16;    // random wobble, so it does not read as machine output
+        const jitter = opts.jitter ?? 16;    // wobble, so it does not read as machine output
         const cursor = opts.cursor ?? '<span class="blink-cursor"></span>';
         const onDone = opts.onDone;
 
@@ -36,7 +48,23 @@ const GemmaDemo = (() => {
 
         let out = '';
         let i = 0;
-        el.innerHTML = cursor;
+        // Type into a span of our own rather than into el itself. A step that
+        // appends to el mid-stream — the Sources row, the action buttons — used
+        // to be wiped by the next keystroke, because every tick rewrote the
+        // whole element. Now a tick only rewrites this span, and anything
+        // appended after it survives.
+        el.innerHTML = '';
+        const host = el.ownerDocument.createElement('span');
+        el.appendChild(host);
+        host.innerHTML = cursor;
+        el.dataset.typing = '1';
+
+        function finish() {
+            host.innerHTML = out;
+            delete el.dataset.typing;
+            el.dispatchEvent(new CustomEvent('typed'));
+            onDone && onDone();
+        }
 
         function step() {
             // Tags cost no time; flush every consecutive one at once.
@@ -45,22 +73,31 @@ const GemmaDemo = (() => {
                 i++;
             }
             if (i >= atoms.length) {
-                el.innerHTML = out;
-                onDone && onDone();
+                finish();
                 return;
             }
             const ch = atoms[i].ch;
             out += ch;
             i++;
-            el.innerHTML = out + cursor;
+            host.innerHTML = out + cursor;
 
             // Pause longer after punctuation, so it reads as thinking.
-            let delay = speed + Math.random() * jitter;
+            let delay = speed + rnd() * jitter;
             if ('，。、？！,.?!'.includes(ch)) delay += 200;
             else if (ch === ' ') delay += 8;
             setTimeout(step, delay);
         }
         setTimeout(step, opts.startDelay ?? 110);
+    }
+
+    /* ---- Run fn once an element has finished typing — immediately if it is
+       not typing. A Sources row landing halfway through a sentence reads as a
+       glitch, so the steps that add one wait for the stream to end. ---- */
+    function afterTyped(el, fn) {
+        if (typeof el === 'string') el = $(el);
+        if (!el) return;
+        if (!el.dataset.typing) { fn(); return; }
+        el.addEventListener('typed', () => fn(), { once: true });
     }
 
     /* ---- Flash a keyboard shortcut on screen. ---- */
@@ -111,13 +148,59 @@ const GemmaDemo = (() => {
         $$(sel, root).forEach((el, i) => setTimeout(() => el.classList.add('on'), i * gap));
     }
 
-    /* ---- The status-bar line the plugin uses while the model runs. ---- */
-    function status(text) {
-        const el = $('#runStatus');
+    /* ---- The status bar: one slot, three claimants — a run in progress, a
+       result you walked away from, or a background "to review" count. The
+       running one ticks, because the plugin's does: a 40-second generation with
+       no clock on it is indistinguishable from a hang. ---- */
+    let clockId = null;
+    let clockT0 = 0;
+    function elapsed() {
+        const s = Math.floor((Date.now() - clockT0) / 1000);
+        return s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    }
+    function stopClock() {
+        if (clockId) { clearInterval(clockId); clockId = null; }
+    }
+    function slot() { return $('#runStatus'); }
+
+    /* Running. Pass { keep: true } to change the label without resetting the
+       clock — a scan moves through notes inside one run. */
+    function status(text, opts = {}) {
+        const el = slot();
         if (!el) return;
-        if (!text) { el.classList.add('hidden'); return; }
-        el.classList.remove('hidden');
-        el.innerHTML = `<span class="d"></span>${text}`;
+        if (!text) { stopClock(); el.classList.add('hidden'); el.textContent = ''; return; }
+        if (!opts.keep || !clockId) {
+            clockT0 = Date.now();
+            stopClock();
+            clockId = setInterval(() => {
+                const e = slot();
+                if (e && e.dataset.run) e.textContent = `⏳ ${e.dataset.run}  ·  ${elapsed()}`;
+            }, 1000);
+        }
+        el.className = 'ob-status-run';
+        el.dataset.run = text;
+        el.textContent = `⏳ ${text}  ·  ${elapsed()}`;
+    }
+
+    /* Parked: the run finished while you were somewhere else, so the result
+       waits here instead of ambushing you. */
+    function statusDone(label) {
+        const el = slot();
+        if (!el) return;
+        stopClock();
+        delete el.dataset.run;
+        el.className = 'ob-status-run parked';
+        el.textContent = `\u2705 ${label}`;
+    }
+
+    /* The background count. Model-free — counting is a file sweep. */
+    function statusReview(n) {
+        const el = slot();
+        if (!el) return;
+        stopClock();
+        delete el.dataset.run;
+        el.className = 'ob-status-run review';
+        el.textContent = `\uD83D\uDCE5 ${n} to review`;
     }
 
     /* ---- Progress bar, used by both the download and the multi-pass rewrite.
@@ -144,20 +227,28 @@ const GemmaDemo = (() => {
     /* ---- Scene-to-scene nav and the start cue, both injected automatically. ---- */
 
     const SCENES = [
-        ['01-settings.html',       'Settings'],
-        ['02-first-run.html',      'First run'],
-        ['03-scan.html',           'Scan'],
-        ['04-chat-note.html',      'This note'],
-        ['05-skills.html',         'Skills'],
-        ['06-attach.html',         'Attach'],
-        ['07-wiki-query.html',     'Wiki query'],
-        ['08-save-back.html',      'Save back'],
-        ['09-improve.html',        'Improve'],
-        ['10-concept-page.html',   'Concept page'],
-        ['11-tag-vocab.html',      'Tag vocabulary'],
-        ['12-provenance.html',     'Provenance'],
-        ['13-contradictions.html', 'Contradictions'],
-        ['14-loop.html',           'The loop closes'],
+        ['01-first-run.html',      'First run'],
+        ['02-ask-immediately.html','Ask immediately'],
+        ['03-settings.html',       'Settings'],
+        ['04-ingest-one.html',     'File one note'],
+        ['05-scan-batch.html',     'Scan a folder'],
+        ['06-stop-scan.html',      'Stopping'],
+        ['07-tags-links.html',     'Tags & links'],
+        ['08-wiki-query.html',     'Ask the wiki'],
+        ['09-attach.html',         'Attach notes'],
+        ['10-skills.html',         'Skills'],
+        ['11-not-in-wiki.html',    'Not in the wiki'],
+        ['12-save-back.html',      'Save as note'],
+        ['13-trust-layers.html',   'Output, not material'],
+        ['14-drift.html',          'You edit the note'],
+        ['15-provenance.html',     'Provenance'],
+        ['16-contradictions.html', 'Contradictions'],
+        ['17-review-board.html',   'Review board'],
+        ['18-lint.html',           'Lint & reconcile'],
+        ['19-concept-page.html',   'Concept page'],
+        ['20-tag-vocab.html',      'Tag vocabulary'],
+        ['21-retag.html',          'Retag'],
+        ['22-offline.html',        'Pull the cable'],
     ];
 
     function buildNav() {
@@ -266,7 +357,7 @@ const GemmaDemo = (() => {
 
     function setRelated(r) { related = r; }
 
-    return { $, $$, typeHTML, flashKeys, beat, notice, clearNotices, reveal, status, progress, init, setRelated, SCENES };
+    return { $, $$, typeHTML, afterTyped, flashKeys, beat, notice, clearNotices, reveal, status, statusDone, statusReview, progress, init, setRelated, SCENES };
 })();
 
 /* ============================================================
@@ -304,10 +395,26 @@ const ICON_PATHS = {
     'shield-check': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
     'network': '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
     'maximize-2': '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
+    'folder-search': '<path d="M11 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v1.5"/><circle cx="17" cy="17" r="3"/><path d="m21 21-1.9-1.9"/>',
+    'wand-2': '<path d="m21.6 15.9-5.5-5.5a1 1 0 0 0-1.4 0L3.4 21.7a1 1 0 0 0 0 1.4"/><path d="M15 4V2"/><path d="M15 10V8"/><path d="M12.5 5.5H10"/><path d="M20 5.5h-2.5"/><path d="m17 3-1.5 1.5"/><path d="M17 8l-1.5-1.5"/>',
+    'gemma-wiki-logo': '<path d="M20.8 12.5 H79.2 a4 4 0 0 1 4 4 V83.3 a4 4 0 0 1 -4 4 H20.8 a8.3 8.3 0 0 1 -8.3 -8.3 V20.8 a8.3 8.3 0 0 1 8.3 -8.3 Z" stroke="currentColor" stroke-width="8.3" stroke-linejoin="round" stroke-linecap="round" fill="none"/><path d="M29.2 12.5 V87.5" stroke="currentColor" stroke-width="8.3" stroke-linecap="round"/><path d="M58 33 l5.27 11.73 11.73 5.27 -11.73 5.27 -5.27 11.73 -5.27 -11.73 -11.73 -5.27 11.73 -5.27 Z" fill="currentColor" stroke="none"/>',
+    'circle-stop': '<circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+    'wifi-off': '<path d="M12 20h.01"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 4.2-2.5"/><path d="M14.8 10.4A10 10 0 0 1 19 12.9"/><path d="M2 8.8a16 16 0 0 1 4.7-2.8"/><path d="M12.2 6a16 16 0 0 1 9.8 2.8"/><path d="m2 2 20 20"/>',
+    'link': '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.8-1.7"/>',
+    'list-checks': '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+    'circle-help': '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    'triangle-alert': '<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    'chevron-right': '<path d="m9 18 6-6-6-6"/>',
+    'lightbulb': '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+    'file-clock': '<path d="M16 22h2a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><circle cx="8" cy="16" r="6"/><path d="M9.5 17.5 8 16.25V14"/>',
     'sparkles': '<path d="M9.94 14.06 12 20l2.06-5.94L20 12l-5.94-2.06L12 4 9.94 9.94 4 12z"/>',
 };
+/* A couple of glyphs come from the plugin itself and are drawn on their own
+   grid, so the viewBox cannot be hard-coded. */
+const ICON_VIEWBOX = { 'gemma-wiki-logo': '0 0 100 100' };
 function icon(name, cls = '') {
     const p = ICON_PATHS[name];
     if (!p) return '';
-    return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+    const vb = ICON_VIEWBOX[name] || '0 0 24 24';
+    return `<svg class="${cls}" viewBox="${vb}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }

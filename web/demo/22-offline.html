@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 22 · Pull the cable — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 22 — Pull the cable</div>
+    <div class="txt">Everything you just watched, with the network off.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('full', 'litert'),
+    editor: `<h1>litert on device</h1>
+<p>LiteRT-LM loads the <code>.litertlm</code> bundle straight into the renderer process — there is no
+server and no separate app. The whole thing is Electron plus WebGPU.</p>
+<p>Context is 4096 tokens. That is the real constraint on everything else.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+GemmaDemo.init([
+    { do: () => {
+        beat('Twenty-one scenes. Filing, retrieval, saved answers, drift, contradictions, a concept page, a vocabulary. Every one of them ran on this machine.');
+    }},
+
+    { lock: 1400, do: () => {
+        notice(`<span class="netline idle"><span class="d"></span>Network — 0 requests since launch</span>`, 4000);
+        beat('There has been no network activity in any of it. Not a low number. <b>Zero</b> — the only request this plugin has ever made was the model download in scene 01.');
+    }},
+
+    { lock: 1900, do: () => {
+        beat('Which is easy to say and easy to fake. So:');
+    }},
+
+    { lock: 1200, do: () => {
+        notice(`<span class="netline busy"><span class="d"></span>Wi-Fi turned off · Ethernet unplugged</span>`, 0);
+        flashKeys(['⌥', '⏻']);
+        beat('Cable out. Wi-Fi off. Airplane mode. Nothing on this machine can reach anything.');
+    }},
+
+    { lock: 1800, do: () => {
+        OB.openRight(GW.panel('', 'wiki'));
+        beat(null);
+    }},
+
+    { lock: 1200, do: () => {
+        typeHTML('#input', 'summarise what I have learned about running models in the browser', { speed: 20 });
+    }},
+
+    { lock: 2000, do: () => {
+        $('#input').innerHTML = '<span class="ph">Ask across your wiki… (Enter to send)</span>';
+        $('#messages').innerHTML = `<div class="gw-msg user">summarise what I have learned about running models in the browser</div>` + GW.thinking();
+        flashKeys(['↵']);
+    }},
+
+    { lock: 2800, do: () => {
+        const el = $('#ans');
+        typeHTML(el,
+            'That it works, and that the cost has a shape. A model loads into the renderer process ' +
+            'over WebGPU with no server involved; the first call is expensive — 28.1 s of shader ' +
+            'compilation — and everything after it is cheap and flat.<br><br>' +
+            'The open problem is not performance. It is that nothing in the browser stack can tell ' +
+            'two callers apart, so anything needing identity has to invent it in page state.',
+            { speed: 11, jitter: 6 });
+    }},
+
+    { lock: 1400, do: () => {
+        GemmaDemo.afterTyped('#ans', () =>
+            $('#ans').insertAdjacentHTML('beforeend',
+                GW.sources(['on-device (concept)', 'litert on device', 'webmcp notes']) + GW.actions()));
+        beat('Retrieved, grounded, sourced, and streamed — with no network at all. There is nothing to be offline <i>from</i>: the model is in this process.');
+    }},
+
+    { lock: 1900, do: () => {
+        beat('No API key. No account. No per-token cost. No terms of service that can change next quarter, and no server that can be switched off in three years.');
+    }},
+
+    { lock: 1800, do: () => {
+        beat('Your notes are the most personal thing on your machine. This is the only arrangement where reading them all is not a decision you have to trust somebody else with.');
+    }},
+
+    { do: () => {
+        notice('✅ Gemma 4 E4B · local · 0 requests', 0);
+        beat('<b>That is the whole product.</b> Everything else in these twenty-two scenes is what you build on top of it once the answer to "where does my vault go" is: nowhere.');
+    }},
+]);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 21 · Retag — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 21 — Retag</div>
+    <div class="txt">The vocabulary changed. Now bring the existing pages along.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'schema.md', icon: 'file-text' },
+    tree: VAULT.tree('full', 'gw-schema'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('The vocabulary changed in the last scene, and nine pages are still carrying the old tags. That is deliberate — but it is not a state you want to leave things in.');
+    }},
+
+    { lock: 1300, do: () => {
+        OB.palette('retag', [{ name: 'Gemma Wiki: Retag wiki pages to vocabulary (local Gemma)', icon: 'tags' }]);
+        beat('This is the second half of the pair, and it exists as a separate command for one reason: <b>it edits pages, and the command that changed the rules did not.</b>');
+    }},
+
+    { lock: 1500, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        status('Mapping 3 old tags to the vocabulary…');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('One model call for the whole job, and it maps <i>tags</i> rather than pages: old tag &rarr; closest tag in the vocabulary. Applying that map across nine pages is then arithmetic — no second call, and no chance of two pages getting different answers for the same tag.');
+    }},
+
+    { lock: 2000, do: () => {
+        status(null);
+        OB.modal(`
+            <div class="head"><h3>Retag 4 pages to the vocabulary</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">Old tags are rewritten to their vocabulary equivalents so past and future
+                pages cluster together. <b>Wiki pages only — your raw notes are not touched.</b></p>
+                <p class="fmtext" style="font-size:11.8px;line-height:1.9">litert-on-device:  local-inference, webgpu  &rarr;  on-device, webgpu
+browser-apis:  evals, browser-apis  &rarr;  llm-eval, browser-apis
+agent-interfaces:  llm-evaluation, agents  &rarr;  llm-eval, agents
+on-device:  concept, local-inference, on-device  &rarr;  concept, on-device</p>
+            </div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok">Retag pages</button></div>`, 'wide');
+        beat('Every change, listed per page, old tags on the left and new on the right. Four pages move; the five that already matched are not in this list at all — <b>a no-op is not counted as work done</b>.');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('Read the last row. <code>on-device</code> loses a tag and gains nothing — it already carried the survivor, so the merge leaves it with one instead of two. And a tag the model had no confident mapping for is <b>kept</b>, untouched: losing information silently is worse than a stray tag.');
+    }},
+
+    { lock: 1500, do: () => { $('#ok').classList.add('pressed'); }},
+
+    { lock: 1500, do: () => {
+        OB.closeModal();
+        notice('✅ Retagged 4 pages.', 6000);
+        beat('Four pages, one banned tag gone from the wiki entirely, and three near-synonyms collapsed into one.');
+    }},
+
+    { do: () => {
+        beat('Which matters more than tidiness: pages that share a tag are the ones that can reach the concept threshold. <b>Merging synonyms is how a cluster becomes visible</b> — three pages that never met are now four that do.');
+    }},
+]);
+
+</script>
+</body>
+</html>
