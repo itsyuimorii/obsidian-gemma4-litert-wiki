@@ -11,7 +11,7 @@
 
 **Free, private, offline AI for your notes** — no API key, no subscription, no tokens ever billed, no account to make.
 
-Gemma 4 E4B runs inside Obsidian's own process via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. Not Ollama, not LM Studio, not a localhost server — the model is *in* the app. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy here is a property of the architecture, not a promise in a policy. After the one-time ~3 GB model download, the plugin never touches the network again.
+Gemma 4 E4B runs inside Obsidian's own process via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. Not Ollama, not LM Studio, not a localhost server — the model is *in* the app. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy here is a property of the architecture, not a promise in a policy. After its one-time downloads — the ~3 GB model and the WebAssembly runtime, both listed under [Privacy](#-privacy) — the plugin never touches the network again.
 
 It implements **[Andrej Karpathy's LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: your raw notes are never modified *by the model* — the immutability constraint binds the LLM, not you, and editing your own notes is the normal fix when a chat surfaces a mistake (the wiki detects the change and offers to re-ingest). A separate, cross-linked wiki layer is built above them — one card per note, and **every page is shown to you in full before a single byte is written**.
 
@@ -40,8 +40,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - **Review board** — three ways a page goes bad, in one queue: low self-rated confidence, **source drift** (the raw note changed since ingest, caught by `source_hash`), and staleness. Concept overviews are checked too.
 - **Provenance spot-check** — takes a page's key points back to the raw note to find the sentence each came from, and flags the ones that cannot be traced.
 - **Contradiction sweep** — checks pairs of pages that share a tag for claims that disagree, recently-changed pairs first. It flags with the model's reason quoted and **never edits** — you decide which one was wrong.
-- **Lint** — model-free report of orphan pages, dead index entries, and unindexed pages. **Reconcile** drops links to pages you deleted.
-- **Relink** — backfills or re-syncs Related cross-links on older pages through one aggregated review modal.
+- **Tidy the wiki** — one command that checks first and then fixes only what you tick. The check is model-free: orphan pages, index entries pointing at deleted pages, pages missing from the index, and how far your pages' tags have drifted from the vocabulary. The four repairs — make links mutual, drop dead index entries, rebuild the vocabulary, apply it to existing pages — are always offered, ticked where the check found something; each runs in turn behind its own preview. Availability is never tied to detection, because a check good enough to pick a sensible default is not good enough to be the only way in.
 - **Background count** (off by default) — periodically *counts* new or changed notes into a status-bar chip. Counting never runs the model; drafting only happens when you click.
 
 **Config as notes** — the rules live as plain markdown you can read, edit and version:
@@ -156,9 +155,6 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 | Command | What it does |
 |---|---|
 | **Build a concept page from a tag or mention (local Gemma)** | Pick a tag or mention two or more pages share; writes a page *above* them that links down into each. Member lists self-heal in both directions. |
-| **Relink wiki pages (fill or re-sync Related sections)** | Backfills or refreshes cross-links on existing pages through one aggregated review modal. |
-| **Organize tags (schema.md, local Gemma)** | Folds every tag your ingests produced into one vocabulary in `schema.md`, honouring the rejected list. |
-| **Retag wiki pages to vocabulary (local Gemma)** | Rewrites existing pages onto that vocabulary so near-duplicates collapse. Preview before writing. |
 
 **Keep it honest**
 
@@ -167,8 +163,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 | **Review board (low-confidence, drifted, and stale pages)** | One queue for the three ways a page goes bad: low self-rated confidence, source drift caught by `source_hash`, and staleness. |
 | **Find contradictions in wiki (local Gemma)** | Checks pages sharing a tag for claims that disagree, recently-changed pairs first. Flags with the reason quoted and **never edits**. |
 | **Provenance spot-check (local Gemma)** | Traces each key point on a page back to a sentence in the raw note, and flags what cannot be traced. |
-| **Lint wiki (orphans and index health)** | Model-free: orphan pages, index entries pointing at missing files, pages missing from the index. |
-| **Reconcile wiki (drop links to deleted pages)** | Drops index entries and cross-links pointing at pages you deleted. |
+| **Tidy the wiki (check, then fix what you approve)** | The five maintenance commands in one. A model-free check reports orphans, dead index entries, unindexed pages and tag drift; then four repairs — make links mutual, drop dead index entries, rebuild the tag vocabulary, apply it to existing pages — are offered together, ticked where the check found something, and run in turn behind their own previews. |
 
 **Write into your own note — the only one that does**
 
@@ -227,7 +222,16 @@ Deliberately out of scope: a multi-provider abstraction layer, image input (the 
 
 ## 🔒 Privacy
 
-No backend, no telemetry, no analytics. The only network request this plugin ever makes is the one-time model download from Hugging Face. Everything else — inference, caching, generation — happens entirely on-device, inside Obsidian's own process.
+No backend, no telemetry, no analytics. This plugin makes network requests to exactly two hosts, both one-time downloads of things it needs to run, both cached on disk afterwards:
+
+| Host | What | When |
+| --- | --- | --- |
+| `huggingface.co` | the [Gemma 4 E4B model](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) (~3 GB) | once, when you press **Download model** |
+| `cdn.jsdelivr.net` | the LiteRT-LM WebAssembly runtime (~20-31 MB), from the pinned `@litert-lm/core` version this build was compiled against | once, on first use |
+
+The runtime is fetched rather than bundled because it ships in four variants totalling ~101 MB and your machine loads exactly one, chosen by the library's own feature probes; shipping all four would put a 101 MB payload in every install to use a fifth of it. Only files matching `litertlm_wasm_*internal.{js,wasm}` are accepted, and nothing here updates the plugin itself — the version is fixed at build time.
+
+**Nothing else leaves your machine.** Your notes, your questions and every generated answer stay on-device: inference, caching and generation all happen inside Obsidian's own process. There is no server to upload them to.
 
 ## 💖 Credits
 
