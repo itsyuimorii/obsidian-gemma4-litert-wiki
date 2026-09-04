@@ -133,13 +133,43 @@ only filesystem-illegal characters removed.
 /** A note filename from arbitrary text. Unlike slugify(), this keeps the words:
  *  the file lands in the user's own vault, where `2026 roadmap.md` is normal and
  *  `2026-roadmap.md` is the plugin imposing a house style on someone's folder. */
-export function safeFileName(text: string): string
+export function safeFileName(text: string, fallback: string): string
 ```
 
-Strips `/ \ : * ? " < > |`, control characters and leading dots; collapses
-whitespace; trims; caps length; falls back to a timestamp when nothing survives.
-Appends ` 2`, ` 3` … on collision rather than overwriting — this folder is the
-user's, and silently replacing a file in it is not a thing the plugin may do.
+Strips `/ \ : * ? " < > | # ^ [ ]`, control characters and leading dots;
+collapses whitespace; trims; caps length; falls back to a timestamp when
+nothing survives. Appends ` 2`, ` 3` … on collision rather than overwriting —
+this folder is the user's, and silently replacing a file in it is not a thing
+the plugin may do.
+
+The name itself is `gemma — <what it did> — <what it was about>`:
+
+| Part | Rule |
+|---|---|
+| `gemma —` | Always. The one marker visible in the file explorer, which shows no frontmatter and truncates around thirty characters — so a suffix or a property is invisible exactly when you are scanning a folder to tell your own writing from the model's. `gemma` rather than `AI` because it names which model; the build is in `written_by`. |
+| what it did | The chip or skill label (*Summarize*, *Flashcards*), or the typed question, capped at 60 characters. |
+| what it was about | The source title — **only when there is exactly one source.** In Wiki mode an answer can read four cards, and naming it after the first claims it is about one note when it is about the set. |
+
+Action before topic, and the order carries weight. Several answers about one
+note are told apart by what was asked, not by the topic they share, so at the
+sidebar's width action-first stays legible where topic-first does not:
+
+```
+gemma — Summarize — The perfe…      gemma — The perfect espress…
+gemma — Summarize — Brewing t…      gemma — The perfect espress…
+        distinguishable                     identical
+```
+
+This is also what fixes the case that prompted the rule: a chip's `ask` is
+"Summarize this note", which names no note, so two saves in one folder gave
+`Summarize this note` and `Summarize this note 2`. The chip's short `label`
+already existed on `SuggestionSpec` and was simply never passed down —
+`runSuggestion` sent `text` alone while skills sent `skillLabel`. Both now send
+`promptLabel`, since a chip is not a skill and the parameter should not claim it
+is.
+
+The H1 inside the note carries the title without the `gemma —` prefix:
+`written_by` sits two lines above it and says the same thing better.
 
 ## What is removed
 

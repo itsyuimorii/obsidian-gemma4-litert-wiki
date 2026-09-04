@@ -16,6 +16,7 @@ import {
   appendLog,
   buildAnswerNote,
   safeFileName,
+  wikiSourcesDir,
   clampToTokens,
   contentHash,
   ensureWikiScaffold,
@@ -37,6 +38,51 @@ import { notify } from './notify';
 // extension: specific enough to tell two model versions apart in six months,
 // which is the whole point of writing it down.
 const MODEL_LABEL = 'gemma-4-E4B-it-web';
+
+// What marks a saved answer in the file explorer. A prefix rather than a
+// suffix or a frontmatter field, because those are the two places you cannot
+// see it: Obsidian's sidebar truncates around thirty characters and shows no
+// properties, so anything at the end is invisible exactly when you are
+// scanning a folder to tell your own writing from the model's. `gemma` and not
+// `AI` because it names which model; the exact build is in `written_by`.
+const MODEL_PREFIX = 'gemma';
+
+// How much of a typed question survives before the topic is appended. Without
+// a cap the topic is what gets cut, which is backwards — the topic is the part
+// you cannot reconstruct from the folder.
+const QUESTION_STEM_MAX = 60;
+
+/** The folder part of a vault path, '' for a file at the root. */
+function parentOf(path: string): string {
+  const cut = path.lastIndexOf('/');
+  return cut > 0 ? path.slice(0, cut) : '';
+}
+
+/**
+ * The title of a saved answer: what it did, then what it was about.
+ *
+ * That order matters more than it looks. Several answers about one note are
+ * told apart by the action or the question, not by the topic they share — so
+ * with a sidebar truncating at thirty characters, action-first keeps them
+ * distinguishable and topic-first renders them identical.
+ *
+ * The topic is appended only when there is exactly one source. In Wiki mode an
+ * answer can read four cards, and naming it after the first would claim it is
+ * about one note when it is about the set.
+ */
+export function answerTitle(
+  question: string,
+  promptLabel: string | undefined,
+  sources: { title: string; linkPath: string }[]
+): string {
+  // A canned prompt makes a terrible title — "Summarize this note" names no
+  // note, and running it twice in a folder gave you that and "… 2". The label
+  // is the short form a chip or a skill already has; a typed question is its
+  // own label.
+  const head = promptLabel ?? question;
+  const stem = head.length > QUESTION_STEM_MAX ? `${head.slice(0, QUESTION_STEM_MAX).trimEnd()}…` : head;
+  return sources.length === 1 ? `${stem} — ${sources[0].title}` : stem;
+}
 
 // Chat with the currently active note, entirely local. This is the
 // "narrow" version of Query from the wiki roadmap — grounded in one open
@@ -328,7 +374,7 @@ export class ChatView extends ItemView {
   /** What pressing a suggestion does — from a chip or from a message. */
   private runSuggestion(spec: SuggestionSpec) {
     if (spec.ask) {
-      void this.handleSend({ text: spec.ask, wholeWiki: spec.wholeWiki });
+      void this.handleSend({ text: spec.ask, wholeWiki: spec.wholeWiki, promptLabel: spec.label });
       return;
     }
     if (spec.action === 'scan') return void this.plugin.scanAndReviewIngest();
@@ -607,7 +653,7 @@ export class ChatView extends ItemView {
             }
             item.onClick(() => {
               if (!skill.fill) {
-                void this.handleSend({ text: skill.prompt, skillLabel: skill.label });
+                void this.handleSend({ text: skill.prompt, promptLabel: skill.label });
                 return;
               }
               // fill: true is the one case that DOES want the box — the prompt
@@ -760,7 +806,7 @@ export class ChatView extends ItemView {
     question: string,
     sources: { title: string; linkPath: string }[],
     allowSave = true,
-    skillLabel?: string
+    promptLabel?: string
   ) {
     const actions = row.createDiv({ cls: 'gemma4-chat-actions' });
 
@@ -801,16 +847,19 @@ export class ChatView extends ItemView {
     saveBtn.addEventListener('click', () => void (async () => {
       const answer = getAnswer();
       const folder = this.answerFolder(sources);
-      // The question is the title, as a person would have typed it. slugify()
-      // is right for a tag and for a card the plugin owns; this file lands in
-      // someone's own folder, where a kebab-cased filename is the plugin
-      // imposing a house style on a directory that is not its own.
-      const label = skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : question;
-      const stem = safeFileName(label, `answer ${window.moment().format('YYYY-MM-DD HHmmss')}`);
+      const title = answerTitle(question, promptLabel, sources);
+      const stem = safeFileName(
+        `${MODEL_PREFIX} — ${title}`,
+        `${MODEL_PREFIX} — answer ${window.moment().format('YYYY-MM-DD HHmmss')}`
+      );
       const notePath = this.freePath(folder, stem);
       const content = buildAnswerNote(question, answer, sources, {
         model: MODEL_LABEL,
-        titleLabel: skillLabel ? `${skillLabel} — ${sources[0]?.title ?? 'chat'}` : undefined,
+        // The H1 carries the title without the prefix. Inside the note,
+        // `written_by` is two lines above it and says the same thing better;
+        // the prefix exists for the file explorer, which is the one place the
+        // frontmatter cannot be seen.
+        titleLabel: title,
       });
       // Never `overwriting`. This folder is the user's; appending " 2" costs a
       // duplicate, and silently replacing a file in someone's own notes costs
@@ -844,18 +893,29 @@ export class ChatView extends ItemView {
   private answerFolder(sources: { title: string; linkPath: string }[]): string {
     const configured = this.plugin.settings.answerFolder.trim();
     if (configured) return configured.replace(/\/+$/, '');
+
     const first = sources[0];
     if (first) {
-      const card = this.app.vault.getAbstractFileByPath(`${first.linkPath}.md`);
-      if (card instanceof TFile) {
-        const src = this.app.metadataCache.getFileCache(card)?.frontmatter?.source;
-        if (typeof src === 'string' && src) {
-          const noteDir = src.slice(0, src.lastIndexOf('/'));
-          if (noteDir) return noteDir;
-          return '';
+      const target = this.app.vault.getAbstractFileByPath(`${first.linkPath}.md`);
+      if (target instanceof TFile) {
+        // In This-note mode a source IS one of your notes, so its own folder is
+        // the answer. Only in Wiki mode is it a card, which has to be followed
+        // back through `source:` to the note it summarises.
+        //
+        // The check is on the path, not on the presence of the field. Reading
+        // `source:` off any file that happens to have one is how an answer
+        // about a note whose frontmatter says `source: https://example.com/x`
+        // — a citation, which is what most people use that word for — ends up
+        // filed in a folder called `https:`.
+        if (target.path.startsWith(`${wikiSourcesDir()}/`)) {
+          const src = this.app.metadataCache.getFileCache(target)?.frontmatter?.source;
+          if (typeof src === 'string' && src.endsWith('.md')) return parentOf(src);
+        } else {
+          return target.parent?.path && target.parent.path !== '/' ? target.parent.path : '';
         }
       }
     }
+
     const active = this.app.workspace.getActiveFile();
     return active?.parent?.path && active.parent.path !== '/' ? active.parent.path : '';
   }
@@ -883,7 +943,7 @@ export class ChatView extends ItemView {
    * box as if you had typed it and changed your mind. The box is where YOU
    * write; it is not a transport for text the plugin already has.
    */
-  private async handleSend(opts: { text?: string; wholeWiki?: boolean; skillLabel?: string } = {}) {
+  private async handleSend(opts: { text?: string; wholeWiki?: boolean; promptLabel?: string } = {}) {
     if (this.busy) return;
     // The input is the one door the greyed chips do not cover: you can type a
     // question while an Improve is running and press Enter. Same engine, same
@@ -906,7 +966,7 @@ export class ChatView extends ItemView {
     }
     this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
-    await this.runGeneration(question, false, opts.wholeWiki ?? false, opts.skillLabel);
+    await this.runGeneration(question, false, opts.wholeWiki ?? false, opts.promptLabel);
   }
 
   // Builds the grounding context for one question, or returns null with a
@@ -1124,7 +1184,7 @@ export class ChatView extends ItemView {
     };
   }
 
-  private async runGeneration(question: string, ungrounded = false, wholeWiki = false, skillLabel?: string) {
+  private async runGeneration(question: string, ungrounded = false, wholeWiki = false, promptLabel?: string) {
     const context = await this.buildContext(question, ungrounded, wholeWiki);
     if (!context) return;
 
@@ -1216,7 +1276,7 @@ export class ChatView extends ItemView {
       this.turns.push({ role: 'assistant', content: answer, sources: context.ungrounded ? [] : context.sources });
       // Ungrounded answers can't be saved to the wiki — filing model guesses
       // as sourced pages is exactly the pollution the grounding model avoids.
-      this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded, skillLabel);
+      this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded, promptLabel);
 
       // Issue #7 routing: a grounded wiki answer with no matching page often
       // means "not in your wiki". Offer a per-answer, opt-in hatch to ask
