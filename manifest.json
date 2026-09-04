@@ -3,7 +3,7 @@
   "name": "Gemma 4 LiteRT Wiki",
   "version": "0.0.1",
   "minAppVersion": "1.11.4",
-  "description": "Gemma 4 runs inside Obsidian itself, through LiteRT-LM and WebGPU. No API key, no subscription, no server, and nothing on the network once it is set up. Chat with a note or your whole wiki; your own notes are never modified by the model.",
+  "description": "Karpathy's LLM-wiki pattern, run by Gemma 4 entirely inside Obsidian through LiteRT-LM and WebGPU. Ingest notes into a wiki the model maintains (index, tags, links) and chat grounded in what you wrote. Free; one-time model download, then offline.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true

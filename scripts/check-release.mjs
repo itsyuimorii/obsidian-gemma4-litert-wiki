@@ -52,7 +52,14 @@ for (const f of ['main.js','manifest.json','styles.css']) {
   ok(`${f} present${there ? ` (${(fs.statSync(f).size/1024).toFixed(0)} KB)` : ''}`, there);
 }
 ok('main.js is a real bundle', fs.statSync('main.js').size > 100_000);
-ok('no wasm/ produced by the build', !fs.existsSync('wasm'));
+// A wasm/ directory on disk is fine — in a dev checkout the plugin folder IS
+// the repo, so the runtime's on-demand download lands here. What must never
+// happen is git carrying it into a release.
+{
+  const { execSync } = await import('node:child_process');
+  const tracked = execSync('git ls-files wasm', { encoding: 'utf8' }).trim();
+  ok('git does not carry wasm/', tracked === '');
+}
 
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nALL PASS');
 process.exit(fail ? 1 : 0);
