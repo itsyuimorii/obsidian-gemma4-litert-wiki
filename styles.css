@@ -1339,3 +1339,15 @@
   background: rgba(var(--color-orange-rgb), 0.1);
   border-left: 2px solid var(--color-orange);
 }
+
+/* A finding you can act on: the checkbox sits with the heading, so the choice
+   and the thing being chosen read as one line. */
+.gemma4-tidy-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gemma4-tidy-head input[type='checkbox'] {
+  flex-shrink: 0;
+  margin: 0;
+}

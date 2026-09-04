@@ -41,7 +41,7 @@ import {
   type IndexEntry,
   type NoteExtraction,
 } from './wiki-store';
-import { LintReportModal, runLint } from './lint';
+import { runLint, TidyModal, type TagHealth } from './lint';
 import {
   collectWikiPages,
   ContradictionReportModal,
@@ -824,107 +824,6 @@ export default class LiteRtSpikePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: 'litert-relink-wiki',
-      name: 'Relink wiki pages (fill or re-sync Related sections)',
-      callback: async () => {
-        const entries = await this.liveIndexEntries();
-        if (entries.length < 2) {
-          notify('warn', 'Need at least two indexed pages to relink.');
-          return;
-        }
-        const titleOf = new Map(entries.map((e) => [e.linkPath, e.title]));
-
-        // The link graph as it stands. Related is written on the NEW page when
-        // a page is ingested and never on the page it points at, so every link
-        // was one-way: whatever was ingested first collected inbound links and
-        // everything else stayed an orphan. Ten pages here, five of them
-        // pointing at the same hub, six with no inbound link at all — and
-        // relink could not fix it, because it skipped any page whose Related
-        // section was merely healthy.
-        const out = new Map<string, Set<string>>();
-        const asWritten = new Map<string, string[]>();
-        for (const e of entries) {
-          const file = this.app.vault.getAbstractFileByPath(`${e.linkPath}.md`);
-          if (!(file instanceof TFile)) continue;
-          const content = await this.app.vault.read(file);
-          const links = this.readRelatedLinksOn(content);
-          asWritten.set(e.linkPath, links);
-          // Links to pages that no longer exist are dropped here, which is
-          // also how a stale section gets repaired: the desired set differs
-          // from what is on disk, so the page ends up in the proposals.
-          out.set(e.linkPath, new Set(links.filter((lp) => titleOf.has(lp))));
-        }
-
-        // Ask the model only where there is nothing to reciprocate. A page
-        // with links already has the relationships it needs; what it lacks is
-        // the other half of them.
-        let i = 0;
-        const empty = entries.filter((e) => !(out.get(e.linkPath)?.size));
-        for (const entry of empty) {
-          i++;
-          this.status(`Relinking ${i}/${empty.length} — ${entry.title}…`);
-          const candidates = entries.filter((e) => e.linkPath !== entry.linkPath);
-          const related = await this.pickRelatedPages(entry.summary, candidates);
-          const set = out.get(entry.linkPath);
-          for (const r of related) if (titleOf.has(r.linkPath)) set?.add(r.linkPath);
-        }
-        this.statusEnd();
-
-        // Mirror every link. Nothing is invented: a page only gains a link to
-        // a page that already chose to link to it, so an orphan that genuinely
-        // relates to nothing stays an orphan — which is the honest answer, and
-        // the one that keeps this from being a way to flatter the lint report.
-        for (const [from, targets] of [...out]) {
-          for (const to of targets) out.get(to)?.add(from);
-        }
-
-        const proposals: RelinkProposal[] = [];
-        for (const e of entries) {
-          const now = [...(out.get(e.linkPath) ?? [])].sort();
-          // Compared against the file, not against a count: a page carrying
-          // two links of which one has gone stale keeps its count when the
-          // dead one is dropped, and would otherwise never be rewritten.
-          const same =
-            now.length === (asWritten.get(e.linkPath)?.length ?? 0) &&
-            now.every((lp, i) => asWritten.get(e.linkPath)?.[i] === lp);
-          if (!now.length || same) continue;
-          proposals.push({
-            pagePath: `${e.linkPath}.md`,
-            title: e.title,
-            // Sorted so a rerun that changes nothing produces no diff.
-            related: now.map((lp) => ({ linkPath: lp, title: titleOf.get(lp) ?? lp })),
-          });
-        }
-
-        if (!proposals.length) {
-          notify('noop', 'Nothing to relink — every link is already mutual, and no new matches were found.');
-          return;
-        }
-        new RelinkPreviewModal(this.app, proposals, () => {
-          void (async () => {
-            for (const prop of proposals) {
-              const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
-              if (!(file instanceof TFile)) continue;
-              const content = await this.app.vault.read(file);
-              const section =
-                `\n## Related\n\n` +
-                prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
-                `\n`;
-              // Replace rather than append: Related is the last section a
-              // generated page carries, so truncating at it is safe, and a
-              // plain append would leave two headings.
-              const cut = content.indexOf('\n## Related');
-              const head = cut === -1 ? content : content.slice(0, cut);
-              await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
-              await appendLog(this.app.vault, 'relink', prop.title);
-            }
-            notify('done', `Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`);
-          })();
-        }).open();
-      },
-    });
-
-    this.addCommand({
       id: 'litert-review-board',
       name: 'Review board (low-confidence, drifted, and stale pages)',
       callback: async () => {
@@ -934,30 +833,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: 'litert-lint-wiki',
-      name: 'Lint wiki (orphans and index health)',
-      callback: async () => {
-        new LintReportModal(this.app, await runLint(this.app)).open();
-      },
-    });
-
-    this.addCommand({
-      id: 'litert-reconcile-index',
-      name: 'Reconcile wiki (drop links to deleted pages)',
-      callback: async () => {
-        const before = (await readIndexEntries(this.app.vault)).length;
-        await this.pruneIndex();
-        await this.pruneDeadRelatedLinks();
-        const after = (await readIndexEntries(this.app.vault)).length;
-        if (before === after) {
-          notify('noop', 'Wiki is already consistent — no links to deleted pages.');
-        } else {
-          notify(
-            'done',
-            `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
-              'and any related links pointing at them.'
-          );
-        }
+      id: 'litert-tidy-wiki',
+      name: 'Tidy the wiki (check, then fix what you approve)',
+      callback: () => {
+        if (this.refuseIfBusy()) return;
+        void this.tidyWiki();
       },
     });
 
@@ -965,24 +845,6 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-concept-page',
       name: 'Build a concept page from a tag or mention (local Gemma)',
       callback: () => void this.createConceptPage(),
-    });
-
-    this.addCommand({
-      id: 'litert-suggest-vocab',
-      name: 'Organize tags (schema.md, local Gemma)',
-      callback: () => {
-        if (this.refuseIfBusy()) return;
-        void this.suggestTagVocabulary();
-      },
-    });
-
-    this.addCommand({
-      id: 'litert-retag-pages',
-      name: 'Retag wiki pages to vocabulary (local Gemma)',
-      callback: () => {
-        if (this.refuseIfBusy()) return;
-        void this.retagPagesToVocabulary();
-      },
     });
 
     this.addCommand({
@@ -2045,6 +1907,183 @@ export default class LiteRtSpikePlugin extends Plugin {
   // gate it behind the same preview as everything else. Convergent (given a
   // fixed member list, write one overview) rather than open multi-step
   // generation.
+  /**
+   * The one command for the shape of the wiki, replacing five that were each
+   * half of the job: Lint said what was wrong, Relink and Reconcile fixed two
+   * of those things, and Organize/Retag were the two halves of a third. You
+   * had to know all five names, and which order they went in — Retag even
+   * printed "run Organize tags first", the plugin routing the user by hand.
+   *
+   * So: scan first, model-free and instant, then offer the repairs for what
+   * the scan actually found. Each repair keeps its own preview; nothing here
+   * writes without the gate it always had.
+   */
+  async tidyWiki() {
+    this.status('Checking the wiki…');
+    const report = await runLint(this.app);
+    const tags = await this.tagHealth();
+    this.statusEnd();
+    new TidyModal(this.app, report, tags, async (chosen) => {
+      // Free repairs first: they change the link graph the model would
+      // otherwise be asked about, so running them first is fewer calls.
+      if (chosen.has('reconcile')) await this.reconcileWiki();
+      if (chosen.has('relink')) await this.relinkWikiPages();
+      if (chosen.has('tags')) {
+        await this.suggestTagVocabulary();
+        await this.retagPagesToVocabulary();
+      }
+    }).open();
+  }
+
+  /**
+   * Model-free read of the tag vocabulary's state. The signal that matters is
+   * not how many tags are pending but whether ingest has a vocabulary to reuse
+   * at all: with `## Tags` empty every note coins its own, and near-duplicates
+   * accumulate — seven coffee pages had grown twelve tags between them.
+   *
+   * Duplicate detection is by shared stem, deliberately: it is a string fact,
+   * cheap and checkable, and it is only ever used to suggest running the pass
+   * that does the real work.
+   */
+  private async tagHealth(): Promise<TagHealth> {
+    const schema = await readSchema(this.app.vault);
+    const inUse = new Map<string, number>();
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!isWikiPage(f)) continue;
+      const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+      if (!Array.isArray(raw)) continue;
+      for (const t of raw) {
+        const s = slugify(String(t));
+        if (s) inUse.set(s, (inUse.get(s) ?? 0) + 1);
+      }
+    }
+    const stems = new Map<string, string[]>();
+    for (const t of inUse.keys()) {
+      const stem = t.split('-')[0];
+      if (stem.length < 4) continue;
+      stems.set(stem, [...(stems.get(stem) ?? []), t]);
+    }
+    return {
+      vocabulary: schema.tags.length,
+      pending: schema.pending.length,
+      inUse: inUse.size,
+      clusters: [...stems.values()].filter((g) => g.length > 1).map((g) => g.sort()),
+    };
+  }
+
+  private async relinkWikiPages() {
+      const entries = await this.liveIndexEntries();
+      if (entries.length < 2) {
+        notify('warn', 'Need at least two indexed pages to relink.');
+        return;
+      }
+      const titleOf = new Map(entries.map((e) => [e.linkPath, e.title]));
+
+      // The link graph as it stands. Related is written on the NEW page when
+      // a page is ingested and never on the page it points at, so every link
+      // was one-way: whatever was ingested first collected inbound links and
+      // everything else stayed an orphan. Ten pages here, five of them
+      // pointing at the same hub, six with no inbound link at all — and
+      // relink could not fix it, because it skipped any page whose Related
+      // section was merely healthy.
+      const out = new Map<string, Set<string>>();
+      const asWritten = new Map<string, string[]>();
+      for (const e of entries) {
+        const file = this.app.vault.getAbstractFileByPath(`${e.linkPath}.md`);
+        if (!(file instanceof TFile)) continue;
+        const content = await this.app.vault.read(file);
+        const links = this.readRelatedLinksOn(content);
+        asWritten.set(e.linkPath, links);
+        // Links to pages that no longer exist are dropped here, which is
+        // also how a stale section gets repaired: the desired set differs
+        // from what is on disk, so the page ends up in the proposals.
+        out.set(e.linkPath, new Set(links.filter((lp) => titleOf.has(lp))));
+      }
+
+      // Ask the model only where there is nothing to reciprocate. A page
+      // with links already has the relationships it needs; what it lacks is
+      // the other half of them.
+      let i = 0;
+      const empty = entries.filter((e) => !(out.get(e.linkPath)?.size));
+      for (const entry of empty) {
+        i++;
+        this.status(`Relinking ${i}/${empty.length} — ${entry.title}…`);
+        const candidates = entries.filter((e) => e.linkPath !== entry.linkPath);
+        const related = await this.pickRelatedPages(entry.summary, candidates);
+        const set = out.get(entry.linkPath);
+        for (const r of related) if (titleOf.has(r.linkPath)) set?.add(r.linkPath);
+      }
+      this.statusEnd();
+
+      // Mirror every link. Nothing is invented: a page only gains a link to
+      // a page that already chose to link to it, so an orphan that genuinely
+      // relates to nothing stays an orphan — which is the honest answer, and
+      // the one that keeps this from being a way to flatter the lint report.
+      for (const [from, targets] of [...out]) {
+        for (const to of targets) out.get(to)?.add(from);
+      }
+
+      const proposals: RelinkProposal[] = [];
+      for (const e of entries) {
+        const now = [...(out.get(e.linkPath) ?? [])].sort();
+        // Compared against the file, not against a count: a page carrying
+        // two links of which one has gone stale keeps its count when the
+        // dead one is dropped, and would otherwise never be rewritten.
+        const same =
+          now.length === (asWritten.get(e.linkPath)?.length ?? 0) &&
+          now.every((lp, i) => asWritten.get(e.linkPath)?.[i] === lp);
+        if (!now.length || same) continue;
+        proposals.push({
+          pagePath: `${e.linkPath}.md`,
+          title: e.title,
+          // Sorted so a rerun that changes nothing produces no diff.
+          related: now.map((lp) => ({ linkPath: lp, title: titleOf.get(lp) ?? lp })),
+        });
+      }
+
+      if (!proposals.length) {
+        notify('noop', 'Nothing to relink — every link is already mutual, and no new matches were found.');
+        return;
+      }
+      new RelinkPreviewModal(this.app, proposals, () => {
+        void (async () => {
+          for (const prop of proposals) {
+            const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
+            if (!(file instanceof TFile)) continue;
+            const content = await this.app.vault.read(file);
+            const section =
+              `\n## Related\n\n` +
+              prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
+              `\n`;
+            // Replace rather than append: Related is the last section a
+            // generated page carries, so truncating at it is safe, and a
+            // plain append would leave two headings.
+            const cut = content.indexOf('\n## Related');
+            const head = cut === -1 ? content : content.slice(0, cut);
+            await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
+            await appendLog(this.app.vault, 'relink', prop.title);
+          }
+          notify('done', `Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`);
+        })();
+      }).open();
+  }
+
+  private async reconcileWiki() {
+      const before = (await readIndexEntries(this.app.vault)).length;
+      await this.pruneIndex();
+      await this.pruneDeadRelatedLinks();
+      const after = (await readIndexEntries(this.app.vault)).length;
+      if (before === after) {
+        notify('noop', 'Wiki is already consistent — no links to deleted pages.');
+      } else {
+        notify(
+          'done',
+          `Removed ${before - after} deleted page${before - after === 1 ? '' : 's'} from the index, ` +
+            'and any related links pointing at them.'
+        );
+      }
+  }
+
   async createConceptPage() {
     // Concept threshold (issue #39): a tag only becomes a concept-page
     // candidate once at least this many pages share it. Read from schema.md
