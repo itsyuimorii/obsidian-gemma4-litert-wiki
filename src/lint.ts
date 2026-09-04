@@ -96,30 +96,64 @@ export class TidyModal extends Modal {
       text: `${this.report.pageCount} pages checked. Nothing is written until you approve each repair.`,
     });
 
-    // Free, and almost always right: a link that exists in one direction is a
-    // relationship, so the page it points at should say so too.
-    if (this.report.orphans.length) {
-      this.finding(
-        'relink',
-        `${this.report.orphans.length} page${this.report.orphans.length === 1 ? '' : 's'} with no inbound link`,
-        'Make existing links mutual, and ask the model for pages that have no Related section at all. ' +
-          'A page that genuinely relates to nothing stays an orphan.',
-        this.report.orphans,
-        true
-      );
-    } else {
-      this.ok('Every page has an inbound link.');
-    }
+    // Every repair is listed whether or not the scan found something for it.
+    // Tying availability to detection quietly removed working paths: a
+    // vocabulary you hand-edited could no longer be applied, and near-duplicate
+    // tags that do not share a stem — `llm-eval` and `evals`, the example in
+    // the plugin's own prompt — left Organize unreachable. The scan is good
+    // enough to choose a default, not good enough to be the only way in.
+    const t = this.tags;
 
-    if (this.report.missing.length) {
-      this.finding(
-        'reconcile',
-        `${this.report.missing.length} index entr${this.report.missing.length === 1 ? 'y' : 'ies'} pointing at deleted pages`,
-        'Drop them from the index, and remove links pointing at them. No model, nothing to review.',
-        this.report.missing,
-        true
-      );
-    }
+    const orphans = this.report.orphans.length;
+    this.finding(
+      'relink',
+      orphans
+        ? `${orphans} page${orphans === 1 ? '' : 's'} with no inbound link`
+        : 'Related sections — every page has an inbound link',
+      'Makes existing links mutual, fills empty Related sections, and drops links to pages that are ' +
+        'gone. A page that genuinely relates to nothing stays an orphan.',
+      this.report.orphans,
+      orphans > 0
+    );
+
+    const missing = this.report.missing.length;
+    this.finding(
+      'reconcile',
+      missing
+        ? `${missing} index entr${missing === 1 ? 'y' : 'ies'} pointing at deleted pages`
+        : 'Index — no entries point at deleted pages',
+      'Drops dead index entries and any Related links pointing at them. No model, nothing to review.',
+      this.report.missing,
+      missing > 0
+    );
+
+    // Two halves, two boxes. Rebuilding without applying leaves existing pages
+    // on their old tags; applying without rebuilding is the path you want after
+    // editing schema.md by hand, and merging them removed it.
+    const noVocab = !t.vocabulary && t.inUse > 0;
+    this.finding(
+      'organize',
+      noVocab
+        ? `No tag vocabulary yet — ${t.inUse} different tags in use, ${t.pending} waiting`
+        : `Tag vocabulary — ${t.vocabulary} tag${t.vocabulary === 1 ? '' : 's'}, ${t.inUse} in use, ${t.pending} waiting`,
+      (noVocab
+        ? 'Ingest has nothing to reuse, so every note coins its own. '
+        : '') +
+        'Rebuilds the vocabulary in schema.md from the tags your pages actually use, folding ' +
+        'near-duplicates together. One model call, one preview.',
+      t.clusters.length ? t.clusters.map((g) => g.join('  ·  ')) : [],
+      noVocab || t.clusters.length > 0
+    );
+
+    this.finding(
+      'retag',
+      'Apply the vocabulary to existing pages',
+      'Rewrites page tags to the vocabulary in schema.md — including a vocabulary you edited by ' +
+        'hand. Tick this with the box above to do both, or on its own after editing schema.md. ' +
+        'One model call, one preview.',
+      [],
+      noVocab || t.clusters.length > 0
+    );
 
     if (this.report.unindexed.length) {
       this.info(
@@ -129,36 +163,12 @@ export class TidyModal extends Modal {
       );
     }
 
-    // The signal is an empty vocabulary, not a long pending list: with nothing
-    // to reuse, every ingest coins its own tag and the near-duplicates pile up.
-    const t = this.tags;
-    if (!t.vocabulary && t.inUse) {
-      this.finding(
-        'tags',
-        `No tag vocabulary yet — ${t.inUse} different tags in use, ${t.pending} waiting`,
-        'Ingest has nothing to reuse, so every note coins its own. Fold them into one vocabulary and ' +
-          'apply it to existing pages. Two model calls, one preview each.',
-        t.clusters.map((g) => g.join('  ·  ')),
-        true
-      );
-    } else if (t.clusters.length) {
-      this.finding(
-        'tags',
-        `${t.clusters.length} group${t.clusters.length === 1 ? '' : 's'} of tags look like the same idea`,
-        'Rebuild the vocabulary from the tags in use and apply it. Two model calls, one preview each.',
-        t.clusters.map((g) => g.join('  ·  ')),
-        false
-      );
-    } else if (t.vocabulary) {
-      this.ok(`Vocabulary of ${t.vocabulary} tags, no obvious duplicates.`);
-    }
-
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
     const close = buttons.createEl('button', { text: 'Close' });
     close.addEventListener('click', () => this.close());
     const apply = buttons.createEl('button', { cls: 'mod-cta' });
     const sync = () => {
-      apply.setText(this.chosen.size ? `Fix ${this.chosen.size} of these` : 'Nothing selected');
+      apply.setText(this.chosen.size ? `Run ${this.chosen.size} of these` : 'Nothing selected');
       apply.disabled = this.chosen.size === 0;
     };
     this.syncApply = sync;
