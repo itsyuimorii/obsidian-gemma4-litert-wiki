@@ -45,6 +45,9 @@ export class IngestPreviewModal extends Modal {
   private overwriting: boolean;
   private onApprove: () => void;
   private heading: string;
+  private overwriteWarning?: string;
+  private onDismiss?: () => void;
+  private approved = false;
   private renderHost = new Component();
 
   constructor(
@@ -53,7 +56,18 @@ export class IngestPreviewModal extends Modal {
     pageContent: string,
     overwriting: boolean,
     onApprove: () => void,
-    heading = 'Review wiki page before writing'
+    heading = 'Review wiki page before writing',
+    opts: {
+      /**
+       * What an overwrite costs, in the words of the file being overwritten.
+       * It used to be one hard-coded sentence about cards being rebuilt from
+       * their note, which appeared over schema.md — a file that is nobody's
+       * build output and where the sentence was simply false.
+       */
+      overwriteWarning?: string;
+      /** Called when the dialog closes without approving. */
+      onDismiss?: () => void;
+    } = {}
   ) {
     super(app);
     this.pagePath = pagePath;
@@ -61,6 +75,8 @@ export class IngestPreviewModal extends Modal {
     this.overwriting = overwriting;
     this.onApprove = onApprove;
     this.heading = heading;
+    this.overwriteWarning = opts.overwriteWarning;
+    this.onDismiss = opts.onDismiss;
   }
 
   onOpen() {
@@ -79,13 +95,8 @@ export class IngestPreviewModal extends Modal {
     // from its note, so any correction made by hand in the card is destroyed
     // here — silently, at the one moment the user could still say no. Say it
     // where it happens rather than in the folder's README.
-    if (this.overwriting) {
-      contentEl.createDiv({
-        cls: 'gemma4-ingest-overwrite-warning',
-        text:
-          'Anything edited by hand in that file will be replaced. Cards are rebuilt from ' +
-          'the note each time — to keep a correction, put it in the note instead.',
-      });
+    if (this.overwriting && this.overwriteWarning) {
+      contentEl.createDiv({ cls: 'gemma4-ingest-overwrite-warning', text: this.overwriteWarning });
     }
 
     const preview = contentEl.createDiv({ cls: 'gemma4-ingest-preview' });
@@ -96,6 +107,7 @@ export class IngestPreviewModal extends Modal {
     cancel.addEventListener('click', () => this.close());
     const approve = buttons.createEl('button', { cls: 'mod-cta', text: 'Approve and write' });
     approve.addEventListener('click', () => {
+      this.approved = true;
       this.close();
       this.onApprove();
     });
@@ -104,6 +116,7 @@ export class IngestPreviewModal extends Modal {
   onClose() {
     this.renderHost.unload();
     this.contentEl.empty();
+    if (!this.approved) this.onDismiss?.();
   }
 }
 

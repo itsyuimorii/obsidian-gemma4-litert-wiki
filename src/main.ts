@@ -1411,7 +1411,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }
 
-  async suggestTagVocabulary() {
+  async suggestTagVocabulary(): Promise<boolean> {
     const counts = this.wikiTagCounts();
     if (!counts.length) {
       notify(
@@ -1419,7 +1419,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         'No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
           'Ingest a few notes first, then run "Organize tags".'
       );
-      return;
+      return false;
     }
 
     this.status('Organizing the tag vocabulary…');
@@ -1430,11 +1430,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     } catch (err) {
       console.error('[gemma4-litert-wiki] vocab suggest failed', err);
       this.statusFail('Suggest', err);
-      return;
+      return false;
     }
     if (!vocab.length) {
       notify('noop', 'The model returned an empty vocabulary — nothing to write.');
-      return;
+      return false;
     }
 
     // Preserve any Naming / Concept-threshold the user has set, and enforce
@@ -1446,19 +1446,41 @@ export default class LiteRtSpikePlugin extends Plugin {
     vocab = vocab.filter((t) => !rejectedSet.has(t));
     if (!vocab.length) {
       notify('noop', 'Every proposed tag is on the Rejected list — nothing to write.');
-      return;
+      return false;
     }
     const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold, [], existing.rejected);
     const path = schemaPath();
     const overwriting = !!this.app.vault.getAbstractFileByPath(path);
-    new IngestPreviewModal(this.app, path, content, overwriting, () => {
-      void (async () => {
-        await ensureWikiScaffold(this.app.vault);
-        await writeWikiPage(this.app.vault, path, content);
-        await appendLog(this.app.vault, 'schema', `tag vocabulary (${vocab.length} tags)`);
-        this.statusEnd(`Schema written: ${path}`);
-      })();
-    }).open();
+    // Resolves when the dialog is answered, not when it opens. Tidy runs
+    // Organize and Retag back to back, and an `await` that returned at
+    // `.open()` let Retag start against the OLD vocabulary and stack its
+    // dialog on top of this one.
+    return await new Promise<boolean>((resolve) => {
+      new IngestPreviewModal(
+        this.app,
+        path,
+        content,
+        overwriting,
+        () => {
+          void (async () => {
+            await ensureWikiScaffold(this.app.vault);
+            await writeWikiPage(this.app.vault, path, content);
+            await appendLog(this.app.vault, 'schema', `tag vocabulary (${vocab.length} tags)`);
+            this.statusEnd(`Schema written: ${path}`);
+            resolve(true);
+          })();
+        },
+        undefined,
+        {
+          // schema.md is not build output — it is the file you are invited to
+          // edit — so the card sentence about rebuilding from a note was
+          // simply false here.
+          overwriteWarning:
+            'Your current vocabulary is replaced by the one above. Tags you moved to Rejected are kept.',
+          onDismiss: () => resolve(false),
+        }
+      ).open();
+    });
   }
 
   // Related links must only ever point at pages that still exist. index.md is
@@ -1930,8 +1952,17 @@ export default class LiteRtSpikePlugin extends Plugin {
       if (chosen.has('relink')) await this.relinkWikiPages();
       // Two independent boxes: rebuild, apply, or both. Chaining them was the
       // merge quietly deleting the "I edited schema.md by hand" path.
-      if (chosen.has('organize')) await this.suggestTagVocabulary();
-      if (chosen.has('retag')) await this.retagPagesToVocabulary();
+      //
+      // Strictly sequential, because each repair ends in a dialog and two
+      // dialogs at once is not a review, it is a pile. Retag in particular
+      // reads schema.md, so starting it before the new vocabulary is approved
+      // and written meant applying the old one.
+      let vocabularyWritten = true;
+      if (chosen.has('organize')) vocabularyWritten = await this.suggestTagVocabulary();
+      if (chosen.has('retag')) {
+        if (vocabularyWritten) await this.retagPagesToVocabulary();
+        else notify('noop', 'Vocabulary was not written, so pages were left alone.');
+      }
     }).open();
   }
 
@@ -1963,10 +1994,12 @@ export default class LiteRtSpikePlugin extends Plugin {
       if (stem.length < 4) continue;
       stems.set(stem, [...(stems.get(stem) ?? []), t]);
     }
+    const vocabSet = new Set(schema.tags.map((t) => slugify(t)));
     return {
       vocabulary: schema.tags.length,
       pending: schema.pending.length,
       inUse: inUse.size,
+      offVocabulary: [...inUse.keys()].filter((t) => !vocabSet.has(t)).length,
       clusters: [...stems.values()].filter((g) => g.length > 1).map((g) => g.sort()),
     };
   }
@@ -2179,7 +2212,14 @@ export default class LiteRtSpikePlugin extends Plugin {
             this.statusEnd(`Concept page written: ${pagePath}`);
             this.refreshIngestBadges();
           })();
-        }).open();
+          },
+        undefined,
+        {
+          overwriteWarning:
+            'Anything edited by hand in that file will be replaced. Generated pages are rebuilt ' +
+            'from their source each time — to keep a correction, put it in the note instead.',
+        }
+        ).open();
       })();
     }).open();
   }
@@ -2532,7 +2572,14 @@ export default class LiteRtSpikePlugin extends Plugin {
             this.statusEnd(`Wiki page written: ${pagePath}`);
             this.refreshIngestBadges();
           })();
-        });
+          },
+        undefined,
+        {
+          overwriteWarning:
+            'Anything edited by hand in that file will be replaced. Generated pages are rebuilt ' +
+            'from their source each time — to keep a correction, put it in the note instead.',
+        }
+        );
         previewModal.open();
       } catch (err) {
         this.statusFail('Ingest', err);
