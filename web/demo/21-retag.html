@@ -38,16 +38,35 @@ OB.render({
 
 GemmaDemo.init([
     { do: () => {
-        beat('The vocabulary changed in the last scene, and nine pages are still carrying the old tags. That is deliberate — but it is not a state you want to leave things in.');
+        beat('The vocabulary changed in the last scene, and nine pages are still carrying the old tags. That is deliberate — approving a vocabulary is not approving nine edits — but it is not a state you want to leave things in.');
     }},
 
     { lock: 1300, do: () => {
-        OB.palette('retag', [{ name: 'Gemma Wiki: Retag wiki pages to vocabulary (local Gemma)', icon: 'tags' }]);
-        beat('This is the second half of the pair, and it exists as a separate command for one reason: <b>it edits pages, and the command that changed the rules did not.</b>');
+        OB.modal(`
+            <div class="head"><h3>Tidy the wiki</h3></div>
+            <div class="scroll">
+                <div class="rlist">
+                    <div class="ritem">
+                        <label class="tidy-head"><input type="checkbox"><span class="t">Tag vocabulary — all 9 tags your pages use are in it</span></label>
+                        <div class="d">Rebuilds the vocabulary in schema.md from the tags your pages actually use, folding near-duplicates together. One model call, one preview.</div>
+                    </div>
+                    <div class="ritem spot">
+                        <label class="tidy-head"><input type="checkbox" checked><span class="t">Apply the vocabulary to existing pages</span></label>
+                        <div class="d">Rewrites page tags to the vocabulary in schema.md — including a vocabulary you edited by hand. Tick this with the box above to do both, or on its own after editing schema.md. One model call, one preview.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="foot"><button class="ob-btn">Close</button><button class="ob-btn cta" id="run1">Run 1 of these</button></div>`, 'wide');
+        beat('So back to the same dialog, and this time only the fourth box. <b>Rebuilding the rules and applying them are two boxes, not one</b> — and the reason is the row above, which now reads <i>all 9 tags are in it</i>. There is nothing left to rebuild, and nine pages still to fix.');
     }},
 
-    { lock: 1500, do: () => {
-        OB.closePalette();
+    { lock: 2400, do: () => {
+        beat('Merging them into a single Fix tags would have read fine and quietly deleted this: the path where you edited <code>schema.md</code> by hand and want it applied. Nothing detects that, and there is nothing to rebuild afterwards.');
+    }},
+
+    { lock: 2000, do: () => {
+        $('#run1').classList.add('pressed');
+        OB.closeModal();
         flashKeys(['↵']);
         status('Mapping 3 old tags to the vocabulary…');
     }},

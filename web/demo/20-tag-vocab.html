@@ -70,13 +70,40 @@ source: follows the source note's filename</p>
     }},
 
     { lock: 1500, do: () => {
-        OB.palette('organize tags', [{ name: 'Gemma Wiki: Organize tags (schema.md, local Gemma)', icon: 'tags' }]);
-        beat('Or do it wholesale.');
+        OB.palette('tidy', [{ name: 'Gemma Wiki: Tidy the wiki (check, then fix what you approve)', icon: 'wand-2' }]);
+        beat('Or do it wholesale, from the dialog in the last scene.');
     }},
 
     { lock: 1400, do: () => {
         OB.closePalette();
         flashKeys(['↵']);
+        OB.modal(`
+            <div class="head"><h3>Tidy the wiki</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">9 pages checked. Nothing is written until you approve each repair.</p>
+                <div class="rlist">
+                    <div class="ritem" style="opacity:.45">
+                        <label class="tidy-head"><input type="checkbox"><span class="t">Related sections — every page has an inbound link</span></label>
+                    </div>
+                    <div class="ritem" style="opacity:.45">
+                        <label class="tidy-head"><input type="checkbox"><span class="t">Index — no entries point at deleted pages</span></label>
+                    </div>
+                    <div class="ritem spot">
+                        <label class="tidy-head"><input type="checkbox" checked><span class="t">Tag vocabulary — 3 of the 9 tags your pages use are not in it</span></label>
+                        <div class="d">Rebuilds the vocabulary in schema.md from the tags your pages actually use, folding near-duplicates together. One model call, one preview.</div>
+                    </div>
+                    <div class="ritem" style="opacity:.45">
+                        <label class="tidy-head"><input type="checkbox"><span class="t">Apply the vocabulary to existing pages</span></label>
+                    </div>
+                </div>
+            </div>
+            <div class="foot"><button class="ob-btn">Close</button><button class="ob-btn cta" id="run1">Run 1 of these</button></div>`, 'wide');
+        beat('The third box. It was not ticked by default — the check could not see the duplicate — so this one you tick yourself.');
+    }},
+
+    { lock: 2100, do: () => {
+        $('#run1').classList.add('pressed');
+        OB.closeModal();
         status('Organizing tags…');
     }},
 
@@ -84,6 +111,7 @@ source: follows the source note's filename</p>
         status(null);
         OB.modal(`
             <div class="head"><h3>Review wiki page before writing</h3><div class="path">Will overwrite: gemma-wiki/schema.md</div></div>
+            <div class="owarn">Your current vocabulary is replaced by the one above. Tags you moved to Rejected are kept.</div>
             <div class="scroll md">
                 <h1>Wiki Schema</h1>
                 <p>This file is the wiki's own configuration — what Andrej Karpathy calls "config as a note".</p>
@@ -101,7 +129,15 @@ source: follows the source note's filename</p>
                 <p>(none)</p>
             </div>
             <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok">Approve and write</button></div>`, 'narrow');
-        beat('The whole file, rewritten, shown before it is written — the same preview gate as an ingest, because <code>schema.md</code> is a page like any other. <code>llm-evaluation</code> and <code>evals</code> collapsed into <b>llm-eval</b>, and Pending is now empty.');
+        beat('The whole file, rewritten, shown before it is written — the same preview gate as an ingest. <code>llm-evaluation</code> and <code>evals</code> collapsed into <b>llm-eval</b>, and Pending is now empty.');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('And read the amber line, because it used to say something else. Every overwrite preview shared one sentence — <i>cards are rebuilt from the note each time, put your correction in the note instead</i> — which is true of a card and <b>false of this file</b>. <code>schema.md</code> is nobody\'s build output. It is the one file you are invited to edit.');
+    }},
+
+    { lock: 2400, do: () => {
+        beat('So the warning is written by whoever opens the dialog, in the words of the file being replaced. Here that is: your vocabulary goes, <b>and your Rejected list stays</b> — which is the only question you actually have at this moment.');
     }},
 
     { lock: 2200, do: () => {
