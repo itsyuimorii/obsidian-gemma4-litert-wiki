@@ -33,8 +33,10 @@ import {
   readIndexEntries,
   slugify,
   setWikiDir,
+  wikiAnswersDir,
+  wikiChatsDir,
   wikiDir,
-  wikiPagePath,
+  cardPathFor,
   writeWikiPage,
   type IndexEntry,
   type NoteExtraction,
@@ -746,6 +748,14 @@ export default class LiteRtSpikePlugin extends Plugin {
               '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.'
           );
         }
+
+        // Leftovers from before answers moved into the user's own vault.
+        // Said once, and nothing is moved: relocating a hundred files on
+        // upgrade is exactly the kind of help nobody asked for, and this
+        // plugin does not touch files in a vault that it did not just write.
+        // Empty folders are left too — deleting a directory in someone's vault
+        // to tidy up our own scaffold is not proportionate.
+        await this.noteRetiredFolders();
       })();
     });
     this.app.workspace.onLayoutReady(() => this.rescheduleAutoScan());
@@ -1382,7 +1392,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       else if (typeof rawTags === 'string') rawTags.split(/[,\s]+/).forEach((t) => t && existing.add(slugify(t)));
       const newTags = extraction.tags.map((t) => slugify(t)).filter((t) => t && !existing.has(t));
 
-      const selfLink = wikiPagePath(file.basename).replace(/\.md$/, '');
+      const selfLink = cardPathFor(this.app, file).replace(/\.md$/, '');
       const candidates = (await this.liveIndexEntries()).filter((e) => e.linkPath !== selfLink);
       const related = candidates.length ? await this.pickRelatedPages(extraction.summary, candidates) : [];
       this.statusEnd();
@@ -1450,6 +1460,36 @@ export default class LiteRtSpikePlugin extends Plugin {
   // get it back. Repeating it on every launch would be nagging — after the
   // first time there is nothing new in it, and Obsidian restores the panel with
   // the rest of the workspace anyway.
+  /**
+   * Say once that answers/ and chats/ are no longer written to.
+   *
+   * Only when they actually hold something. A folder that exists and is empty
+   * is a scaffold leftover nobody will miss, and a notice about it would be
+   * the plugin talking about its own housekeeping.
+   */
+  private async noteRetiredFolders(): Promise<void> {
+    if (this.settings.retiredFoldersNoticed) return;
+    const counts: string[] = [];
+    for (const dir of [wikiAnswersDir(), wikiChatsDir()]) {
+      const folder = this.app.vault.getAbstractFileByPath(dir);
+      if (!(folder instanceof TFolder)) continue;
+      const n = folder.children.filter((c) => c instanceof TFile && c.name !== 'README.md').length;
+      if (n) counts.push(`${dir}/ — ${n} file${n === 1 ? '' : 's'}`);
+    }
+    this.settings.retiredFoldersNoticed = true;
+    await this.saveSettings();
+    if (!counts.length) return;
+    notifyAndLog(
+      this.app.vault,
+      'info',
+      'Saved answers now go into your own notes, beside the note they came from.\n\n' +
+        `These two folders are no longer written to and nothing was moved:\n${counts.join('\n')}\n\n` +
+        'Anything worth keeping can go wherever you keep notes — and once it is there, ' +
+        'a scan can turn it into a wiki card like any other note.',
+      DURATION.LONG
+    );
+  }
+
   showSetupCard() {
     new ScaffoldCreatedModal(
       this.app,
@@ -2369,7 +2409,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // frontmatter-only, and unchanged notes before the 20-40s model
       // call. "Unchanged" compares a content hash against the existing
       // page's source_hash.
-      const pagePathForCheck = wikiPagePath(file.basename);
+      const pagePathForCheck = cardPathFor(this.app, file);
       const existingHash = getIngestedSourceHashes(this.app).get(file.path);
       const skip = precheckNote(content, existingHash);
       if (skip === 'empty' || skip === 'frontmatter-only') {
@@ -2426,7 +2466,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         this.statusEnd();
 
         const sourceHash = contentHash(content);
-        const pagePath = wikiPagePath(file.basename);
+        const pagePath = cardPathFor(this.app, file);
         const selfLink = pagePath.replace(/\.md$/, '');
         const candidates = (await this.liveIndexEntries()).filter(
           (e) => e.linkPath !== selfLink
@@ -2617,6 +2657,11 @@ export default class LiteRtSpikePlugin extends Plugin {
     // (A draft the user then unticks can leave a link to a page that was
     // never written — the post-write prune below clears exactly that.)
     const batchEntries: IndexEntry[] = [];
+    // Card paths minted so far in this run. Drafting happens before any write,
+    // so without this two new notes with the same basename both see the name
+    // free and the second replaces the first between the review list and disk —
+    // the user approves four pages and gets three, with nothing saying which.
+    const reservedPaths = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (this.scanCancelled) {
         cancelled = true;
@@ -2631,7 +2676,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           this.status(`Drafting ${i + 1}/${n} — ${file.basename} · ${t}`);
         });
         const sourceHash = contentHash(content);
-        const pagePath = wikiPagePath(file.basename);
+        const pagePath = cardPathFor(this.app, file, reservedPaths);
         const selfLink = pagePath.replace(/\.md$/, '');
         const candidates = [...(await this.liveIndexEntries()), ...batchEntries].filter(
           (e) => e.linkPath !== selfLink
