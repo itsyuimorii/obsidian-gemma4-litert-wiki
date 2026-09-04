@@ -19,7 +19,7 @@ From there: chat grounded in one note or in the whole wiki, quiz yourself on eit
 
 Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
 
-> **Status: working MVP.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `gemma-wiki/` layer with cross-links, an `gemma-wiki/index.md` catalog and append-only `gemma-wiki/log.md`, index-first grounded chat with deterministic source attribution, answers saved beside the material that produced them (kept to re-read, never retrieved), a model-free lint report, and canned single-task skills. Not yet in the community plugin store; benchmarks below are from real use.
+> **Status: 1.0.0.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `gemma-wiki/` layer with cross-links, an `gemma-wiki/index.md` catalog and append-only `gemma-wiki/log.md`, index-first grounded chat with deterministic source attribution, answers saved beside the material that produced them (kept to re-read, never retrieved), a model-free check-then-repair pass, and canned single-task skills. Submitted to the community plugin store; until it appears there, install from a [release](../../releases). Benchmarks below are from real use.
 
 ## ✨ Features at a glance
 
@@ -214,9 +214,9 @@ Implemented — the Karpathy core loop, scoped deliberately to what a small on-d
 
 - **Ingest** with a review gate (nothing written without approval), single-schema extraction, related-page cross-links picked from the index catalog, and a confidence rating in page frontmatter.
 - **Query** via index-first retrieval with stopword filtering, catalog + activity log always in context, deterministic source attribution, and save-answer-back-to-wiki — kept to re-read, deliberately not fed back as grounding.
-- **Lint v1**, model-free: orphans and index health.
+- **Tidy**, model-free where it can be: orphans and index health are checked without the model; the four repairs run only on what you tick.
 
-Everything once listed as next has since landed: user-defined skills (drop a file in `skills/`), model-assisted contradiction candidates (flagged for human judgment, never auto-fixed), a content-hash dedup gate in scan, and the review board. What actually remains is the community-store submission itself — tag, release, review.
+Everything once listed as next has since landed: user-defined skills (drop a file in `skills/`), model-assisted contradiction candidates (flagged for human judgment, never auto-fixed), a content-hash dedup gate in scan, and the review board. What actually remains is the community-store submission itself — under review.
 
 Deliberately out of scope: a multi-provider abstraction layer, image input (the LiteRT-LM web runtime does not support it yet), PDF OCR, and any retrieval scheme more complex than "read the index, then read the pages it points to" — field reports put the flat-index breaking point around ~77 pages, far above this wiki's current size; that decision gets revisited there, not before.
 
