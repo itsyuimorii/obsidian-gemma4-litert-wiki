@@ -817,36 +817,77 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-relink-wiki',
       name: 'Relink wiki pages (fill or re-sync Related sections)',
       callback: async () => {
-        // Backfill for pages ingested before the related-links feature
-        // existed — they have no cross-links and show up as orphans in
-        // lint and as disconnected dots in the graph view.
         const entries = await this.liveIndexEntries();
         if (entries.length < 2) {
           notify('warn', 'Need at least two indexed pages to relink.');
           return;
         }
-        const proposals: RelinkProposal[] = [];
-        let i = 0;
-        for (const entry of entries) {
-          i++;
-          const file = this.app.vault.getAbstractFileByPath(`${entry.linkPath}.md`);
+        const titleOf = new Map(entries.map((e) => [e.linkPath, e.title]));
+
+        // The link graph as it stands. Related is written on the NEW page when
+        // a page is ingested and never on the page it points at, so every link
+        // was one-way: whatever was ingested first collected inbound links and
+        // everything else stayed an orphan. Ten pages here, five of them
+        // pointing at the same hub, six with no inbound link at all — and
+        // relink could not fix it, because it skipped any page whose Related
+        // section was merely healthy.
+        const out = new Map<string, Set<string>>();
+        const asWritten = new Map<string, string[]>();
+        for (const e of entries) {
+          const file = this.app.vault.getAbstractFileByPath(`${e.linkPath}.md`);
           if (!(file instanceof TFile)) continue;
           const content = await this.app.vault.read(file);
-          // Re-sync, not backfill-only (issue #44): skip a page only when its
-          // Related section is HEALTHY — present, non-empty, and every link
-          // resolving. Skipping on mere presence meant a section that was
-          // empty or had gone stale could never be repaired.
-          if (!content.trim() || this.relatedIsHealthy(content)) continue;
-          this.status(`Relinking ${i}/${entries.length} — ${entry.title}…`);
+          const links = this.readRelatedLinksOn(content);
+          asWritten.set(e.linkPath, links);
+          // Links to pages that no longer exist are dropped here, which is
+          // also how a stale section gets repaired: the desired set differs
+          // from what is on disk, so the page ends up in the proposals.
+          out.set(e.linkPath, new Set(links.filter((lp) => titleOf.has(lp))));
+        }
+
+        // Ask the model only where there is nothing to reciprocate. A page
+        // with links already has the relationships it needs; what it lacks is
+        // the other half of them.
+        let i = 0;
+        const empty = entries.filter((e) => !(out.get(e.linkPath)?.size));
+        for (const entry of empty) {
+          i++;
+          this.status(`Relinking ${i}/${empty.length} — ${entry.title}…`);
           const candidates = entries.filter((e) => e.linkPath !== entry.linkPath);
           const related = await this.pickRelatedPages(entry.summary, candidates);
-          if (related.length) {
-            proposals.push({ pagePath: `${entry.linkPath}.md`, title: entry.title, related });
-          }
+          const set = out.get(entry.linkPath);
+          for (const r of related) if (titleOf.has(r.linkPath)) set?.add(r.linkPath);
         }
         this.statusEnd();
+
+        // Mirror every link. Nothing is invented: a page only gains a link to
+        // a page that already chose to link to it, so an orphan that genuinely
+        // relates to nothing stays an orphan — which is the honest answer, and
+        // the one that keeps this from being a way to flatter the lint report.
+        for (const [from, targets] of [...out]) {
+          for (const to of targets) out.get(to)?.add(from);
+        }
+
+        const proposals: RelinkProposal[] = [];
+        for (const e of entries) {
+          const now = [...(out.get(e.linkPath) ?? [])].sort();
+          // Compared against the file, not against a count: a page carrying
+          // two links of which one has gone stale keeps its count when the
+          // dead one is dropped, and would otherwise never be rewritten.
+          const same =
+            now.length === (asWritten.get(e.linkPath)?.length ?? 0) &&
+            now.every((lp, i) => asWritten.get(e.linkPath)?.[i] === lp);
+          if (!now.length || same) continue;
+          proposals.push({
+            pagePath: `${e.linkPath}.md`,
+            title: e.title,
+            // Sorted so a rerun that changes nothing produces no diff.
+            related: now.map((lp) => ({ linkPath: lp, title: titleOf.get(lp) ?? lp })),
+          });
+        }
+
         if (!proposals.length) {
-          notify('noop', 'Nothing to relink — every page has an up-to-date Related section, or no matches were found.');
+          notify('noop', 'Nothing to relink — every link is already mutual, and no new matches were found.');
           return;
         }
         new RelinkPreviewModal(this.app, proposals, () => {
@@ -859,10 +900,9 @@ export default class LiteRtSpikePlugin extends Plugin {
                 `\n## Related\n\n` +
                 prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
                 `\n`;
-              // Replace an existing Related section rather than appending a
-              // second one — now that relink re-syncs stale sections, a plain
-              // append would duplicate the heading. Related is the last section
-              // generated pages carry, so truncating at it is safe.
+              // Replace rather than append: Related is the last section a
+              // generated page carries, so truncating at it is safe, and a
+              // plain append would leave two headings.
               const cut = content.indexOf('\n## Related');
               const head = cut === -1 ? content : content.slice(0, cut);
               await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
@@ -1610,20 +1650,18 @@ export default class LiteRtSpikePlugin extends Plugin {
   // A page's Related section is "healthy" when it exists, lists at least one
   // link, and every link still resolves. Anything else — no section, an empty
   // one, or one holding a dead link — is a candidate for re-syncing (#44).
-  private relatedIsHealthy(content: string): boolean {
+  /** The linkPaths a page's Related section currently lists, in file order. */
+  private readRelatedLinksOn(content: string): string[] {
     const cut = content.indexOf('\n## Related');
-    if (cut === -1) return false;
-    const RELATED_LINK = /^- \[\[([^\]|]+)\|/;
-    const links = content
+    if (cut === -1) return [];
+    return content
       .slice(cut)
       .split('\n')
-      .map((l) => l.match(RELATED_LINK))
-      .filter((m): m is RegExpMatchArray => !!m);
-    if (!links.length) return false;
-    return links.every(
-      (m) => this.app.vault.getAbstractFileByPath(`${m[1]}.md`) instanceof TFile
-    );
+      .map((l) => /^- \[\[([^\]|]+)\|/.exec(l))
+      .filter((m): m is RegExpExecArray => !!m)
+      .map((m) => m[1]);
   }
+
 
   // Deleting a wiki page leaves every OTHER page that linked to it holding a
   // dead [[link]] in its "## Related" list — pruneIndex only fixes index.md.
