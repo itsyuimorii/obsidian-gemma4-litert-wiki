@@ -3,7 +3,7 @@
   "name": "Gemma 4 LiteRT Wiki",
   "version": "0.0.1",
   "minAppVersion": "1.11.4",
-  "description": "Gemma 4 inside Obsidian via LiteRT-LM and WebGPU: chat, quiz, improve and relink your notes with free local AI. Follows Karpathy's LLM-wiki — ingest into a wiki it maintains (index, tags, links), grounded in what you wrote. One-time model download.",
+  "description": "Gemma 4 inside Obsidian via LiteRT-LM and WebGPU, local and free: chat, improve and relink your notes, quiz and flashcards on what you wrote. Follows Karpathy's LLM-wiki: ingest into a wiki it maintains (index, tags, links). One-time model download.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
