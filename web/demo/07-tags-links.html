@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 07 · Tags & links — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 07 — Tags & links</div>
+    <div class="txt">The one command that edits your own note — and asks first.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'webmcp notes', icon: 'file-text' },
+    words: '212 words',
+    tree: VAULT.tree('filed', 'webmcp'),
+    editor: `
+<p class="fmtext">---
+created: 2026-08-14
+---</p>
+<h1>webmcp notes</h1>
+<p>WebMCP lets a page hand tools to an agent through <code>document.modelContext</code>. The
+<code>navigator</code> form in the early drafts is gone — anything written against it breaks.</p>
+<p>There is no notion of agent <em>identity</em> anywhere in the spec. Two agents on the same page are
+indistinguishable to the page, so anything resembling a seat or a turn has to be arranged by the page
+itself, in its own state.</p>
+<p>Which is the whole difficulty with a multi-seat board: the seats are a fiction the page maintains.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+GemmaDemo.init([
+    { do: () => {
+        beat('Everything so far has written into the plugin\'s own folder. This is one of only two things that touch <b>your</b> file — the other is <i>Improve formatting</i> — so it is one of the two with the loudest gate.');
+    }},
+
+    { lock: 1000, do: () => {
+        OB.palette('suggest tags', [
+            { name: 'Gemma Wiki: Suggest tags & links for active note (local Gemma)', icon: 'tags' },
+        ]);
+    }},
+
+    { lock: 1300, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        status('Suggesting tags & links for "webmcp notes"…');
+        beat(null);
+    }},
+
+    { lock: 2400, do: () => {
+        status(null);
+        OB.modal(`
+            <div class="head">
+                <h3>Review tags &amp; links before writing</h3>
+                <div class="path">Will edit: research/webmcp notes.md — merges tags into frontmatter, appends a Related section. Nothing else changes.</div>
+            </div>
+            <div class="scroll">
+                <div class="kv"><div class="k">Tags to add</div><div class="v"><span class="pill violet">#webmcp</span> <span class="pill violet">#agents</span> <span class="pill violet">#browser-apis</span></div></div>
+                <div class="kv"><div class="k">Links to add</div><div class="v"><span class="pill">[[agent-interfaces]]</span> <span class="pill">[[browser-apis]]</span></div></div>
+                <p class="hintline" style="margin-top:12px">The links come from pages already in your wiki — it proposes connections to things that exist, never to a note it imagines you might have.</p>
+            </div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok">Approve and write</button></div>`, 'narrow');
+        beat('Read the second line: <b>Will edit</b>, not "will create" — every other preview in this deck says <i>create</i>. The dialog names your file, says exactly which two things change, and promises nothing else does.');
+    }},
+
+    { lock: 1500, do: () => {
+        beat('Three tags and two links, and the links are to <i>pages that exist</i>. A model asked to suggest connections will happily invent a note you never wrote; these are checked against the wiki before you are shown them.');
+    }},
+
+    { lock: 1200, do: () => { $('#ok').classList.add('pressed'); }},
+
+    { lock: 1600, do: () => {
+        OB.closeModal();
+        $('#editor').innerHTML = `
+<p class="fmtext">---
+created: 2026-08-14
+tags:
+  - webmcp
+  - agents
+  - browser-apis
+---</p>
+<h1>webmcp notes</h1>
+<p>WebMCP lets a page hand tools to an agent through <code>document.modelContext</code>. The
+<code>navigator</code> form in the early drafts is gone — anything written against it breaks.</p>
+<p>There is no notion of agent <em>identity</em> anywhere in the spec. Two agents on the same page are
+indistinguishable to the page, so anything resembling a seat or a turn has to be arranged by the page
+itself, in its own state.</p>
+<p>Which is the whole difficulty with a multi-seat board: the seats are a fiction the page maintains.</p>
+<h2>Related</h2>
+<ul><li><a class="wl">[[agent-interfaces]]</a></li><li><a class="wl">[[browser-apis]]</a></li></ul>`;
+        notice('✅ Tags and links written to research/webmcp notes.md', 6000);
+        beat('Merged into the frontmatter that was already there, and a Related section appended at the end. Your prose is not touched.');
+    }},
+
+    { do: () => {
+        beat('And it is one undo. Cmd+Z, and the note is back — which is the real reason this can be offered at all.');
+        flashKeys(['⌘', 'Z']);
+    }},
+]);
+
+</script>
+</body>
+</html>

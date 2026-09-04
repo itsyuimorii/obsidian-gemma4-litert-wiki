@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 01 · First run — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 01 — First run</div>
+    <div class="txt">Install, and the plugin says what it made and where.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    words: '146 words',
+    // Nothing of the plugin's exists yet. This is the vault as it was.
+    tree: VAULT.tree('none', 'litert'),
+    editor: `
+<h1>litert on device</h1>
+<p>LiteRT-LM loads the <code>.litertlm</code> bundle straight into the renderer process — there is
+no server and no separate app.</p>
+<p>First call is slow and it is <em>not</em> the weights loading. It is shader compilation. Measured
+28.1 s to first token on a 2098-token input, cold.</p>`,
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('A vault with four research notes in it, and a plugin that has just been enabled. There is no account, no key, and no sign-in — the next thing that happens is a download.');
+    }},
+
+    { lock: 900, do: () => {
+        beat(null);
+        const m = OB.modal(`
+            <div class="head">
+                <h3>Gemma Wiki needs its model</h3>
+                <div class="path">gemma-4-E4B-it-web.litertlm · about 3 GB · downloaded once</div>
+            </div>
+            <div class="scroll">
+                <p style="margin-bottom:12px">The model runs inside Obsidian on your GPU. Downloading it is the only time this
+                plugin touches the network — after that it works with the cable out.</p>
+                <span class="prog"><span class="bar" id="dl"></span></span>
+                <div class="prog-meta"><span id="dlN">0 / 2970 MB</span><span id="dlS">waiting</span></div>
+            </div>
+            <div class="foot">
+                <span class="note">Resumable — closing Obsidian does not lose it.</span>
+                <button class="ob-btn">Later</button>
+                <button class="ob-btn cta">Download</button>
+            </div>`, 'narrow');
+        m.querySelectorAll('.ob-btn')[1].classList.add('pressed');
+    }},
+
+    { lock: 5200, do: () => {
+        beat('Three gigabytes, once. It resumes if you quit halfway, because a 3 GB download that starts over is a 3 GB download nobody finishes.');
+        $('#dlS').textContent = 'downloading';
+        progress('#dl', 0, 100, 4600,
+            (p) => { $('#dlN').textContent = `${Math.round(p * 29.7)} / 2970 MB`; },
+            () => { $('#dlS').textContent = 'done'; $('#dl').classList.add('green'); });
+    }},
+
+    { lock: 1200, do: () => {
+        OB.closeModal();
+        beat('Now the folder. The plugin makes one, and everything it will ever write lives inside it.');
+        VAULT.wiki('empty').forEach((r, i) => setTimeout(() => OB.addRow(r), i * 130));
+    }},
+
+    { lock: 1400, do: () => {
+        OB.modal(`
+            <div class="head">
+                <h3>Gemma Wiki set up "gemma-wiki/"</h3>
+            </div>
+            <div class="scroll">
+                <p style="margin-bottom:12px">Everything this plugin writes goes in that one folder. Your own notes are never
+                moved or modified — they are read and closed.</p>
+                <div class="folder-map">
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/cards/</span><span class="fm-what">One summary card per note you file</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/concepts/</span><span class="fm-what">Pages built across a shared tag</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/skills/</span><span class="fm-what">One file per ⚡ menu entry</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/index.md</span><span class="fm-what">Every page, listed</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/log.md</span><span class="fm-what">What ran, and when</span></div>
+                    <div class="fm-row"><span class="fm-path">gemma-wiki/schema.md</span><span class="fm-what">Your tag vocabulary</span></div>
+                </div>
+                <p class="hintline" style="margin-top:12px">Each folder holds a README explaining what belongs in it. Rename the folder, or
+                check that nothing is missing, in Settings → Gemma Wiki.</p>
+            </div>
+            <div class="foot"><button class="ob-btn">Open index.md</button><button class="ob-btn cta">Start</button></div>`);
+        beat('This card exists because a plugin that silently creates folders in someone else\'s vault has done something rude. It names every one of them, and it says the one thing that matters: <b>your notes are read and closed.</b>');
+    }},
+
+    { lock: 900, do: () => {
+        OB.closeModal();
+        beat(null);
+        OB.openRight(GW.panel('litert on device', 'note'));
+    }},
+
+    { do: () => {
+        beat('And the panel opens itself, because the ribbon icon on the far left is the whole product and nobody finds it by guessing.');
+        notice('✅ Ready — Gemma 4 E4B, running on your GPU', 5000);
+    }},
+]);
+
+</script>
+</body>
+</html>

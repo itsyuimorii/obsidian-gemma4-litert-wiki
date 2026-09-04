@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 18 · Lint & reconcile — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 18 — Lint & reconcile</div>
+    <div class="txt">The unglamorous half: broken links, orphans, and a stale index.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'index.md', icon: 'file-text' },
+    tree: VAULT.tree('full', 'gw-index'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('You deleted two wiki pages by hand last week, and renamed a note. Nothing warned you, because nothing should have — it is your vault.');
+    }},
+
+    { lock: 1300, do: () => {
+        beat('But <code>index.md</code> is what Wiki mode retrieves against, and it still lists both of the pages you deleted.');
+        OB.openFile('index.md', `<div class="md" style="padding:22px 26px">
+            <h1>Wiki index</h1>
+            <p class="hintline">Every page, listed. Wiki-mode retrieval reads this file — a page missing from here is a page the chat cannot find.</p>
+            <ul>
+                <li><a class="wl">[[cards/litert-on-device]]</a> — LiteRT-LM runs in the renderer over WebGPU…</li>
+                <li><a class="wl">[[cards/webmcp-notes]]</a> — WebMCP exposes page tools through document.modelContext…</li>
+                <li style="opacity:.5"><a class="wl">[[cards/old-scratch]]</a> — <i>file no longer exists</i></li>
+                <li style="opacity:.5"><a class="wl">[[cards/2025-migration]]</a> — <i>file no longer exists</i></li>
+            </ul>
+        </div>`, { rowId: 'gw-index' });
+    }},
+
+    { lock: 1700, do: () => {
+        OB.palette('lint', [
+            { name: 'Gemma Wiki: Lint wiki (orphans and index health)', icon: 'search-x' },
+            { name: 'Gemma Wiki: Reconcile wiki (drop links to deleted pages)', icon: 'network' },
+        ]);
+        beat('Two commands, and the split between them is the split this whole plugin runs on: <b>one reports, one writes.</b>');
+    }},
+
+    { lock: 1500, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        OB.modal(`
+            <div class="head"><h3>Wiki lint report</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">9 wiki pages checked. No model was used — this is a file and link sweep.</p>
+                <div class="rlist">
+                    <div class="ritem warn"><div class="t">Index entries pointing to missing files <span class="pill amber">2</span></div>
+                        <div class="d">Listed in index.md but the page file does not exist.</div>
+                        <div class="why">cards/old-scratch<br>cards/2025-migration</div></div>
+                    <div class="ritem warn"><div class="t">Pages missing from the index <span class="pill amber">1</span></div>
+                        <div class="d">Page files with no index.md entry, so Wiki chat cannot find them.</div>
+                        <div class="why">concepts/on-device</div></div>
+                    <div class="ritem"><div class="t">Orphan pages <span class="pill">1</span></div>
+                        <div class="d">No inbound links from any other wiki page. Consider adding Related links, or re-ingesting nearby notes.</div>
+                        <div class="why">cards/agent-interfaces</div></div>
+                </div>
+            </div>
+            <div class="foot"><span class="note">Nothing was changed.</span><button class="ob-btn cta">Close</button></div>`, 'wide');
+        reveal('.ritem', 200);
+        beat(null);
+    }},
+
+    { lock: 1800, do: () => {
+        beat('The second row is the one that actually costs you something. A page missing from the index is <b>invisible to retrieval</b> — it exists, it is correct, and no question will ever reach it.');
+    }},
+
+    { lock: 1700, do: () => {
+        beat('The third is a judgement call, not a fault. An orphan page might mean a note nobody linked to yet, or it might mean nothing at all — so lint reports it and refuses to decide.');
+    }},
+
+    { lock: 1500, do: () => {
+        OB.closeModal();
+        flashKeys(['↵']);
+        notice('✅ Reconciled — dropped 2 index entries pointing at deleted pages.', 6000);
+        beat('Reconcile is the half that writes, and it does exactly one thing: <b>drops index entries whose file is gone</b>. It never resurrects a page, and it never deletes one.');
+    }},
+
+    { lock: 1600, do: () => {
+        $('#editor').innerHTML = `<div class="md" style="padding:22px 26px">
+            <h1>Wiki index</h1>
+            <p class="hintline">Every page, listed. Wiki-mode retrieval reads this file — a page missing from here is a page the chat cannot find.</p>
+            <ul>
+                <li><a class="wl">[[cards/litert-on-device]]</a> — LiteRT-LM runs in the renderer over WebGPU…</li>
+                <li><a class="wl">[[cards/webmcp-notes]]</a> — WebMCP exposes page tools through document.modelContext…</li>
+            </ul>
+        </div>`;
+        beat('Because a deleted page is a decision you made, and re-creating it would be the plugin arguing with you about your own vault.');
+    }},
+
+    { do: () => {
+        beat('Neither command runs the model. Both are file sweeps — which is why they are safe to run whenever you wonder, and why the report is instant.');
+    }},
+]);
+
+</script>
+</body>
+</html>

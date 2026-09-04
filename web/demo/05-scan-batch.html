@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 05 · Scan a folder — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 05 — Scan a folder</div>
+    <div class="txt">Pick folders, see the bill, then walk away.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('empty', 'litert'),
+    editor: `<h1>litert on device</h1><p>LiteRT-LM loads the <code>.litertlm</code> bundle straight into
+the renderer process — there is no server and no separate app.</p>`,
+});
+
+const DRAFTS = [
+    ['browser-apis', 'low confidence', 'Notes on File System Access, Web Serial and WebGPU — mostly links, with two paragraphs of commentary that do not agree with each other.', '#browser-apis  #webgpu'],
+    ['agent-interfaces', 'med confidence', 'Sketches for what an agent-facing UI owes a human: reversibility, a visible cost, and a way to stop it midway.', '#agents  #interface'],
+    ['webmcp-notes', 'high confidence', 'WebMCP exposes page tools through document.modelContext; the spec has no notion of agent identity, so multi-seat has to be arranged by the page.', '#webmcp  #agents  #browser-apis'],
+    ['litert-on-device', 'high confidence', 'LiteRT-LM runs in the renderer over WebGPU; the 28.1 s cold start is shader compilation, and warm prefill is 5-6× faster.', '#on-device  #webgpu  #benchmarks'],
+];
+
+GemmaDemo.init([
+    { do: () => {
+        OB.openRight(GW.panel('litert on device', 'wiki'));
+        beat('Wiki mode. The first chip here is an action too — and it is the only one, because a skill file is a prompt and a prompt cannot express <i>do this</i>.');
+    }},
+
+    { lock: 900, do: () => {
+        $$('.gw-chip')[0].classList.add('pressed');
+        beat(null);
+    }},
+
+    { lock: 1200, do: () => {
+        OB.modal(`
+            <div class="head"><h3>Scan a folder into the wiki</h3></div>
+            <div class="scroll">
+                <p class="scanlede">Sweeps the folders you pick for new or changed notes and drafts a page for each.
+                One model call per note, so it takes a while — you can close this and keep working; progress runs in
+                the status bar, and the review list waits for you there if you moved on. Nothing is ever written
+                without your tick.</p>
+                <p class="scanlede aside">This is the batch. For just the note you have open, close this and press
+                Cmd/Ctrl+P → "Ingest this note into wiki".</p>
+                <div class="scanlist">
+                    <div class="scanrow"><span class="cb"></span><span class="p">research</span><span class="c">4 new or changed</span></div>
+                    <div class="scanrow off" id="rowJ"><span class="cb"></span><span class="p">journal</span><span class="c">31 new or changed</span></div>
+                    <div class="scanrow off"><span class="cb"></span><span class="p">templates</span><span class="c">nothing new</span></div>
+                </div>
+                <div class="scancount" id="cnt">
+                    <div>4 notes, about one model call each — roughly 2 minutes.</div>
+                    <div class="sub">The first one is slower if the model has not loaded yet. You can stop partway and still review what was drafted.</div>
+                </div>
+            </div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="go">Scan 4 notes</button></div>`);
+        beat('The counts are exact, and they are free: finding candidates is a file sweep — no model, no GPU. So the dialog can tell you what each folder costs <i>before</i> you commit to it.');
+    }},
+
+    { lock: 1600, do: () => {
+        beat('This replaced a "max notes per scan" ceiling. That number existed because you could not see how big a run was, so the plugin quietly trimmed it and told you afterwards. Now the size is on screen and the decision is yours.');
+        $('#rowJ').classList.remove('off');
+        $('#cnt').innerHTML = '<div>35 notes, about one model call each — roughly <b>12 minutes</b>.</div><div class="sub">The first one is slower if the model has not loaded yet. You can stop partway and still review what was drafted.</div>';
+        $('#go').textContent = 'Scan 35 notes';
+    }},
+
+    { lock: 1300, do: () => {
+        $('#rowJ').classList.add('off');
+        $('#cnt').innerHTML = '<div>4 notes, about one model call each — roughly 2 minutes.</div><div class="sub">The first one is slower if the model has not loaded yet. You can stop partway and still review what was drafted.</div>';
+        $('#go').textContent = 'Scan 4 notes';
+        $('#go').classList.add('pressed');
+    }},
+
+    { lock: 1500, do: () => {
+        OB.closeModal();
+        status('Drafting 1/4 — browser apis · Extracting');
+        $('#suggestions').outerHTML = GW.suggestions('wiki', { scanning: true, busy: true });
+        beat('Two minutes is a long time to watch a spinner, so the run says where it is and the clock keeps counting. A generation with no clock on it is indistinguishable from a hang.');
+    }},
+
+    { lock: 2600, do: () => {
+        status('Drafting 2/4 — agent interfaces · Extracting', { keep: true });
+        beat('Look at the chip row. <b>Scan a folder became Stop scan</b> — it is the obvious control now, so it is that control. The other two greyed: taking a button away beats letting you press it and be told no.');
+    }},
+
+    { lock: 2400, do: () => { status('Drafting 3/4 — webmcp notes · finding related pages', { keep: true }); beat('And you are not blocked. Close the dialog, keep writing — the run lives in the status bar, not in a modal parked in front of your vault.'); }},
+    { lock: 2000, do: () => { status('Drafting 4/4 — litert on device · Extracting', { keep: true }); beat(null); }},
+
+    { lock: 1500, do: () => {
+        status(null);
+        $('#suggestions').outerHTML = GW.suggestions('wiki');
+        OB.modal(`
+            <div class="head"><h3>Review drafts before they enter the wiki</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">4 drafts generated. Untick anything that looks wrong, then write the rest. Nothing is saved until you do.</p>
+                <div class="draftlist">${DRAFTS.map(([t, r, s, g]) => `
+                    <div class="draftrow"><span class="cb"></span><div class="body">
+                        <div class="titlerow"><span class="title">${t}</span><span class="reasons">new · ${r}</span></div>
+                        <div class="sum">${s}</div><div class="tags">${g}</div>
+                    </div></div>`).join('')}</div>
+            </div>
+            <div class="foot"><button class="ob-btn">Toggle all</button><button class="ob-btn cta" id="wr">Write 4 to wiki</button></div>`, 'wide');
+        reveal('.draftrow', 130);
+        beat('Four drafts, and <b>low confidence sorts to the top</b> — the ones most in need of a human eye are the ones you read first, not the ones you scroll past.');
+    }},
+
+    { lock: 1800, do: () => {
+        $$('.draftrow')[0].classList.add('off');
+        $('#wr').textContent = 'Write 3 to wiki';
+        beat('That first one is the model telling you its own draft is shaky, and it is right — that note contradicts itself. Untick it. The count on the button follows.');
+    }},
+
+    { lock: 1300, do: () => { $('#wr').classList.add('pressed'); }},
+
+    { lock: 1600, do: () => {
+        OB.closeModal();
+        ['agent-interfaces', 'webmcp-notes', 'litert-on-device'].forEach((n, i) =>
+            setTimeout(() => OB.addRow({ name: n, kind: 'file', indent: 2, id: 'c-' + i }, 'gw-cards'), i * 160));
+        ['agentif', 'webmcp', 'litert'].forEach((id, i) => setTimeout(() => OB.badge(id), i * 160));
+        notice('✅ Wrote 3 pages to the wiki.', 6000);
+        beat('Three pages, three badges. The fourth note is untouched and will come up again next scan — declining a draft is not a decision you have to remember.');
+    }},
+]);
+
+</script>
+</body>
+</html>
