@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 14 · You edit the note — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 14 — You edit the note</div>
+    <div class="txt">The card notices, says so, and waits for you.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    words: '146 words',
+    tree: VAULT.tree('full', 'litert'),
+    editor: `
+<h1>litert on device</h1>
+<p>First call is slow and it is <em>not</em> the weights loading. It is shader compilation: the GPU
+pipeline has to be built once for the shapes the model uses. Measured 28.1 s to first token on a
+2098-token input, cold.</p>
+<p id="ctx">Context is 4096 tokens. That is the real constraint on everything else.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+GemmaDemo.init([
+    { do: () => {
+        beat('The habit this plugin asks of you is: <b>fix the note, not the card</b>. Which only works if the card finds out. So — edit the note.');
+    }},
+
+    { lock: 1000, do: () => {
+        beat(null);
+        typeHTML('#ctx', 'Context is <b>8192</b> tokens on this machine — I re-ran it after the driver update. The 4096 figure was the old default, not a limit.', { speed: 16 });
+    }},
+
+    { lock: 2600, do: () => {
+        beat('One sentence, and it invalidates a key point on the card, a claim inside a saved answer, and a line in a concept page. None of which you are thinking about right now, because you are writing.');
+    }},
+
+    { lock: 1500, do: () => {
+        notice('📥 1 note changed since it was filed', 6000);
+        statusReview(1);
+        beat('The plugin hashes the note on a timer and compares it to the <code>source_hash</code> it stored. Different hash, different note. <b>No model runs</b> — this is a file sweep, so it can happen quietly in the background.');
+    }},
+
+    { lock: 1800, do: () => {
+        beat('And it lands in the status bar, not in a dialog. You are mid-sentence; a modal here would be the plugin deciding its bookkeeping outranks your writing.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.modal(`
+            <div class="head"><h3>Wiki review board</h3></div>
+            <div class="scroll">
+                <p class="lint-summary">2 of 6 pages worth a look — low-confidence extractions, changed sources, concept overviews whose members changed, and pages untouched for 90+ days.</p>
+                <div class="rlist">
+                    <div class="ritem bad"><div class="t">litert-on-device <span class="pill red">source changed since ingest</span></div>
+                        <div class="d">gemma-wiki/cards/litert-on-device.md</div>
+                        <div class="why">The note behind this card has been edited. Its key points may now describe something you no longer believe.</div></div>
+                    <div class="ritem warn"><div class="t">on-device <span class="pill amber">members changed — rebuild this concept page</span></div>
+                        <div class="d">gemma-wiki/concepts/on-device.md</div>
+                        <div class="why">The overview was written across four cards, and one of them is no longer what it was.</div></div>
+                </div>
+                <p class="hintline" style="margin-top:12px">Open a flagged page, check its claims against the source note it links to, and re-ingest the source if the summary drifted.</p>
+            </div>
+            <div class="foot"><button class="ob-btn cta">Close</button></div>`, 'wide');
+        reveal('.ritem', 220);
+        beat('Two flags from one sentence, and the second is the one you would never have found by hand. <b>Drift propagates upward.</b> The card knows its note changed — and the concept page knows one of the four cards it was written across is no longer what it was.');
+    }},
+
+    { lock: 2400, do: () => {
+        beat('Which is the failure this whole layer exists to catch. A generated page has no way of knowing the ground moved under it, so the plugin remembers what the ground looked like — <code>source_hash</code> on a card, membership on a concept page — and compares.');
+    }},
+
+    { lock: 1600, do: () => {
+        OB.closeModal();
+        beat('And notice what the board did <b>not</b> do: it did not re-ingest anything. It did not rewrite the card. It flagged, and it stopped.');
+    }},
+
+    { lock: 1500, do: () => {
+        status('Ingesting "litert on device" — finding related pages…');
+        beat('Because re-ingesting costs a model call, and doing it automatically means a background process spending your GPU on a decision you did not make. You press it.');
+    }},
+
+    { lock: 2400, do: () => {
+        status(null);
+        notice('✅ Wiki page written: gemma-wiki/cards/litert-on-device.md', 5000);
+        beat('New card, new <code>source_hash</code>, flag cleared. The wiki caught up to the note — which is the only direction that ever runs.');
+    }},
+
+    { do: () => {
+        beat('Delete the whole <code>gemma-wiki/</code> folder and every one of these pages can be rebuilt from your notes. <b>That is only true because the truth never lived in the wiki.</b>');
+    }},
+]);
+
+</script>
+</body>
+</html>

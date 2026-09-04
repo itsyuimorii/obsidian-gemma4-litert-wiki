@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 13 · Output, not material — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 13 — Output, not material</div>
+    <div class="txt">The one rule that keeps a generated wiki from rotting.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'index.md', icon: 'file-text' },
+    tree: VAULT.tree('full', 'gw-index'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('Karpathy\'s pattern says explorations should compound — a connection you dug for should be there next time. It does not say what happens when a compounded exploration is <b>wrong</b>.');
+    }},
+
+    { lock: 2000, do: () => {
+        beat('That failure is specific and quiet. A saved answer re-enters retrieval, gets cited to a page in your own wiki, and six months later is indistinguishable from something you wrote — <b>and unfixable, because you no longer remember which sentence it was.</b>');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('An earlier version of this plugin tried to rank around it: answers retrieved, but <i>below</i> the pages, under a heading telling the model to trust the page when they disagreed. That is a hope, written in a prompt.');
+    }},
+
+    { lock: 2000, do: () => {
+        $('#editor').innerHTML = `<div class="md" style="padding:24px 28px">
+            <h1>What is retrievable</h1>
+            <div class="rlist" id="l">
+                <div class="ritem good"><div class="t">Your notes <span class="pill green">the source of everything</span></div>
+                    <div class="d">Never written to by the plugin. Read and closed.</div></div>
+                <div class="ritem"><div class="t"><code>cards/</code> <span class="pill violet">retrieved</span></div>
+                    <div class="d">One card per note you filed. Generated from a note you wrote, and rebuildable from it.</div></div>
+                <div class="ritem"><div class="t"><code>concepts/</code> <span class="pill violet">retrieved</span></div>
+                    <div class="d">Written across cards that share a tag. Two steps from your notes, still derived from them.</div></div>
+                <div class="ritem bad"><div class="t">Everything else <span class="pill red">not retrievable</span></div>
+                    <div class="d">There is no third pile. An answer you keep is a note in <b>your</b> vault — and it becomes material the same way any note does, by being scanned.</div></div>
+            </div>
+            <p class="hintline" style="margin-top:16px"><b>Everything the wiki retrieves derives from a note you wrote.</b> That holds structurally, not by remembering to exclude things.</p>
+        </div>`;
+        reveal('.ritem', 240);
+        beat('So the ranking went, and with it the pile it was ranking. Two folders, both generated from your notes.');
+    }},
+
+    { lock: 2600, do: () => {
+        beat('Which makes the rule checkable rather than hoped for. There is no prompt to obey and no heading to respect: a saved answer is not in <code>index.md</code>, so the query path cannot reach it, so it cannot come back cited to your wiki.');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('And it costs you nothing, because the door is still open — <b>you just have to walk through it</b>. Write the answer into a note, or press Save as note, then scan it. That act is the difference between output and material.');
+    }},
+
+    { lock: 2000, do: () => {
+        $('#editor').innerHTML = `<div class="md" style="padding:26px 30px">
+            <h1>Where do I fix a mistake?</h1>
+            <div class="kv"><div class="k">A fact is wrong</div><div class="v">Edit <b>your note</b>. The card is flagged as drifted and re-ingested. <i>This is the normal case.</i></div></div>
+            <div class="kv"><div class="k">The card summarised badly</div><div class="v">Re-ingest the note. The card is regenerated, not hand-patched.</div></div>
+            <div class="kv"><div class="k">A saved answer is wrong</div><div class="v">It is a note of yours — edit it or delete it, like anything else you wrote. Nothing else depends on it unless you scanned it.</div></div>
+            <div class="kv"><div class="k">Two cards contradict</div><div class="v">Neither is authoritative — <b>Find contradictions</b> quotes both and you decide.</div></div>
+        </div>`;
+        reveal('.kv', 220);
+        beat('Which comes out as one habit: <b>you edit your notes. You do not edit the wiki.</b>');
+    }},
+
+    { do: () => {
+        beat('And that is what makes <code>gemma-wiki/</code> honestly disposable. Delete the whole folder and every page rebuilds from your notes — true only because nothing irreplaceable was ever kept in there.');
+    }},
+]);
+
+</script>
+</body>
+</html>

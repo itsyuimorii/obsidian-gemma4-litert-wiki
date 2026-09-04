@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 08 · Ask the wiki — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 08 — Ask the wiki</div>
+    <div class="txt">A question no single note can answer.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('filed', 'litert'),
+    editor: `<h1>litert on device</h1><p>LiteRT-LM loads the <code>.litertlm</code> bundle straight into
+the renderer process. Context is 4096 tokens.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+GemmaDemo.init([
+    { do: () => {
+        OB.openRight(GW.panel('litert on device', 'note', { filed: true }));
+        beat('Four notes filed. Now the question that <b>This note</b> mode structurally cannot answer, because the answer is not in any one note.');
+    }},
+
+    { lock: 1000, do: () => {
+        $('#modeNote').classList.remove('on');
+        $('#modeWiki').classList.add('on');
+        $('#right').innerHTML = GW.panel('', 'wiki');
+        beat('One pill. The grounding changes underneath — from the open file to the cards in <code>cards/</code>.');
+    }},
+
+    { lock: 1300, do: () => {
+        beat('And the chips change with it, because a question that makes sense against one note makes no sense against a library. These three are fixed: they do not shuffle themselves based on how full the wiki is, so the row you learn is the row you keep.');
+    }},
+
+    { lock: 1200, do: () => {
+        beat(null);
+        typeHTML('#input', 'what keeps coming up across all of these?', { speed: 22 });
+    }},
+
+    { lock: 1700, do: () => {
+        $('#input').innerHTML = '<span class="ph">Ask across your wiki… (Enter to send)</span>';
+        $('#messages').innerHTML = `<div class="gw-msg user">what keeps coming up across all of these?</div>` + GW.thinking();
+        flashKeys(['↵']);
+    }},
+
+    { lock: 1700, do: () => {
+        beat('While that spins: retrieval is <b>deterministic and cheap</b>. A lexical score over the four cards, then one hop through the link graph to pull in pages a hit points at. No second model and no embedding index — nothing competing for the GPU the answer itself needs.');
+    }},
+
+    { lock: 2600, do: () => {
+        beat(null);
+        const el = $('#ans');
+        typeHTML(el,
+            'Three threads run through all four pages.<br><br>' +
+            '<b>The browser is the runtime.</b> LiteRT-LM in the renderer process, WebGPU for the ' +
+            'model, WebMCP through <code>document.modelContext</code> — none of these pages assumes a server ' +
+            'anywhere.<br><br>' +
+            '<b>Identity is missing everywhere.</b> WebMCP has no notion of which agent is calling, and the ' +
+            'agent-interface notes reach the same wall from the design side: you cannot give something a ' +
+            'seat if you cannot tell it apart.<br><br>' +
+            '<b>The cost is one-time, then flat.</b> Shader compilation, adapter setup, tool registration — ' +
+            'each of these pages records a large first call followed by a cheap steady state.',
+            { speed: 10, jitter: 6 });
+    }},
+
+    { lock: 1200, do: () => {
+        GemmaDemo.afterTyped('#ans', () =>
+            $('#ans').insertAdjacentHTML('beforeend',
+                GW.sources(['litert on device', 'webmcp notes', 'agent interfaces', 'browser apis']) + GW.actions()));
+        beat('Four sources, listed by the plugin — the exact four cards that went into the prompt. Not four the model decided to name afterwards.');
+    }},
+
+    { do: () => {
+        beat('The second thread is a connection you never wrote down. It exists in the gap between two notes, which is the only place this layer can find anything the notes could not tell you on their own.');
+    }},
+]);
+
+</script>
+</body>
+</html>

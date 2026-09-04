@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 19 · Concept page — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 19 — Concept page</div>
+    <div class="txt">Four cards share a tag, so a layer above them appears.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'index.md', icon: 'file-text' },
+    tree: VAULT.tree('filed', 'gw-index'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('So far the wiki is flat: one card per note, no hierarchy. Which is right — you never asked for a hierarchy, and a plugin that invents one is a plugin reorganising your vault.');
+    }},
+
+    { lock: 1400, do: () => {
+        beat('But four cards now carry <code>#on-device</code>, and four is the threshold set in <code>schema.md</code>. That is the wiki saying it has enough material for a layer above itself.');
+        OB.palette('concept', [{ name: 'Gemma Wiki: Build a concept page from a tag or mention (local Gemma)', icon: 'library' }]);
+    }},
+
+    { lock: 1400, do: () => {
+        OB.closePalette();
+        // A fuzzy suggester — the same widget as the command palette. Clusters
+        // are listed with their size, and you type to narrow.
+        OB.palette('on-dev', [
+            { name: 'on-device  (4 pages)', icon: 'library' },
+        ], { placeholder: 'Pick a tag to build a concept page for…' });
+        beat('One candidate, because only one cluster has reached the threshold. Anything below it is not offered at all — the plugin does not tempt you into building an overview across two pages.');
+    }},
+
+    { lock: 1700, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        status('Writing a concept overview for "on-device"…');
+        beat('One model call, and it reads the four <b>cards</b> — not the four notes. Four summaries fit in the window together; four full notes would not, and that is exactly why the card layer exists.');
+    }},
+
+    { lock: 2800, do: () => {
+        status(null);
+        OB.modal(`
+            <div class="head"><h3>Review wiki page before writing</h3><div class="path">Will create: gemma-wiki/concepts/on-device.md</div></div>
+            <div class="scroll md">
+                <p class="fmtext">---
+tags:
+  - concept
+  - on-device
+kind: concept
+created: 2026-09-01
+---</p>
+                <h1>on-device (concept)</h1>
+                <p>Four notes converge on the same bet: that the browser is now a complete runtime for a
+                language model, and that the interesting problems have moved from <i>can this run here</i>
+                to <i>what does running here cost, and who is allowed to call it</i>.</p>
+                <p>The cost question is settled and measured — a large one-time compilation, then a flat
+                steady state. The permission question is not: nothing in the browser stack can tell two
+                callers apart, so every design that needs to ends up inventing identity in page state.</p>
+                <h2>Pages</h2>
+                <ul>
+                    <li><a class="wl">[[cards/litert-on-device|litert on device]]</a></li>
+                    <li><a class="wl">[[cards/webmcp-notes|webmcp notes]]</a></li>
+                    <li><a class="wl">[[cards/agent-interfaces|agent interfaces]]</a></li>
+                    <li><a class="wl">[[cards/browser-apis|browser apis]]</a></li>
+                </ul>
+            </div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok2">Approve and write</button></div>`);
+        beat('An overview that says something none of the four cards says, and then <b>links down to all four</b>. The hierarchy is navigable in both directions from the moment it exists.');
+    }},
+
+    { lock: 2000, do: () => {
+        beat('It carries <code>kind: concept</code>, which is what lets the review board treat it differently: when one of its four members changes, this page is flagged as needing a <i>rebuild</i> rather than a re-ingest — because it has no single source note to go back to.');
+    }},
+
+    { lock: 1400, do: () => { $('#ok2').classList.add('pressed'); }},
+
+    { lock: 1500, do: () => {
+        OB.closeModal();
+        OB.addRow({ name: 'on-device', kind: 'file', indent: 2, id: 'k-ondevice' }, 'gw-concepts');
+        notice('✅ Concept page written: gemma-wiki/concepts/on-device.md', 6000);
+        beat('And it is now in the retrieval pool alongside the cards, so a wiki question about on-device work can be answered from the overview instead of from four summaries competing for the window.');
+    }},
+
+    { do: () => {
+        beat('The wiki grew a level. Not because a schema said it should, but because <b>your notes reached a density that made one useful</b> — and you pressed the button.');
+    }},
+]);
+
+</script>
+</body>
+</html>

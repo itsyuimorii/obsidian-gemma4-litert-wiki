@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 02 · Ask immediately — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 02 — Ask immediately</div>
+    <div class="txt">Nothing is filed yet, and it is already useful.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+const NOTE = `
+<h1>litert on device</h1>
+<p>LiteRT-LM loads the <code>.litertlm</code> bundle straight into the renderer process — there is no
+server and no separate app. The whole thing is Electron plus WebGPU.</p>
+<p>First call is slow and it is <em>not</em> the weights loading. It is shader compilation: the GPU
+pipeline has to be built once for the shapes the model uses. Measured 28.1 s to first token on a
+2098-token input, cold.</p>
+<p>Once warm, prefill jumps roughly 5-6× — 495 tok/s on a 1558-token input against 74.7 cold. Decode
+stays flat at about 29 tok/s no matter the input length, warm or cold.</p>
+<p class="muted">so: the cold number is a one-time tax, not a per-call one. worth saying that clearly
+somewhere, people will read 28s and assume every message costs that</p>
+<p>Context is 4096 tokens. That is the real constraint on everything else.</p>`;
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    words: '146 words',
+    tree: VAULT.tree('empty', 'litert'),
+    editor: NOTE,
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('The wiki is empty — <code>cards/</code> has nothing in it. That is on purpose: <b>This note</b> mode reads the file in front of you, so the plugin works from the minute the download finishes and before you have filed anything.');
+    }},
+
+    { lock: 900, do: () => {
+        beat(null);
+        OB.openRight(GW.panel('litert on device', 'note'));
+    }},
+
+    { lock: 1000, do: () => {
+        beat('The empty state says the one thing worth saying before you type: <i>answers come from a model running entirely inside Obsidian — nothing leaves your machine.</i>');
+    }},
+
+    { lock: 1100, do: () => {
+        beat('Three chips, and the drawing is the documentation. <b>Summarize</b> is bare — it only reads. The other two carry a glyph because they <i>do</i> something: Formatting edits your note, Ingest creates a file.');
+        $$('.gw-chip')[1].style.boxShadow = '0 0 0 1.5px rgba(123,108,217,0.45)';
+        $$('.gw-chip')[2].style.boxShadow = '0 0 0 1.5px rgba(123,108,217,0.45)';
+    }},
+
+    { lock: 1400, do: () => {
+        beat('Same pill, same text colour — only the glyph differs. A dashed border was tried first and at this size it read as "this label is in a different font", noticed as an inconsistency rather than as a meaning. An icon survives 26 pixels.');
+    }},
+
+    { lock: 1200, do: () => {
+        $$('.gw-chip').forEach(c => (c.style.boxShadow = ''));
+        beat(null);
+        typeHTML('#input', 'is the 28 seconds going to happen on every message?', { speed: 22 });
+    }},
+
+    { lock: 1600, do: () => {
+        $('#input').innerHTML = '<span class="ph">Ask about this note… (Enter to send)</span>';
+        $('#messages').innerHTML = `<div class="gw-msg user">is the 28 seconds going to happen on every message?</div>` + GW.thinking();
+        flashKeys(['↵']);
+    }},
+
+    { lock: 2600, do: () => {
+        const el = document.createElement('div');
+        el.className = 'gw-msg bot';
+        el.id = 'ans';
+        $('#messages').appendChild(el);
+        typeHTML(el,
+            'No. Your note is explicit that the 28.1 s figure is shader compilation, not weight ' +
+            'loading — the GPU pipeline is built once for the shapes the model uses, so it is a ' +
+            'one-time cost per session rather than a per-call one.<br><br>' +
+            'Once the engine is warm the note records prefill at 495 tok/s against 74.7 cold, ' +
+            'roughly a 5-6× jump, with decode flat at about 29 tok/s regardless.',
+            { speed: 12, jitter: 8 });
+    }},
+
+    { lock: 1000, do: () => {
+        GemmaDemo.afterTyped('#ans', () =>
+            $('#ans').insertAdjacentHTML('beforeend',
+                GW.sources(['litert on device']) + GW.actions()));
+        beat('One source, because there was one. <b>The plugin lists what it put in the prompt</b> — the model is never asked to cite, because that is the one thing a small local model gets wrong without anyone noticing.');
+    }},
+
+    { do: () => {
+        beat('It also answered the thing the note was <i>worried</i> about: the author had written a note-to-self that people would misread the 28 s figure. That is what grounding buys — an answer about this note, not about LLMs in general.');
+        notice('Network: idle · 0 requests since launch', 5000);
+    }},
+]);
+
+</script>
+</body>
+</html>

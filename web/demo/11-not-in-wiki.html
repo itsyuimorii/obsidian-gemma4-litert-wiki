@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 11 · Not in the wiki — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 11 — Not in the wiki</div>
+    <div class="txt">Retrieval finds nothing, and the plugin says so instead of inventing.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'litert on device', icon: 'file-text' },
+    tree: VAULT.tree('filed', 'litert'),
+    editor: `<h1>litert on device</h1><p>Context is 4096 tokens. That is the real constraint on
+everything else.</p>`,
+});
+['litert', 'webmcp', 'agentif', 'browserapi'].forEach(OB.badge);
+
+GemmaDemo.init([
+    { do: () => {
+        OB.openRight(GW.panel('', 'wiki'));
+        beat('Four cards about local inference and browser APIs. Now ask something none of them covers — which is the case every grounded tool has to get right, and most get wrong.');
+    }},
+
+    { lock: 1100, do: () => {
+        beat(null);
+        typeHTML('#input', 'what did Rome do about grain shortages?', { speed: 22 });
+    }},
+
+    { lock: 1700, do: () => {
+        $('#input').innerHTML = '<span class="ph">Ask across your wiki… (Enter to send)</span>';
+        $('#messages').innerHTML = `<div class="gw-msg user">what did Rome do about grain shortages?</div>` + GW.thinking();
+        flashKeys(['↵']);
+    }},
+
+    { lock: 1800, do: () => {
+        const el = $('#ans');
+        typeHTML(el,
+            'Nothing in your wiki is about this. The four pages filed cover on-device inference, ' +
+            'WebGPU, WebMCP and browser APIs — none of them touches Roman grain policy.',
+            { speed: 13 });
+    }},
+
+    { lock: 1400, do: () => {
+        beat('It does not answer. A model this size <i>would</i> have answered — plausibly, fluently, and with no way for you to tell it apart from a grounded answer. The refusal is the feature.');
+    }},
+
+    { lock: 1300, do: () => {
+        GemmaDemo.afterTyped('#ans', () =>
+            $('#ans').insertAdjacentHTML('beforeend',
+                `<div class="gw-hatch"><span class="btn" id="hatch">${icon('circle-help')}Not in your wiki? Ask Gemma directly (no sources)</span></div>`));
+        beat('And then it offers the door, once, on this answer. Not a setting, not a mode you can forget you left on — <b>a button attached to the one question it failed</b>.');
+    }},
+
+    { lock: 1400, do: () => {
+        $('#hatch').classList.add('lit');
+    }},
+
+    { lock: 1600, do: () => {
+        $('#messages').insertAdjacentHTML('beforeend',
+            `<div class="gw-msg user">what did Rome do about grain shortages?</div>` + GW.thinking('ans2'));
+        const el = $('#ans2');
+        typeHTML(el,
+            'From general knowledge: the state distributed subsidised and later free grain — the ' +
+            '<i>annona</i> — funded shipments from Egypt and North Africa, and built granaries at Ostia. ' +
+            'Emperors intervened directly during shortfalls, and grain supply was a recurring source ' +
+            'of political pressure.',
+            { speed: 11, jitter: 6 });
+    }},
+
+    { lock: 1400, do: () => {
+        GemmaDemo.afterTyped('#ans2', () =>
+            $('#ans2').insertAdjacentHTML('beforeend',
+                `<div class="gw-sources warn"><span class="lb">⚠ Gemma general knowledge — not from your notes</span></div>` +
+            `<div class="gw-msg-actions"><span class="a">${icon('copy')}Copy</span><span class="a">${icon('refresh-cw')}Regenerate</span></div>`));
+        beat('Where the Sources row would be, there is a warning instead. The two kinds of answer are drawn differently on purpose, because six months from now you will not remember which was which.');
+    }},
+
+    { do: () => {
+        beat('And <b>Save as note is gone from this one</b>. Saving writes into your own vault, where a scan can later card it — so a model guess with no sources would become material indistinguishable from something you wrote. The button is absent rather than refusing.');
+    }},
+]);
+
+</script>
+</body>
+</html>

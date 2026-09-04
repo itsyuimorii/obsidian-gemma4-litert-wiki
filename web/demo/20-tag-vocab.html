@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 20 · Tag vocabulary — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 20 — Tag vocabulary</div>
+    <div class="txt">The config is a note, and the veto is yours.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+
+OB.render({
+    tab: { name: 'schema.md', icon: 'file-text' },
+    tree: VAULT.tree('full', 'gw-schema'),
+    editor: '',
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('A model left to coin its own tags will write <code>llm-eval</code> on Monday, <code>llm-evaluation</code> on Thursday, and <code>evals</code> next month — and the three pages that belong together never meet.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.openFile('schema.md', `<div class="md" style="padding:22px 26px">
+            <h1>Wiki Schema</h1>
+            <p>This file is the wiki's own configuration — what Andrej Karpathy calls <b>"config as a note"</b>.
+            It is plain markdown you can read and edit by hand, and the plugin parses it before every ingest.</p>
+            <h2>Tags</h2>
+            <ul><li>on-device</li><li>webgpu</li><li>benchmarks</li><li>webmcp</li><li>agents</li><li>browser-apis</li></ul>
+            <h2>Naming</h2>
+            <p class="fmtext">concept: kebab-case singular noun
+source: follows the source note's filename</p>
+            <h2>Concept threshold</h2>
+            <p>4</p>
+            <h2>Pending</h2>
+            <ul><li>llm-evaluation</li><li>evals</li><li>local-inference</li></ul>
+            <h2>Rejected</h2>
+            <p>(none)</p>
+        </div>`, { rowId: 'gw-schema' });
+        beat('So the vocabulary lives in a file. Not a hidden setting — a note, in your vault, that versions with everything else and that the plugin reads before every single ingest.');
+    }},
+
+    { lock: 1900, do: () => {
+        beat('<b>Pending</b> is where new tags wait. Ingest coined these three and did not promote them — but it <i>does</i> read this list, so a tag sitting here already stops the next note from coining a fourth near-duplicate.');
+    }},
+
+    { lock: 1800, do: () => {
+        beat('You can clear it by hand: cut a line up into Tags to keep it, delete the line to drop it. Precise, and good for one or two.');
+    }},
+
+    { lock: 1500, do: () => {
+        OB.palette('organize tags', [{ name: 'Gemma Wiki: Organize tags (schema.md, local Gemma)', icon: 'tags' }]);
+        beat('Or do it wholesale.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        status('Organizing tags…');
+    }},
+
+    { lock: 2400, do: () => {
+        status(null);
+        OB.modal(`
+            <div class="head"><h3>Review wiki page before writing</h3><div class="path">Will overwrite: gemma-wiki/schema.md</div></div>
+            <div class="scroll md">
+                <h1>Wiki Schema</h1>
+                <p>This file is the wiki's own configuration — what Andrej Karpathy calls "config as a note".</p>
+                <h2>Tags</h2>
+                <ul><li>on-device</li><li>webgpu</li><li>benchmarks</li><li>webmcp</li><li>agents</li>
+                <li>browser-apis</li><li><b>llm-eval</b></li></ul>
+                <h2>Naming</h2>
+                <p class="fmtext">concept: kebab-case singular noun
+source: follows the source note's filename</p>
+                <h2>Concept threshold</h2>
+                <p>4</p>
+                <h2>Pending</h2>
+                <p>(none)</p>
+                <h2>Rejected</h2>
+                <p>(none)</p>
+            </div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok">Approve and write</button></div>`, 'narrow');
+        beat('The whole file, rewritten, shown before it is written — the same preview gate as an ingest, because <code>schema.md</code> is a page like any other. <code>llm-evaluation</code> and <code>evals</code> collapsed into <b>llm-eval</b>, and Pending is now empty.');
+    }},
+
+    { lock: 2200, do: () => {
+        $('#ok').classList.add('pressed');
+        OB.closeModal();
+        beat('Approving the preview <i>is</i> your approval — wholesale instead of retail. And it takes effect for <b>future</b> ingests only: pages you already have keep their tags until you run Retag, which is the next scene.');
+    }},
+
+    { lock: 1600, do: () => {
+        $('#editor').innerHTML = `<div class="md" style="padding:22px 26px">
+            <h1>Wiki Schema</h1>
+            <h2>Tags</h2>
+            <ul><li>on-device</li><li>webgpu</li><li>benchmarks</li><li>webmcp</li><li>agents</li><li>browser-apis</li><li>llm-eval</li></ul>
+            <h2>Pending</h2>
+            <p>(none)</p>
+            <h2>Rejected</h2>
+            <ul id="rej"><li>evals</li></ul>
+        </div>`;
+        beat('And then there is <b>Rejected</b>, which is the one section that is purely yours. A tag you move here is banned: Organize will never re-propose it, ingest will never apply it, Pending will never queue it.');
+    }},
+
+    { lock: 2000, do: () => {
+        beat('It has to work that way. Deleting a tag from the Tags list alone only lasts until the next Organize — the rebuild reads the tags still in use on your pages, and one page still carrying it drags it straight back.');
+    }},
+
+    { do: () => {
+        beat('So the veto is a place, not an action. <b>Your no is stored, and it outranks the model\'s next opinion.</b>');
+    }},
+]);
+
+</script>
+</body>
+</html>
