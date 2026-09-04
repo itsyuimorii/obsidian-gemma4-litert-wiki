@@ -53,6 +53,12 @@ export interface TagHealth {
   inUse: number;
   /** Tags in use that share a stem, so are probably the same idea. */
   clusters: string[][];
+  /**
+   * In-use tags absent from the vocabulary. The number that says whether the
+   * vocabulary is doing its job: "6 tags, 22 in use, 0 waiting" made a reader
+   * work out the relationship themselves, and the relationship was the point.
+   */
+  offVocabulary: number;
 }
 
 /**
@@ -135,7 +141,9 @@ export class TidyModal extends Modal {
       'organize',
       noVocab
         ? `No tag vocabulary yet — ${t.inUse} different tags in use, ${t.pending} waiting`
-        : `Tag vocabulary — ${t.vocabulary} tag${t.vocabulary === 1 ? '' : 's'}, ${t.inUse} in use, ${t.pending} waiting`,
+        : t.offVocabulary
+          ? `Tag vocabulary — ${t.offVocabulary} of the ${t.inUse} tags your pages use are not in it`
+          : `Tag vocabulary — all ${t.inUse} tags your pages use are in it`,
       (noVocab
         ? 'Ingest has nothing to reuse, so every note coins its own. '
         : '') +
