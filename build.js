@@ -4,7 +4,14 @@ import { readFileSync } from 'node:fs';
 // Stamped into the bundle so the console can say which build Obsidian is
 // actually running. Obsidian caches main.js until the plugin is toggled off
 // and on, so "I rebuilt it" and "the app is running it" are different facts.
-const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+//
+// A wall-clock default is right in development, where the question is "is this
+// the build I just made?". It is wrong for a release, where the artifact must
+// be reproducible: two builds of the same commit have to be byte-identical or
+// nobody can verify that the main.js in the release is the one in the repo.
+// The release workflow passes BUILD_STAMP=<version> (<short sha>) instead.
+const stamp =
+  process.env.BUILD_STAMP?.trim() || new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 
 // Pin the CDN to exactly the version whose JS glue is bundled into main.js.
 // Unversioned jsDelivr paths 404, so this must never be left open-ended.

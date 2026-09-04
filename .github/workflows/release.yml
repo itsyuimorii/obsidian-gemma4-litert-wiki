@@ -1,0 +1,73 @@
+name: Release
+
+# Obsidian installs three files from the GitHub release matching the tag, and
+# reads the version from the manifest on the default branch. The two must
+# agree, so the tag is checked against the manifest before anything is built,
+# and the artifacts are produced here from a clean checkout rather than
+# uploaded from someone's laptop — what ships is what is in the repo.
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build + verify + publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # BUILD_STAMP replaces build.js's wall-clock default, so this build is
+      # reproducible: anyone can rerun it on this commit and get the same file.
+      - name: Build
+        run: npm run build
+        env:
+          BUILD_STAMP: ${{ github.ref_name }} (${{ github.sha }})
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # RELEASE_TAG makes check:release additionally assert tag == manifest
+      # version. A mismatch is the one release mistake Obsidian cannot recover
+      # from, since it fetches assets by tag and reads the version from the
+      # manifest.
+      - name: Store requirements and plugin guidelines
+        run: npm run check:release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Checksums
+        run: sha256sum main.js manifest.json styles.css | tee checksums.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file <(
+              awk '/^## /{n++} n==1' CHANGELOG.md
+              echo
+              echo '### Install'
+              echo
+              echo 'Community store: search for **Gemma 4 LiteRT Wiki**.'
+              echo 'Manual: drop `main.js`, `manifest.json` and `styles.css` into'
+              echo '`<vault>/.obsidian/plugins/gemma4-litert-wiki/`.'
+              echo
+              echo '### Checksums'
+              echo
+              echo '```'
+              cat checksums.txt
+              echo '```'
+            ) \
+            main.js manifest.json styles.css

@@ -61,5 +61,92 @@ ok('main.js is a real bundle', fs.statSync('main.js').size > 100_000);
   ok('git does not carry wasm/', tracked === '');
 }
 
+
+// Everything that carries a version has to agree, or the store installs one
+// version's manifest beside another version's code. package-lock carries it
+// twice (root and packages[""]) and `npm version` is the only thing that
+// normally keeps them in step; we do not use it, so this is the guard.
+console.log('\n== version agreement ==');
+{
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+  ok('package.json matches manifest', pkg.version === m.version, `${pkg.version} vs ${m.version}`);
+  ok('package-lock root matches', lock.version === m.version, `${lock.version}`);
+  ok('package-lock packages[""] matches', lock.packages?.['']?.version === m.version);
+  ok('CHANGELOG has an entry for this version', /^## \[?\d/m.test(fs.readFileSync('CHANGELOG.md','utf8'))
+    && fs.readFileSync('CHANGELOG.md','utf8').includes(m.version));
+  // Set by the release workflow from the pushed tag. A tag that disagrees with
+  // the manifest is the one release mistake Obsidian cannot recover from: it
+  // fetches assets by tag name and reads the version from the manifest.
+  if (process.env.RELEASE_TAG)
+    ok('git tag matches manifest version', process.env.RELEASE_TAG === m.version,
+       `tag ${process.env.RELEASE_TAG} vs manifest ${m.version}`);
+}
+
+// The rules Obsidian's automated review scans source for. Each of these is
+// cheap to check and expensive to be told about after submission.
+console.log('\n== plugin guidelines ==');
+{
+  const srcFiles = fs.readdirSync('src').filter((f) => f.endsWith('.ts'));
+  const src = srcFiles.map((f) => [f, fs.readFileSync(`src/${f}`, 'utf8')]);
+  const hits = (re) => src.filter(([, t]) => re.test(t)).map(([f]) => f);
+
+  const html = hits(/\b(innerHTML|outerHTML|insertAdjacentHTML)\b/);
+  ok('no innerHTML/outerHTML/insertAdjacentHTML', html.length === 0, html.join(', '));
+
+  // `app` as a bare global is deprecated; every use must go through this.app
+  // or an App passed in. Matches `app.` not preceded by a word char or dot.
+  const globalApp = hits(/(?<![\w.])app\.(vault|workspace|metadataCache)/);
+  const declaresApp = (t) => /\bapp\s*:\s*App\b/.test(t) || /\bapp\s*=\s*/.test(t);
+  const badApp = globalApp.filter((f) => !declaresApp(src.find(([n]) => n === f)[1]));
+  ok('no global `app` object', badApp.length === 0, badApp.join(', '));
+
+  const evals = hits(/\beval\s*\(|new Function\s*\(|child_process/);
+  ok('no eval / new Function / child_process', evals.length === 0, evals.join(', '));
+
+  // Network hosts must be disclosed in the README, and there must be no host
+  // we forgot to write down. Reviewers check the README against the source, so
+  // a host that reaches the code without reaching the README is a rejection.
+  //
+  // Comments are stripped first, and `xmlns` is skipped: an SVG namespace is a
+  // URI, not an address anything is fetched from. Without that this fires on
+  // http://www.w3.org/2000/svg and a URL inside an explanatory comment, and a
+  // check that cries wolf gets an allowlist bolted on until it checks nothing.
+  const readme = fs.readFileSync('README.md', 'utf8');
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const hosts = new Set(
+    src.flatMap(([, t]) =>
+      [...strip(t).matchAll(/(xmlns="?)?https?:\/\/([a-z0-9.-]+)/gi)]
+        .filter((x) => !x[1])
+        .map((x) => x[2].toLowerCase())
+    )
+  );
+  const undisclosed = [...hosts].filter((h) => !readme.includes(h) && !h.endsWith('github.com'));
+  ok(`every network host in src/ is named in the README (${hosts.size} found)`,
+     undisclosed.length === 0, undisclosed.join(', '));
+
+  // Policy: a plugin may not update itself. The CDN version is fixed at build
+  // time from the installed dependency, which is what makes that true here.
+  const wasmStore = fs.readFileSync('src/wasm-store.ts', 'utf8');
+  ok('runtime CDN version is pinned at build time', /__LITERT_VERSION__/.test(wasmStore));
+  ok('runtime download is filename-allowlisted', /ALLOWED\s*=\s*\/\^/.test(wasmStore));
+
+  ok('registered resources are released on unload',
+     /onunload\s*\(/.test(fs.readFileSync('src/main.ts', 'utf8')));
+}
+
+// The command table in the README is the first thing a reviewer compares
+// against the palette. It drifted once already, when five commands became one.
+console.log('\n== README matches the code ==');
+{
+  const readme = fs.readFileSync('README.md', 'utf8');
+  const mainTs = fs.readFileSync('src/main.ts', 'utf8');
+  const rows = new Set([...readme.matchAll(/^\| \*\*([^*]+)\*\*/gm)].map((x) => x[1]));
+  const cmds = [...mainTs.matchAll(/name: '([^']+)',/g)].map((x) => x[1]);
+  const undocumented = cmds.filter((c) => !rows.has(c));
+  ok(`every command is in the README (${cmds.length} commands)`, undocumented.length === 0,
+     undocumented.join(' | '));
+}
+
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nALL PASS');
 process.exit(fail ? 1 : 0);
