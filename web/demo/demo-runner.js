@@ -244,7 +244,7 @@ const GemmaDemo = (() => {
         ['15-provenance.html',     'Provenance'],
         ['16-contradictions.html', 'Contradictions'],
         ['17-review-board.html',   'Review board'],
-        ['18-lint.html',           'Lint & reconcile'],
+        ['18-tidy.html',           'Tidy the wiki'],
         ['19-concept-page.html',   'Concept page'],
         ['20-tag-vocab.html',      'Tag vocabulary'],
         ['21-retag.html',          'Retag'],

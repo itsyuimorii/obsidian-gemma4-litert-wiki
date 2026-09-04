@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scene 18 · Lint & reconcile — Gemma Wiki</title>
+<title>Scene 18 · Tidy the wiki — Gemma Wiki</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="demo-shared.css">
 </head>
@@ -14,8 +14,8 @@
 <div class="ambient-blob blob-a"></div>
 
 <div class="scene-title" id="sceneTitle">
-    <div class="num">Scene 18 — Lint & reconcile</div>
-    <div class="txt">The unglamorous half: broken links, orphans, and a stale index.</div>
+    <div class="num">Scene 18 — Tidy the wiki</div>
+    <div class="txt">One command checks, you tick what to fix, and each repair still asks.</div>
 </div>
 
 <div class="stage"></div>
@@ -36,6 +36,51 @@ OB.render({
     editor: '',
 });
 
+const INDEX_BEFORE = `<div class="md" style="padding:22px 26px">
+    <h1>Wiki index</h1>
+    <p class="hintline">Every page, listed. Wiki-mode retrieval reads this file — a page missing from here is a page the chat cannot find.</p>
+    <ul>
+        <li><a class="wl">[[cards/litert-on-device]]</a> — LiteRT-LM runs in the renderer over WebGPU…</li>
+        <li><a class="wl">[[cards/webmcp-notes]]</a> — WebMCP exposes page tools through document.modelContext…</li>
+        <li style="opacity:.5"><a class="wl">[[cards/old-scratch]]</a> — <i>file no longer exists</i></li>
+        <li style="opacity:.5"><a class="wl">[[cards/2025-migration]]</a> — <i>file no longer exists</i></li>
+    </ul>
+</div>`;
+
+// The four repairs, exactly as the plugin lists them: always all four, ticked
+// only where the check found something.
+const TIDY = `
+    <div class="head"><h3>Tidy the wiki</h3></div>
+    <div class="scroll">
+        <p class="lint-summary">9 pages checked. Nothing is written until you approve each repair.</p>
+        <div class="rlist">
+            <div class="ritem warn">
+                <label class="tidy-head"><input type="checkbox" checked><span class="t">1 page with no inbound link</span></label>
+                <div class="d">Makes existing links mutual, fills empty Related sections, and drops links to pages that are gone. A page that genuinely relates to nothing stays an orphan.</div>
+                <div class="why">cards/agent-interfaces</div>
+            </div>
+            <div class="ritem warn">
+                <label class="tidy-head"><input type="checkbox" checked><span class="t">2 index entries pointing at deleted pages</span></label>
+                <div class="d">Drops dead index entries and any Related links pointing at them. No model, nothing to review.</div>
+                <div class="why">cards/old-scratch<br>cards/2025-migration</div>
+            </div>
+            <div class="ritem">
+                <label class="tidy-head"><input type="checkbox" id="boxOrg"><span class="t">Tag vocabulary — 3 of the 9 tags your pages use are not in it</span></label>
+                <div class="d">Rebuilds the vocabulary in schema.md from the tags your pages actually use, folding near-duplicates together. One model call, one preview.</div>
+            </div>
+            <div class="ritem">
+                <label class="tidy-head"><input type="checkbox" id="boxRetag"><span class="t">Apply the vocabulary to existing pages</span></label>
+                <div class="d">Rewrites page tags to the vocabulary in schema.md — including a vocabulary you edited by hand. Tick this with the box above to do both, or on its own after editing schema.md. One model call, one preview.</div>
+            </div>
+            <div class="ritem" style="border-style:dashed">
+                <div class="t">1 page missing from the index</div>
+                <div class="d">Retrieval reads the index first, so these can never be found. Re-ingest the note behind each one.</div>
+                <div class="why">concepts/on-device</div>
+            </div>
+        </div>
+    </div>
+    <div class="foot"><button class="ob-btn">Close</button><button class="ob-btn cta" id="run">Run 2 of these</button></div>`;
+
 GemmaDemo.init([
     { do: () => {
         beat('You deleted two wiki pages by hand last week, and renamed a note. Nothing warned you, because nothing should have — it is your vault.');
@@ -43,66 +88,61 @@ GemmaDemo.init([
 
     { lock: 1300, do: () => {
         beat('But <code>index.md</code> is what Wiki mode retrieves against, and it still lists both of the pages you deleted.');
-        OB.openFile('index.md', `<div class="md" style="padding:22px 26px">
-            <h1>Wiki index</h1>
-            <p class="hintline">Every page, listed. Wiki-mode retrieval reads this file — a page missing from here is a page the chat cannot find.</p>
-            <ul>
-                <li><a class="wl">[[cards/litert-on-device]]</a> — LiteRT-LM runs in the renderer over WebGPU…</li>
-                <li><a class="wl">[[cards/webmcp-notes]]</a> — WebMCP exposes page tools through document.modelContext…</li>
-                <li style="opacity:.5"><a class="wl">[[cards/old-scratch]]</a> — <i>file no longer exists</i></li>
-                <li style="opacity:.5"><a class="wl">[[cards/2025-migration]]</a> — <i>file no longer exists</i></li>
-            </ul>
-        </div>`, { rowId: 'gw-index' });
+        OB.openFile('index.md', INDEX_BEFORE, { rowId: 'gw-index' });
     }},
 
     { lock: 1700, do: () => {
-        OB.palette('lint', [
-            { name: 'Gemma Wiki: Lint wiki (orphans and index health)', icon: 'search-x' },
-            { name: 'Gemma Wiki: Reconcile wiki (drop links to deleted pages)', icon: 'network' },
+        OB.palette('tidy', [
+            { name: 'Gemma Wiki: Tidy the wiki (check, then fix what you approve)', icon: 'wand-2' },
         ]);
-        beat('Two commands, and the split between them is the split this whole plugin runs on: <b>one reports, one writes.</b>');
+        beat('There used to be five commands here — lint, relink, reconcile, organize, retag. Five is the wrong number, because <b>you cannot know which one you need until something has looked.</b>');
     }},
 
-    { lock: 1500, do: () => {
+    { lock: 1600, do: () => {
         OB.closePalette();
         flashKeys(['↵']);
-        OB.modal(`
-            <div class="head"><h3>Wiki lint report</h3></div>
-            <div class="scroll">
-                <p class="lint-summary">9 wiki pages checked. No model was used — this is a file and link sweep.</p>
-                <div class="rlist">
-                    <div class="ritem warn"><div class="t">Index entries pointing to missing files <span class="pill amber">2</span></div>
-                        <div class="d">Listed in index.md but the page file does not exist.</div>
-                        <div class="why">cards/old-scratch<br>cards/2025-migration</div></div>
-                    <div class="ritem warn"><div class="t">Pages missing from the index <span class="pill amber">1</span></div>
-                        <div class="d">Page files with no index.md entry, so Wiki chat cannot find them.</div>
-                        <div class="why">concepts/on-device</div></div>
-                    <div class="ritem"><div class="t">Orphan pages <span class="pill">1</span></div>
-                        <div class="d">No inbound links from any other wiki page. Consider adding Related links, or re-ingesting nearby notes.</div>
-                        <div class="why">cards/agent-interfaces</div></div>
-                </div>
-            </div>
-            <div class="foot"><span class="note">Nothing was changed.</span><button class="ob-btn cta">Close</button></div>`, 'wide');
-        reveal('.ritem', 200);
+        status('Checking the wiki…');
+        beat('So the check comes first, and it is free. A file-and-link sweep, plus a read of <code>schema.md</code> against the tags your pages actually carry. <b>No model in either half</b> — these are string facts, so the report is instant and safe to run whenever you wonder.');
+    }},
+
+    { lock: 2100, do: () => {
+        status(null);
+        OB.modal(TIDY, 'wide');
+        reveal('.ritem', 160);
         beat(null);
     }},
 
-    { lock: 1800, do: () => {
-        beat('The second row is the one that actually costs you something. A page missing from the index is <b>invisible to retrieval</b> — it exists, it is correct, and no question will ever reach it.');
+    { lock: 1900, do: () => {
+        beat('One dialog, four repairs, and the summary line does the work a confirmation dialog usually has to: <b>nothing is written until you approve each repair.</b> Not this dialog — each repair, separately, further in.');
     }},
 
-    { lock: 1700, do: () => {
-        beat('The third is a judgement call, not a fault. An orphan page might mean a note nobody linked to yet, or it might mean nothing at all — so lint reports it and refuses to decide.');
+    { lock: 2000, do: () => {
+        beat('The top two are ticked because the check found something. That is the ordinary case: open it, read two lines, press the button.');
+    }},
+
+    { lock: 1900, do: () => {
+        $('#boxOrg').closest('.ritem').classList.add('spot');
+        beat('The bottom two are not ticked — and they are <b>still listed</b>, which is the one design decision in this dialog worth arguing about. Offering only what the scan found is tidier, and it silently deletes working paths.');
+    }},
+
+    { lock: 2300, do: () => {
+        beat('Look at the row. It knows three tags are off-vocabulary and it cannot see the duplicate, because duplicates are detected by shared stem and <code>llm-eval</code> and <code>evals</code> share no stem — the plugin\'s own example. Tie the box to detection and the very case the feature exists for is unreachable.');
+    }},
+
+    { lock: 2300, do: () => {
+        $('#boxRetag').closest('.ritem').classList.add('spot');
+        beat('And the last box is the <b>"I edited schema.md by hand"</b> path. Nothing can detect that — there is no scan for a decision you made in a text editor. <b>The check is good enough to choose a default, not good enough to be the only way in.</b>');
+    }},
+
+    { lock: 2200, do: () => {
+        $$('.spot').forEach((el) => el.classList.remove('spot'));
+        $('#run').classList.add('pressed');
+        beat('The button counts what you ticked, so what is about to happen is on the button rather than in a paragraph above it.');
     }},
 
     { lock: 1500, do: () => {
         OB.closeModal();
-        flashKeys(['↵']);
-        notice('✅ Reconciled — dropped 2 index entries pointing at deleted pages.', 6000);
-        beat('Reconcile is the half that writes, and it does exactly one thing: <b>drops index entries whose file is gone</b>. It never resurrects a page, and it never deletes one.');
-    }},
-
-    { lock: 1600, do: () => {
+        notice('✅ Removed 2 deleted pages from the index, and any related links pointing at them.', 5500);
         $('#editor').innerHTML = `<div class="md" style="padding:22px 26px">
             <h1>Wiki index</h1>
             <p class="hintline">Every page, listed. Wiki-mode retrieval reads this file — a page missing from here is a page the chat cannot find.</p>
@@ -111,11 +151,29 @@ GemmaDemo.init([
                 <li><a class="wl">[[cards/webmcp-notes]]</a> — WebMCP exposes page tools through document.modelContext…</li>
             </ul>
         </div>`;
-        beat('Because a deleted page is a decision you made, and re-creating it would be the plugin arguing with you about your own vault.');
+        beat('Reconcile runs first, though it was listed second. It is the model-free one, and it deletes index entries — so running it before anything else means <b>the model is never asked about a page that is on its way out.</b>');
+    }},
+
+    { lock: 2300, do: () => {
+        OB.modal(`
+            <div class="head"><h3>Review related-link additions</h3><div class="path">3 pages will gain a Related section. Nothing else is changed.</div></div>
+            <div class="scroll">
+                <p class="fmtext" style="font-size:11.8px;line-height:1.9">agent interfaces  →  webmcp notes, litert on device
+webmcp notes  →  agent interfaces, browser apis
+browser apis  →  webmcp notes</p>
+            </div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta">Approve and write</button></div>`, 'wide');
+        beat('Then relink, and its own preview. Every repair keeps the gate it had as a standalone command — folding five commands into one merged the <i>entry</i>, not the approvals.');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('And strictly one at a time. Two of these could easily run in parallel and finish sooner, and you would be looking at two dialogs stacked on each other. <b>Two dialogs at once is not a review, it is a pile.</b>');
     }},
 
     { do: () => {
-        beat('Neither command runs the model. Both are file sweeps — which is why they are safe to run whenever you wonder, and why the report is instant.');
+        OB.closeModal();
+        notice('⏸ Vocabulary was not written, so pages were left alone.', 6000);
+        beat('Sequential also buys the honest cancel. Retag reads <code>schema.md</code> — so if you tick both and then dismiss the vocabulary preview, <b>retag does not run against the old vocabulary. It does not run at all</b>, and says so.');
     }},
 ]);
 
