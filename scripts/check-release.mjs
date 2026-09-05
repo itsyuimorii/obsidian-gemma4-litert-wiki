@@ -175,8 +175,12 @@ console.log('\n== README renders as written ==');
     lines.forEach((line, i) => {
       if (line.trimStart().startsWith('```')) { fence = !fence; return; }
       if (fence) return;
-      // Deliberate ~~strikethrough~~ is fine; what is left is the accidents.
-      if (line.split('~~').join('').split('~').length - 1 >= 2) {
+      // A tilde inside a code span is literal — GFM binds `code` tighter than
+      // strikethrough — so `~28 s` in prose is safe and only the bare ones
+      // pair up. Deliberate ~~strikethrough~~ is fine too; what is left after
+      // removing both is the accidents.
+      const bare = line.replace(/`[^`]*`/g, '').split('~~').join('');
+      if (bare.split('~').length - 1 >= 2) {
         bad.push(`${file}:${i + 1}`);
       }
     });

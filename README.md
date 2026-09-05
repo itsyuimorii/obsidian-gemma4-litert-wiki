@@ -64,7 +64,7 @@ From there: chat grounded in one note or in the whole wiki, quiz yourself on eit
 
 Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
 
-> **Status: 1.0.8, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
+> **Status: 1.0.9, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 

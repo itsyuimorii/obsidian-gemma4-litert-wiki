@@ -4,6 +4,29 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.9 — 2026-09-05
+
+Documentation only. It exists because the directory snapshots the README when
+a version is released, so three fixes made after 1.0.8 were sitting in the
+repository while the store page still showed the text they corrected.
+
+- **The Benchmarks takeaway is no longer half crossed out.** GFM strikes
+  through text between *single* tildes, not only double ones, and the
+  paragraph used `~` twice for "approximately" — `~28 s` in one clause and
+  `~29 tok/s` two sentences later. The two paired up and struck out
+  everything between, including the entire explanation of why the cold start
+  is a one-time cost rather than a per-call tax. Invisible in the source.
+  `check:release` now fails on two tildes in one line.
+- **The tagline says the model's name once.** "Gemma 4 E4B runs inside
+  Obsidian's own process. Build Andrej Karpathy's living LLM wiki with Gemma
+  4 E4B." was one claim written as two sentences, each naming the model,
+  under a kicker that already said it. Now one sentence, in all three places
+  it appears.
+- **The masthead is the name people arrived by.** Both READMEs opened with
+  "Gemma Wiki" while the listing they were clicked from says "Gemma 4 E4B LLM
+  Wiki". The short form stays everywhere else — it is the vault folder, the
+  demo host, the settings pane — but the long one introduces it.
+
 ## 1.0.8 — 2026-09-05
 
 ### Fixed
