@@ -23,7 +23,38 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 
 > **Status: 1.0.0.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `gemma-wiki/` layer with cross-links, an `gemma-wiki/index.md` catalog and append-only `gemma-wiki/log.md`, index-first grounded chat with deterministic source attribution, answers saved beside the material that produced them (kept to re-read, never retrieved), a model-free check-then-repair pass, and canned single-task skills. Submitted to the community plugin store; until it appears there, install from a [release](../../releases). Benchmarks below are from real use.
 
+## 📑 Contents
+
+- [✨ Features at a glance](#-features-at-a-glance)
+- [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
+- [🤔 Why this exists](#-why-this-exists)
+- [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
+- [📋 Requirements](#-requirements)
+- [⌨️ Current commands](#️-current-commands)
+- [🔧 How it works](#-how-it-works)
+- [📊 Benchmarks](#-benchmarks)
+- [🗺️ Roadmap](#️-roadmap)
+- [🔒 Privacy](#-privacy)
+- [💖 Credits](#-credits)
+
 ## ✨ Features at a glance
+
+Sixteen commands, and this is what they add up to. Every row is covered in
+detail below; the full command list is under
+[Current commands](#️-current-commands).
+
+| | What it does | Touches your notes? |
+| --- | --- | --- |
+| **Ingest / Scan** | One card per note in a separate `gemma-wiki/` layer, previewed in full before anything is written | No |
+| **Chat** | Grounded in one note or the whole wiki, with sources listed by the plugin rather than cited by the model | No |
+| **⚡ Skills** | Quiz, flashcards and find-gaps on the open note, plus any prompt file you drop in `skills/` | No |
+| **Concept pages** | A page built *above* every card sharing a tag, linking down into each | No |
+| **Keep it honest** | Review board, provenance spot-check, contradiction sweep, and a model-free tidy pass | No |
+| **Improve** | Rewrites structure and typos, preserving your wording and voice | **Yes**, always previewed |
+| **Suggest tags & links** | Proposes frontmatter tags and wiki links for the open note | **Yes**, always previewed |
+
+Two of the sixteen write into a note you wrote, both behind a preview. The
+rest build and maintain a layer beside your notes and never touch them.
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
@@ -81,20 +112,6 @@ Click the book-and-spark ribbon icon to open the side panel. Two grounding modes
 - **Wiki** — the Karpathy Query path: reads the `gemma-wiki/index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
 
 Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), and per-message **copy / regenerate / save-as-note** actions. Both modes refuse honestly when the material doesn't answer a question about your notes, and both will explain a term your material uses instead of repeating it back at you — keeping what the material says separate from what the term means. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (*Quiz*, *Flashcards*, *Find gaps*) against the open note.
-
-## 📑 Contents
-
-- [✨ Features at a glance](#-features-at-a-glance)
-- [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
-- [🤔 Why this exists](#-why-this-exists)
-- [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
-- [📋 Requirements](#-requirements)
-- [⌨️ Current commands](#️-current-commands)
-- [🔧 How it works](#-how-it-works)
-- [📊 Benchmarks](#-benchmarks)
-- [🗺️ Roadmap](#️-roadmap)
-- [🔒 Privacy](#-privacy)
-- [💖 Credits](#-credits)
 
 ## 🤔 Why this exists
 
