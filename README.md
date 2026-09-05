@@ -9,13 +9,15 @@
 
 <p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process through LiteRT-LM and WebGPU,<br>bringing free local AI directly to your vault.</b></p>
 
+<p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
+
+<p align="center"><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install.</p>
+
 Chat with your notes or your entire vault, then build a living wiki inspired by **[Andrej Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: indexes, concepts, tags, links, and schema. Turn your notes into quizzes and flashcards — **all processed locally**, with no ongoing cost after the one-time model download.
 
 Not Ollama, not LM Studio, not a localhost server — the model is *in* the app, via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both listed under [Privacy](#-privacy) — it never touches the network again.
 
-<p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
-<p align="center"><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install.</p>
 
 <p align="center"><img src="assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900"></p>
 
@@ -23,6 +25,7 @@ Not Ollama, not LM Studio, not a localhost server — the model is *in* the app,
 
 ## 📑 Contents
 
+- [📑 Contents](#-contents)
 - [✨ Features at a glance](#-features-at-a-glance)
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)

@@ -88,6 +88,7 @@ Gemma 4 E4B は [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) と Web
 
 - [✨ 主な機能](#-主な機能)
 - [💬 ノートと対話する — 完全にオフラインで](#-ノートと対話する--完全にオフラインで)
+- [📑 目次](#-目次)
 - [🤔 なぜ作ったのか](#-なぜ作ったのか)
 - [🔌 Ollama / LM Studio 系プラグインとの違い](#-ollama--lm-studio-系プラグインとの違い)
 - [📋 動作要件](#-動作要件)
