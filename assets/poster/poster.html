@@ -31,11 +31,11 @@
     background-size: 84px 84px; transform: perspective(900px) rotateX(58deg); transform-origin: 50% 100%;
     opacity: .28; mask-image: linear-gradient(to top, #000 30%, transparent 95%);
   }
-  .copy { position: absolute; left: 64px; top: 74px; display: flex; flex-direction: column; gap: 22px; align-items: flex-start; }
-  .eyebrow { font: 600 13px/1 var(--mono); letter-spacing: .22em; color: var(--faint); text-transform: uppercase; }
-  h1 { margin: 0; font-weight: 800; font-size: 54px; line-height: 1.08; letter-spacing: -.028em; text-wrap: balance; }
+  .copy { position: absolute; left: 60px; top: 78px; display: flex; flex-direction: column; gap: 20px; align-items: flex-start; width: 372px; }
+  .eyebrow { font: 600 12px/1.5 var(--mono); letter-spacing: .17em; white-space: nowrap; color: var(--faint); text-transform: uppercase; }
+  h1 { margin: 0; font-weight: 800; font-size: 46px; line-height: 1.08; letter-spacing: -.028em; text-wrap: balance; }
   h1 .pay { color: var(--accent); }
-  .sub { margin: 0; font-weight: 500; font-size: 20px; line-height: 1.5; color: var(--muted); letter-spacing: -.01em; }
+  .sub { margin: 0; font-weight: 500; font-size: 17.5px; line-height: 1.5; color: var(--muted); letter-spacing: -.01em; }
   .pill {
     display: inline-flex; align-items: center; gap: 9px; text-transform: uppercase;
     font: 600 12px/1 var(--mono); letter-spacing: .14em; color: var(--green);
@@ -45,7 +45,7 @@
 
   /* ---------------- Obsidian window ---------------- */
   .obwin {
-    position: absolute; display: flex; flex-direction: column; width: 980px; height: 640px;
+    position: absolute; display: flex; flex-direction: column; width: 796px; height: 648px;
     background: var(--ob-bg2); border-radius: 14px; overflow: hidden;
     box-shadow: var(--shadow-lg); border: 1px solid rgba(24,32,46,.08); color: var(--ob-text);
   }
@@ -54,17 +54,17 @@
   .lights i:nth-child(1){background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
   .titlebar .vault { flex: 1; text-align: center; font: 500 12px/1 var(--sans); color: var(--ob-faint); }
   .obbody { display: flex; flex: 1; min-height: 0; }
-  .explorer { width: 210px; flex: none; background: var(--ob-bg2); border-right: 1px solid var(--ob-border); padding: 10px 8px; box-sizing: border-box; font-size: 13px; overflow: hidden; }
+  .explorer { width: 152px; flex: none; background: var(--ob-bg2); border-right: 1px solid var(--ob-border); padding: 10px 6px; box-sizing: border-box; font-size: 11.5px; overflow: hidden; }
   .fitem { display: flex; align-items: center; gap: 7px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
   .fitem .chev { color: var(--ob-faint); font-size: 9px; width: 9px; flex: none; }
-  .fitem.dim { color: var(--ob-muted); } .fitem.file { padding-left: 24px; color: var(--ob-muted); }
-  .fitem.f2 { padding-left: 40px; color: var(--ob-muted); } .fitem.on { background: var(--ob-bg3); color: var(--ob-text); }
+  .fitem.dim { color: var(--ob-muted); } .fitem.file { padding-left: 19px; color: var(--ob-muted); }
+  .fitem.f2 { padding-left: 31px; color: var(--ob-muted); } .fitem.on { background: var(--ob-bg3); color: var(--ob-text); }
   .fitem .dot { margin-left: auto; color: var(--ob-accent); font-size: 9px; }
   .editor { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--ob-bg); }
   .tabs { display: flex; height: 34px; background: var(--ob-bg2); border-bottom: 1px solid var(--ob-border); padding: 0 10px; flex: none; }
   .tab { background: var(--ob-bg); border: 1px solid var(--ob-border); border-bottom: none; border-radius: 6px 6px 0 0; padding: 7px 15px; font-size: 12px; position: relative; top: 5px; }
-  .noteview { padding: 24px 32px; overflow: hidden; font-size: 14.5px; line-height: 1.65; }
-  .noteview h2 { margin: 0 0 12px; font-size: 25px; letter-spacing: -.015em; }
+  .noteview { padding: 20px 24px; overflow: hidden; font-size: 13px; line-height: 1.6; }
+  .noteview h2 { margin: 0 0 10px; font-size: 21px; letter-spacing: -.015em; }
   .noteview h3 { margin: 18px 0 8px; font-size: 16px; }
   .noteview p { margin: 0 0 12px; } .noteview .wl { color: var(--ob-accent); }
   .noteview ul { margin: 0 0 12px; padding-left: 20px; }
@@ -73,22 +73,22 @@
 
   /* ---------------- the plugin's panel ---------------- */
   .panel {
-    position: absolute; width: 372px; display: flex; flex-direction: column; overflow: hidden;
-    background: var(--ob-bg); border: 1px solid var(--ob-border); border-radius: 18px; box-shadow: var(--shadow-lg);
+    width: 306px; flex: none; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--ob-bg); border-left: 1px solid var(--ob-border);
   }
   .phead { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--ob-border); }
   .phead svg { width: 17px; height: 17px; flex: none; }
   .phead .t { font: 600 13px/1 var(--sans); }
   .phead .b { font: 600 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ob-accent); background: var(--ob-tag); border-radius: 999px; padding: 4px 8px; }
   .phead .ic { margin-left: auto; color: var(--ob-faint); font-size: 12px; letter-spacing: 3px; }
-  .pmsgs { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
-  .mq { align-self: flex-end; max-width: 86%; background: var(--ob-bg3); border-radius: 12px 12px 3px 12px; padding: 9px 13px; font-size: 13px; line-height: 1.5; }
-  .ma { font-size: 13px; line-height: 1.6; } .ma b { font-weight: 600; }
+  .pmsgs { flex: 1; min-height: 0; padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  .mq { align-self: flex-end; max-width: 88%; background: var(--ob-bg3); border-radius: 12px 12px 3px 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5; }
+  .ma { font-size: 12px; line-height: 1.58; } .ma b { font-weight: 600; }
   .ma .num { color: var(--ob-accent); font: 600 11px/1 var(--mono); margin-right: 6px; }
   .msrc { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
   .msrc .lbl { font: 600 9px/1 var(--mono); letter-spacing: .1em; color: var(--ob-faint); }
   .msrc .chip { font-size: 11px; color: var(--ob-accent); background: var(--ob-tag); border-radius: 999px; padding: 4px 9px; }
-  .pin { margin: 8px 12px 12px; border: 1px solid var(--ob-border); border-radius: 12px; padding: 10px 12px; }
+  .pin { flex: none; margin: 6px 10px 10px; border: 1px solid var(--ob-border); border-radius: 12px; padding: 10px 12px; }
   .pin .ph { font-size: 12px; color: var(--ob-faint); margin-bottom: 9px; }
   .pin .bar { display: flex; align-items: center; gap: 6px; }
   .mode { font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 5px 10px; color: var(--ob-muted); background: var(--ob-bg2); }
@@ -173,17 +173,18 @@ const tree = (open = '') => {
   ].join('');
 };
 
-const win = ({ title, tab, body, tree: open = '', extra = '' }) => `
-  <div class="obwin" style="right:-290px; top:96px;">
+const win = ({ title, tab, body, tree: open = '', extra = '', dock = '' }) => `
+  <div class="obwin" style="right:22px; top:96px;">
     <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="vault">${title} — my-vault</div></div>
     <div class="obbody">
       <div class="explorer">${tree(open)}</div>
       <div class="editor"><div class="tabs"><div class="tab">${tab}</div></div><div class="noteview">${body}</div></div>
+      ${dock}
     </div>${extra}
   </div>`;
 
-const panel = ({ msgs, ph, mode, chips = '', attach = '', pos }) => `
-  <div class="panel" style="${pos}">
+const panel = ({ msgs, ph, mode, chips = '', attach = '' }) => `
+  <div class="panel">
     <div class="phead">${LOGO}<span class="t">Gemma Wiki</span><span class="b">local</span><span class="ic">💾 🗑</span></div>
     <div class="pmsgs">${msgs}</div>
     ${chips ? `<div class="chips3">${chips}</div>` : ''}
@@ -198,49 +199,55 @@ const NOTE = `<h2>Grind size and extraction</h2>
   <p>Too fine and the shot over-extracts into bitterness; too coarse and it under-extracts, thin and sour. See <span class="wl">[[espresso extraction basics]]</span>.</p>
   <p>Most guides put the target window at 18–22% for espresso, adjusting grind before anything else.</p>`;
 
+const CARD = `<h2>Grind size and extraction</h2>
+  <p style="font-size:11.5px;color:var(--ob-muted);font-family:var(--mono)">source: notes/grind size.md · confidence: high</p>
+  <p><span class="tp">#coffee</span><span class="tp">#extraction</span></p>
+  <p>Grind size controls how much surface the water reaches, which sets the speed and evenness of extraction.</p>
+  <h3>Key points</h3>
+  <ul><li>Finer grind → more surface → faster extraction</li><li>Target window 18–22%; grind is adjusted first</li></ul>
+  <h3>Related</h3>
+  <ul><li><span class="wl">[[espresso-extraction-basics]]</span></li><li><span class="wl">[[water-temperature]]</span></li></ul>`;
+
 const POSTERS = [
-  { id: 'p01', tag: 'hero · chat with a note',
-    eyebrow: 'Gemma 4 LiteRT Wiki · Obsidian plugin',
+  { id: 'p01', tag: 'chat with a note', eyebrow: 'Gemma 4 LiteRT Wiki · Obsidian plugin',
     h1: `Ask your vault. <span class="pay">The model is in the&nbsp;app.</span>`,
     sub: `Gemma 4 answers from your notes, inside Obsidian's own process. No Ollama, no API key, no server.`,
-    pill: 'Runs on your device', width: 430,
-    art: win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE }) +
-      panel({ pos: 'right:54px; top:150px;', mode: 'note', ph: 'Ask about this note… (Enter to send)',
+    pill: 'Runs on your device',
+    art: win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE,
+      dock: panel({ mode: 'note', ph: 'Ask about this note… (Enter to send)',
         attach: `<span class="plus">+</span><span class="att">espresso basics <span class="x">✕</span></span>`,
         msgs: `<div class="mq">Why does grind size change extraction?</div>
           <div class="ma">Finer grounds expose more surface, so water extracts faster — too fine and you cross into bitterness. <b>Your note pins the target window at 18–22%</b>, adjusting grind first.</div>
           <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span></div>
-          <div class="mq">So why does that make it bitter?</div>
-          <div class="ma">Past that window you start pulling the compounds that come out last — the dry, astringent ones. Your note calls it <b>over-extraction</b> rather than "too strong".</div>
-          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span><span class="chip">espresso basics</span></div>` }) },
+          <div class="mq">So why does that taste bitter?</div>
+          <div class="ma">Past that window you pull the compounds that come out last — the dry, astringent ones. Your note calls this <b>over-extraction</b>, not "too strong".</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span><span class="chip">espresso basics</span></div>` }) }) },
 
-  { id: 'p02', tag: 'chat with the whole wiki',
-    eyebrow: 'Index-first retrieval',
+  { id: 'p02', tag: 'chat with the whole wiki', eyebrow: 'Index-first retrieval',
     h1: `Ask the whole vault, <span class="pay">not one note at a&nbsp;time.</span>`,
     sub: `Wiki mode reads the index first, opens only the pages that matter, and lists exactly what the answer stood on.`,
-    pill: 'Sources listed by the plugin', width: 440,
+    pill: 'Sources listed by the plugin',
     art: win({ title: 'index', tab: 'gemma-wiki / index',
       body: `<h2>Wiki Index</h2>
-        <p style="color:var(--ob-muted);font-size:13px">One line per page. <b>Wiki-mode chat reads this file first</b> to decide which pages to open.</p>
-        <p>• <span class="wl">[[grind-size-and-extraction]]</span> — how grind sets the speed and evenness of extraction</p>
-        <p>• <span class="wl">[[espresso-extraction-basics]]</span> — pressure, dose and the 18–22% window</p>
-        <p>• <span class="wl">[[water-temperature]]</span> — hotter extracts faster, cooler evens out dark roasts</p>
-        <p>• <span class="wl">[[coffee (concept)]]</span> — the page above all six, linking down into each</p>` }) +
-      panel({ pos: 'right:54px; top:150px;', mode: 'wiki', ph: 'Ask your wiki… (Enter to send)',
-        chips: `<span class="chip3">Scan a folder</span><span class="chip3">Find connections</span><span class="chip3">What's still open?</span>`,
+        <p style="color:var(--ob-muted);font-size:12px">One line per page. <b>Wiki-mode chat reads this first</b> to decide which pages to open.</p>
+        <p>• <span class="wl">[[grind-size-and-extraction]]</span> — how grind sets the speed of extraction</p>
+        <p>• <span class="wl">[[espresso-extraction-basics]]</span> — pressure, dose, the 18–22% window</p>
+        <p>• <span class="wl">[[water-temperature]]</span> — hotter extracts faster, cooler evens roasts</p>
+        <p>• <span class="wl">[[coffee (concept)]]</span> — the page above all six</p>`,
+      dock: panel({ mode: 'wiki', ph: 'Ask your wiki… (Enter to send)',
+        chips: `<span class="chip3">Find connections</span><span class="chip3">What's still open?</span>`,
         msgs: `<div class="mq">What connects my coffee notes?</div>
-          <div class="ma">All six orbit one idea — <b>extraction control</b>. Grind, water temperature and brew ratio are three levers on the same 18–22% window, and each note adjusts one of them.</div>
+          <div class="ma">All six orbit one idea — <b>extraction control</b>. Grind, water temperature and brew ratio are three levers on the same 18–22% window.</div>
           <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">coffee (concept)</span><span class="chip">grind size</span><span class="chip">water temp</span></div>
           <div class="mq">Which one did I never finish?</div>
-          <div class="ma">Water temperature — it opens the question of dark roasts and stops there. Nothing else in the wiki picks it up.</div>
-          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">water temp</span><span class="chip">index</span></div>` }) },
+          <div class="ma">Water temperature — it opens the question of dark roasts and stops. Nothing else picks it up.</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">water temp</span><span class="chip">index</span></div>` }) }) },
 
-  { id: 'p03', tag: "karpathy's llm-wiki structure",
-    eyebrow: "Andrej Karpathy's LLM-wiki pattern",
+  { id: 'p03', tag: "karpathy's llm-wiki structure", eyebrow: "Andrej Karpathy's LLM-wiki pattern",
     h1: `Three layers. <span class="pay">Only one of them is&nbsp;yours.</span>`,
     sub: `Raw notes stay immutable. A wiki layer is built above them. The rules live in a note you can edit by hand.`,
-    pill: 'Your notes are never modified', width: 430,
-    art: `<div class="layers" style="right:80px; top:74px;">
+    pill: 'Your notes are never modified',
+    art: `<div class="layers" style="right:62px; top:80px; width:560px;">
       <div class="layer"><div class="lh"><span class="lname">Your notes</span><span class="lrole you">You own · immutable</span></div>
         <p class="ld">Wherever you already keep them. The model reads and closes; it never edits, moves or renames.</p>
         <div class="files"><span class="f">grind size.md</span><span class="f">espresso basics.md</span><span class="f">water temperature.md</span></div></div>
@@ -254,14 +261,13 @@ const POSTERS = [
         <div class="files"><span class="f">#coffee</span><span class="f">#extraction</span><span class="f">#llm-evaluation</span></div></div>
     </div>` },
 
-  { id: 'p04', tag: 'review-gated ingest',
-    eyebrow: 'Nothing is written without approval',
+  { id: 'p04', tag: 'review-gated ingest', eyebrow: 'Nothing is written without approval',
     h1: `Your notes become a wiki. <span class="pay">You approve every&nbsp;page.</span>`,
-    sub: `One card per note — summary, tags, key points, and how confident the model was — shown in full before a byte is written.`,
-    pill: 'Preview, then approve', width: 420,
+    sub: `One card per note — summary, tags, key points, confidence — shown in full before a byte is written.`,
+    pill: 'Preview, then approve',
     art: win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE,
       extra: `<div class="scrim"></div>
-        <div class="obmodal" style="width:560px">
+        <div class="obmodal" style="width:600px">
           <p class="mt">Review wiki page before writing</p>
           <p class="mp">Will create: gemma-wiki/cards/grind-size-and-extraction.md</p>
           <div class="card"><h5>Grind size and extraction</h5>
@@ -272,65 +278,87 @@ const POSTERS = [
           <div class="btns"><span class="obbtn ghost">Cancel</span><span class="obbtn cta">Approve and write</span></div>
         </div>` }) },
 
-  { id: 'p05', tag: 'scan a folder',
-    eyebrow: 'Batch ingest · lowest confidence first',
+  { id: 'p05', tag: 'scan a folder', eyebrow: 'Batch ingest · lowest confidence first',
     h1: `Scan a folder. <span class="pay">Read the shaky ones&nbsp;first.</span>`,
-    sub: `Draft a card for every new or changed note, then review them in one list — sorted so the pages that need your eye are at the top.`,
-    pill: 'Untick anything', width: 440,
-    art: win({ title: 'notes', tab: 'notes', body: NOTE,
+    sub: `Draft a card for every new or changed note, then review them in one list — sorted so what needs your eye is on top.`,
+    pill: 'Untick anything',
+    art: win({ title: 'notes', tab: 'grind size and extraction', body: NOTE,
       extra: `<div class="scrim"></div>
-        <div class="obmodal" style="width:590px">
+        <div class="obmodal" style="width:640px">
           <p class="mt">Review 6 drafted pages</p>
           <p class="mp">From notes/ · sorted low-confidence first · nothing written until you approve</p>
           <div class="rows">
-            <div class="row"><span class="box"></span><div><div class="rt">water temperature</div><div class="rd">Hotter water extracts faster; the note's own numbers disagree between paragraphs.</div></div><span class="flag low">LOW</span></div>
-            <div class="row"><span class="box tick">✓</span><div><div class="rt">espresso extraction basics</div><div class="rd">Pressure, dose, and the 18–22% target window with worked examples.</div></div><span class="flag ok">HIGH</span></div>
-            <div class="row"><span class="box tick">✓</span><div><div class="rt">grind size and extraction</div><div class="rd">Grind sets surface area, which sets extraction speed and evenness.</div></div><span class="flag ok">HIGH</span></div>
+            <div class="row"><span class="box"></span><div><div class="rt">water temperature</div><div class="rd">The note's own numbers disagree between paragraphs.</div></div><span class="flag low">LOW</span></div>
+            <div class="row"><span class="box tick">✓</span><div><div class="rt">espresso extraction basics</div><div class="rd">Pressure, dose, and the 18–22% target window.</div></div><span class="flag ok">HIGH</span></div>
+            <div class="row"><span class="box tick">✓</span><div><div class="rt">grind size and extraction</div><div class="rd">Grind sets surface area, which sets extraction speed.</div></div><span class="flag ok">HIGH</span></div>
           </div>
           <div class="btns"><span class="obbtn ghost">Cancel</span><span class="obbtn cta">Write 5 pages</span></div>
         </div>` }) },
 
-  { id: 'p06', tag: 'concept pages',
-    eyebrow: 'Built across everything sharing a tag',
+  { id: 'p06', tag: 'the card', eyebrow: 'One card per note',
+    h1: `A summary <span class="pay">that points back at your&nbsp;note.</span>`,
+    sub: `Key points, tags, cross-links and the hash of the note it came from — so the wiki notices when you edit the original.`,
+    pill: 'Every card names its source',
+    art: win({ title: 'grind-size-and-extraction', tab: 'gemma-wiki / cards / grind-size…', tree: 'cards', body: CARD,
+      dock: panel({ mode: 'wiki', ph: 'Ask your wiki… (Enter to send)',
+        msgs: `<div class="mq">Where did this card come from?</div>
+          <div class="ma">Its frontmatter names <b>notes/grind size.md</b>. Edit that note and the review board flags this card as drifted — the card is derived, the note is the source.</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size (card)</span></div>` }) }) },
+
+  { id: 'p07', tag: 'concept pages', eyebrow: 'Built across everything sharing a tag',
     h1: `A page <span class="pay">above</span> your pages.`,
-    sub: `Pick a tag two or more cards share, and the plugin writes the page that links down into each one. Ingest ripples into it; member lists self-heal.`,
-    pill: 'Links both directions', width: 440,
+    sub: `Pick a tag two or more cards share and the plugin writes the page that links down into each. Ingest ripples into it.`,
+    pill: 'Links both directions',
     art: win({ title: 'coffee (concept)', tab: 'gemma-wiki / concepts / coffee', tree: 'concepts',
       body: `<h2>coffee (concept)</h2>
-        <p>This concept covers the technical variables behind a good shot — the physics of extraction, and the levers that move it: grind size, water temperature, and brew ratio, which together set the final flavour.</p>
+        <p>This concept covers the technical variables behind a good shot — the physics of extraction, and the levers that move it: grind size, water temperature and brew ratio.</p>
         <h3>Pages</h3>
-        <ul><li><span class="wl">[[grind-size-and-extraction]]</span></li>
-          <li><span class="wl">[[espresso-extraction-basics]]</span></li>
-          <li><span class="wl">[[water-temperature]]</span></li>
-          <li><span class="wl">[[frothing-milk-for-lattes]]</span></li></ul>
-        <div class="cal"><b>Generated card</b> — edit the note, not this page. The next re-ingest rebuilds it.</div>` }) },
+        <ul><li><span class="wl">[[grind-size-and-extraction]]</span></li><li><span class="wl">[[espresso-extraction-basics]]</span></li>
+          <li><span class="wl">[[water-temperature]]</span></li><li><span class="wl">[[frothing-milk-for-lattes]]</span></li></ul>
+        <div class="cal"><b>Generated page</b> — edit the note, not this. The next rebuild overwrites it.</div>` }) },
 
-  { id: 'p07', tag: 'keeping it honest',
-    eyebrow: 'Review board · drift · staleness',
+  { id: 'p08', tag: 'review board', eyebrow: 'Confidence · drift · staleness',
     h1: `It tells you <span class="pay">when it has gone&nbsp;stale.</span>`,
-    sub: `Three ways a page goes bad, in one queue: low self-rated confidence, a source note that changed since ingest, and plain old age.`,
-    pill: 'Flags, never edits', width: 440,
+    sub: `Three ways a page goes bad, in one queue: low self-rated confidence, a source note that changed, and plain age.`,
+    pill: 'Flags, never edits',
     art: win({ title: 'gemma-wiki', tab: 'gemma-wiki / index', body: NOTE,
       extra: `<div class="scrim"></div>
-        <div class="obmodal" style="width:580px">
+        <div class="obmodal" style="width:620px">
           <p class="mt">Review board</p>
           <p class="mp">10 pages checked · 3 want a second look</p>
           <div class="rows">
-            <div class="row"><span class="box tick">✓</span><div><div class="rt">water temperature</div><div class="rd">The note changed after this card was written — <code>source_hash</code> no longer matches.</div></div><span class="flag dr">DRIFTED</span></div>
-            <div class="row"><span class="box tick">✓</span><div><div class="rt">frothing milk for lattes</div><div class="rd">The model rated its own extraction low when it wrote this one.</div></div><span class="flag low">LOW</span></div>
+            <div class="row"><span class="box tick">✓</span><div><div class="rt">water temperature</div><div class="rd">The note changed after this card was written — source_hash no longer matches.</div></div><span class="flag dr">DRIFTED</span></div>
+            <div class="row"><span class="box tick">✓</span><div><div class="rt">frothing milk for lattes</div><div class="rd">The model rated its own extraction low when it wrote this.</div></div><span class="flag low">LOW</span></div>
             <div class="row"><span class="box"></span><div><div class="rt">coffee (concept)</div><div class="rd">Gained a member since the overview was written.</div></div><span class="flag low">STALE</span></div>
           </div>
           <div class="btns"><span class="obbtn ghost">Close</span><span class="obbtn cta">Re-ingest 2</span></div>
         </div>` }) },
 
-  { id: 'p08', tag: 'tidy the wiki',
-    eyebrow: 'Check first · fix what you tick',
-    h1: `One command <span class="pay">keeps the wiki&nbsp;tidy.</span>`,
-    sub: `A model-free check finds orphans, dead index entries and tag drift. Then four repairs run only on what you approve.`,
-    pill: 'The check runs no model', width: 430,
+  { id: 'p09', tag: 'provenance & contradictions', eyebrow: 'Traced to a sentence · never auto-fixed',
+    h1: `Every key point <span class="pay">has to come from&nbsp;somewhere.</span>`,
+    sub: `Provenance takes each point back to the sentence that supports it. The contradiction sweep flags pages that disagree — and edits neither.`,
+    pill: 'You decide which one was wrong',
     art: win({ title: 'gemma-wiki', tab: 'gemma-wiki / index', body: NOTE,
       extra: `<div class="scrim"></div>
-        <div class="obmodal" style="width:590px">
+        <div class="obmodal" style="width:620px">
+          <p class="mt">Find contradictions in wiki</p>
+          <p class="mp">Checked 7 pairs sharing a tag · recently-changed first</p>
+          <div class="rows">
+            <div class="row"><span class="box tick">✓</span><div><div class="rt">water temperature ✕ espresso basics</div>
+              <div class="rd">One says 90–96 °C is the working range; the other puts the ceiling at 93 °C. Both cite the same source note.</div></div><span class="flag dr">DISAGREE</span></div>
+            <div class="row"><span class="box"></span><div><div class="rt">grind size ✕ espresso basics</div><div class="rd">Both put the target window at 18–22%. No conflict found.</div></div><span class="flag ok">AGREE</span></div>
+          </div>
+          <p class="msg">Flagged only. Fixing the note behind the wrong one is the real fix.</p>
+          <div class="btns"><span class="obbtn ghost">Close</span><span class="obbtn cta">Open both pages</span></div>
+        </div>` }) },
+
+  { id: 'p10', tag: 'tidy the wiki', eyebrow: 'Check first · fix what you tick',
+    h1: `One command <span class="pay">keeps the wiki&nbsp;tidy.</span>`,
+    sub: `A model-free check finds orphans, dead index entries and tag drift. Four repairs then run only on what you approve.`,
+    pill: 'The check runs no model',
+    art: win({ title: 'gemma-wiki', tab: 'gemma-wiki / index', body: NOTE,
+      extra: `<div class="scrim"></div>
+        <div class="obmodal" style="width:640px">
           <p class="mt">Tidy the wiki</p>
           <p class="mp">10 pages checked. Nothing is written until you approve each repair.</p>
           <div class="rows">
@@ -341,33 +369,59 @@ const POSTERS = [
           <div class="btns"><span class="obbtn ghost">Close</span><span class="obbtn cta">Run 2 of these</span></div>
         </div>` }) },
 
-  { id: 'p09', tag: 'skills',
-    eyebrow: 'Quiz · flashcards · your own',
+  { id: 'p11', tag: 'skills', eyebrow: 'Quiz · flashcards · your own',
     h1: `Quiz yourself <span class="pay">on what you just&nbsp;wrote.</span>`,
     sub: `Canned prompts against the open note — and any markdown file you drop in skills/ becomes a menu item of your own.`,
-    pill: 'Add a file, get a command', width: 440,
-    art: win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE, tree: 'skills' }) +
-      panel({ pos: 'right:54px; top:150px;', mode: 'note', ph: 'Ask about this note… (Enter to send)',
+    pill: 'Add a file, get a command',
+    art: win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE, tree: 'skills',
+      dock: panel({ mode: 'note', ph: 'Ask about this note… (Enter to send)',
         msgs: `<div class="mq">⚡ Quiz</div>
           <div class="ma"><span class="num">01</span>What happens to extraction as grind gets finer, and why?<br><br>
             <span class="num">02</span>What is the target extraction window for espresso?<br><br>
             <span class="num">03</span>Which variable do most guides adjust first?</div>
-          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span></div>` }) +
-      `<div class="menu" style="right:80px; top:600px;">
-        <div class="mi hot"><span class="i">◈</span>Quiz</div>
-        <div class="mi"><span class="i">▤</span>Flashcards</div>
-        <div class="mi"><span class="i">◌</span>Find gaps</div>
-        <div class="msep"></div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span></div>` }) }) +
+      `<div class="menu" style="right:64px; bottom:64px;">
+        <div class="mi hot"><span class="i">◈</span>Quiz</div><div class="mi"><span class="i">▤</span>Flashcards</div>
+        <div class="mi"><span class="i">◌</span>Find gaps</div><div class="msep"></div>
         <div class="mi"><span class="i">✓</span>Action items<span class="own">YOURS</span></div>
-        <div class="mi"><span class="i">?</span>Unclear bits<span class="own">YOURS</span></div>
-      </div>` },
+        <div class="mi"><span class="i">?</span>Unclear bits<span class="own">YOURS</span></div></div>` },
 
-  { id: 'p10', tag: 'offline',
-    eyebrow: 'No server · No account · No key',
+  { id: 'p12', tag: 'improve formatting', eyebrow: 'The one command that rewrites a note',
+    h1: `Tidy the writing. <span class="pay">Keep every&nbsp;word.</span>`,
+    sub: `Structure, lists and typos only — wording and voice preserved, code blocks untouched, and the whole result shown before it is written.`,
+    pill: 'Your edits are never overwritten',
+    art: win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE,
+      extra: `<div class="scrim"></div>
+        <div class="obmodal" style="width:600px">
+          <p class="mt">Review your note before it is rewritten</p>
+          <p class="mp">notes/grind size.md — 4 passes</p>
+          <div class="card"><h5>Grind size and extraction</h5>
+            <p>Grind size sets how much coffee surface the water can reach. Finer grounds expose more area, so compounds dissolve faster.</p>
+            <ul><li>Too fine → over-extraction, bitterness</li><li>Too coarse → under-extraction, thin and sour</li></ul>
+            <div class="conf" style="color:var(--ob-muted)">STRUCTURE AND TYPOS ONLY · WORDING UNCHANGED</div></div>
+          <div class="btns"><span class="obbtn ghost">Cancel</span><span class="obbtn cta">Approve and write</span></div>
+        </div>` }) },
+
+  { id: 'p13', tag: 'save the conversation', eyebrow: 'chats/ · kept, never retrieved',
+    h1: `Keep the thread. <span class="pay">It never becomes&nbsp;material.</span>`,
+    sub: `Save a conversation and it lands in chats/ with its own index. Nothing there is retrieved, indexed, linted or scanned.`,
+    pill: 'An answer is output, never input',
+    art: win({ title: 'chats', tab: 'gemma-wiki / chats / index', tree: 'chats',
+      body: `<h2>Saved conversations</h2>
+        <p style="color:var(--ob-muted);font-size:12px">One line per conversation you kept. <b>This is not the wiki index</b> — nothing here is ever retrieved.</p>
+        <p>• <span class="wl">[[gemma — chat — why grind size changes extraction]]</span> — 2026-09-05, 2 exchanges</p>
+        <p>• <span class="wl">[[gemma — chat — what connects my coffee notes]]</span> — 2026-09-04, 3 exchanges</p>`,
+      dock: panel({ mode: 'note', ph: 'Ask about this note… (Enter to send)',
+        msgs: `<div class="mq">Why does grind size change extraction?</div>
+          <div class="ma">Finer grounds expose more surface, so water extracts faster.</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span></div>
+          <div class="ma" style="color:var(--ob-muted);font-size:11px;border-top:1px solid var(--ob-border);padding-top:9px">💾 &nbsp;Saved: gemma-wiki/chats/gemma — chat — why grind size…md</div>` }) }) },
+
+  { id: 'p14', tag: 'offline', eyebrow: 'No server · No account · No key',
     h1: `One download. <span class="pay">Then it's&nbsp;yours.</span>`,
-    sub: `Gemma 4 is cached on your disk once. After that the plugin never touches the network — that's architecture, not a policy.`,
-    pill: 'Free & open source', width: 450,
-    art: `<div class="obmodal" style="position:absolute; left:auto; right:150px; top:180px; transform:none; width:520px; box-shadow:var(--shadow-lg)">
+    sub: `Gemma 4 is cached on your disk once. After that the plugin never touches the network — architecture, not a policy.`,
+    pill: 'Free & open source',
+    art: `<div class="obmodal" style="position:absolute; left:auto; right:96px; top:170px; transform:none; width:540px; box-shadow:var(--shadow-lg)">
         <p class="mt">Gemma Wiki · Settings</p>
         <div class="card" style="background:#fff">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
@@ -378,8 +432,8 @@ const POSTERS = [
           <div style="height:6px;border-radius:99px;background:var(--ob-bg3);overflow:hidden"><div style="width:100%;height:100%;background:var(--green)"></div></div>
         </div>
         <div class="rows" style="margin-top:12px">
-          <div class="row" style="background:#fff"><span class="box tick">✓</span><div><div class="rt">Runs inside Obsidian's own process</div><div class="rd">LiteRT-LM + WebGPU. Not Ollama, not LM Studio, no localhost inference API.</div></div></div>
-          <div class="row" style="background:#fff"><span class="box tick">✓</span><div><div class="rt">No telemetry, no analytics, no account</div><div class="rd">Two one-time downloads — the model and the WASM runtime — then nothing.</div></div></div>
+          <div class="row" style="background:#fff"><span class="box tick">✓</span><div><div class="rt">Runs inside Obsidian's own process</div><div class="rd">LiteRT-LM + WebGPU. Not Ollama, not LM Studio, no inference API.</div></div></div>
+          <div class="row" style="background:#fff"><span class="box tick">✓</span><div><div class="rt">No telemetry, no analytics, no account</div><div class="rd">Two one-time downloads — model and WASM runtime — then nothing.</div></div></div>
         </div>
       </div>` },
 ];
