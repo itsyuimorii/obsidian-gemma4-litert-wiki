@@ -245,6 +245,15 @@ Getting a local model to run inside Obsidian's renderer — instead of a Chrome 
 
 Once loaded, the plugin keeps a single `Engine` instance alive for the lifetime of the Obsidian session (see `ensureEngine()` in `src/main.ts`) so the ~3 GB model and GPU warmup cost are paid once, not per command.
 
+### Manual test protocols
+
+The model runs only inside Obsidian, so two things CI cannot cover are written
+as repeatable protocols instead: [tri-lingual quality](docs/tri-lingual-test.md)
+(JA/EN/ZH fixtures — Improve must never translate, and CJK must not truncate)
+and [tag-vocabulary reuse](docs/vocabulary-reuse-test.md) (ingest must reuse
+existing tags instead of coining synonyms). Fixtures are synthetic; pass
+criteria are explicit.
+
 ## 📊 Benchmarks
 
 All numbers are from `Conversation.getBenchmarkInfo()` — real LiteRT-LM instrumentation, not estimates — measured on real hardware, not vendor-quoted figures.
