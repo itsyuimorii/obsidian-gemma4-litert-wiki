@@ -1,5 +1,4 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { fs, path } from './node-api';
 
 // On-demand store for the LiteRT-LM WebAssembly runtime.
 //
