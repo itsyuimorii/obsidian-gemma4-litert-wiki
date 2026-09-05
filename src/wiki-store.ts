@@ -1,4 +1,31 @@
 import { normalizePath, TFile, Vault, type App } from 'obsidian';
+import {
+  DEFAULT_CONCEPT_THRESHOLD,
+  DEFAULT_NAMING,
+  buildSchemaFile,
+  isUsableTag,
+  linkNeighbours,
+  parseSchema,
+  pickCardPath,
+  slugify,
+  type IndexEntry,
+  type WikiSchema,
+} from './pure';
+
+// The obsidian-free half of this module. Re-exported rather than moved out of
+// sight: every caller already imports these from './wiki-store', and where a
+// symbol is imported from is not the interesting thing about it. src/pure.ts
+// says why the split exists.
+export {
+  buildSchemaFile,
+  isUsableTag,
+  parseSchema,
+  safeFileName,
+  scoreEntries,
+  slugify,
+  type IndexEntry,
+  type WikiSchema,
+} from './pure';
 
 // The wiki layer, per Karpathy's pattern: raw notes are never touched;
 // the plugin owns a separate wiki/ folder holding generated pages, a
@@ -74,57 +101,7 @@ export interface NoteExtraction {
   mentions: string[];
 }
 
-export interface IndexEntry {
-  linkPath: string;
-  title: string;
-  summary: string;
-}
 
-/**
- * A tag, and the stem of a generated filename.
- *
- * `[^a-z0-9]` erased every script that is not Latin. Twelve of twenty-one
- * language samples — Chinese, Japanese, Korean, Russian, Greek, Arabic,
- * Hebrew, Thai, Devanagari — collapsed to the same string, so a vault written
- * in any of them got one tag called `untitled` and one card called
- * `untitled.md` that every note overwrote in turn. Latin with diacritics
- * survived but was mangled: `resume` for `résumé`, `d` for `łódź`.
- *
- * `\p{L}` keeps a letter in any script, `\p{N}` any digit, and `\p{M}` the
- * combining marks that Devanagari, Thai, Arabic and Vietnamese build their
- * letters out of — without that last class `डिज़ाइन` comes back as `ड-ज-इन`,
- * because the vowel signs are marks rather than letters and dropping them
- * splits the word. The result is still only letters, digits and hyphens, so it
- * is safe as a filename on every platform without a second pass.
- */
-export function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\p{M}]+/gu, '-')
-      .replace(/^-+|-+$/g, '') || 'untitled'
-  );
-}
-
-/**
- * Whether a slugified tag carries any meaning.
- *
- * This catches one class and one only: a slug that is nothing but digits and
- * hyphens. `4328` and `70-` name nothing, and Obsidian will not render either
- * as a tag.
- *
- * It deliberately does NOT try to catch the other class. Obsidian parses `#45`
- * in note text as a tag the moment one non-numeric character follows it, and
- * CJK punctuation counts — so a note mentioning issue `#45）` grows a tag out of
- * the sentence after it, and the model can echo it back. But `45-打开对应文件`
- * and `2026-回顾` are the same shape, and any rule sharp enough to drop the
- * first drops the second. Guessing there would cost real tags to catch junk
- * whose actual fix is upstream, in how the note was written.
- */
-export function isUsableTag(tag: string): boolean {
-  const s = slugify(tag);
-  return s !== 'untitled' && !/^[\p{N}\p{M}-]+$/u.test(s);
-}
 
 /**
  * Where a note's card lives.
@@ -142,44 +119,21 @@ export function isUsableTag(tag: string): boolean {
  * reading it — which also means existing vaults keep every card they have
  * rather than re-drafting the lot under new names.
  *
- * Only when a note has no card yet is a name minted, and then the plain
- * basename is still tried first: `cards/readme.md` is what you want to see
- * until the day two notes want it.
- *
- * `reserved` holds paths minted earlier in the same batch. A scan drafts
- * before it writes, so two new same-named notes would otherwise both find the
- * name free and the second would silently replace the first between the review
- * list and the disk.
+ * The choice of name is pickCardPath() in src/pure.ts; what is left here is
+ * the half that needs a vault to answer — which card this note already has,
+ * and which paths are occupied.
  */
 export function cardPathFor(app: App, file: TFile, reserved?: Set<string>): string {
-  const existing = existingCardPath(app, file.path);
-  if (existing) return existing;
-
-  const dir = wikiSourcesDir();
-  const parent = file.parent?.name ?? '';
-  const stem = file.path.replace(/\.md$/, '');
-  // Widening: the name alone, then qualified by its folder, then by the whole
-  // path, then counted. Every step is derived from the note, so the answer is
-  // the same on every call for the same note.
-  const candidates = [
-    slugify(file.basename),
-    parent ? `${slugify(parent)}-${slugify(file.basename)}` : '',
-    slugify(stem),
-  ].filter(Boolean);
-  for (let n = 2; n <= 99; n++) candidates.push(`${slugify(file.basename)}-${n}`);
-
-  for (const c of candidates) {
-    const path = normalizePath(`${dir}/${c}.md`);
-    if (reserved?.has(path)) continue;
-    const taken = app.vault.getAbstractFileByPath(path);
-    if (!taken) {
-      reserved?.add(path);
-      return path;
-    }
-  }
-  // 99 notes sharing a basename and a folder is not a real vault, but returning
-  // undefined here would be worse than one deterministic collision.
-  return normalizePath(`${dir}/${slugify(file.path)}.md`);
+  return pickCardPath({
+    dir: wikiSourcesDir(),
+    existing: existingCardPath(app, file.path),
+    path: file.path,
+    basename: file.basename,
+    parentName: file.parent?.name ?? '',
+    isTaken: (path) => app.vault.getAbstractFileByPath(path) !== null,
+    normalize: normalizePath,
+    reserved,
+  });
 }
 
 /** The card this note already has, by its recorded source. Null if none. */
@@ -852,149 +806,6 @@ export async function readIndexEntries(vault: Vault): Promise<IndexEntry[]> {
   return entries;
 }
 
-// ---------------------------------------------------------------------------
-// Schema layer (issue #3), Karpathy's third layer — kept as a NOTE, not a
-// hidden setting ("config as a note"): plain markdown the plugin parses before
-// every ingest. Living as a note means it versions with the wiki, is visible
-// and hand-editable, and shares the same "everything is a file you can read"
-// philosophy as the rest of the wiki. Three parsed sections: Tags (controlled
-// vocabulary), Naming (page-name rules), Concept threshold.
-// ---------------------------------------------------------------------------
-
-export interface WikiSchema {
-  tags: string[];
-  naming: Record<string, string>;
-  conceptThreshold: number;
-  // New tags ingest has seen that aren't in the vocabulary yet, waiting for
-  // you to promote them (issue #3). The vocabulary stays curated; nothing
-  // enters it silently.
-  pending: string[];
-  // Tags the user has banned by hand. Highest authority: Organize never
-  // re-proposes them, ingest never uses them, Pending never queues them —
-  // a plain deletion from Tags only lasts until the next rebuild, because
-  // rebuilds read the tags still in use on pages. This list is permanent.
-  rejected: string[];
-}
-
-const DEFAULT_NAMING: Record<string, string> = {
-  concept: 'kebab-case singular noun',
-  source: "follows the source note's filename",
-};
-const DEFAULT_CONCEPT_THRESHOLD = 4;
-
-// The self-documenting schema file. The prose header explains what this file
-// is and how to use it, so opening it is enough to understand the config.
-export function buildSchemaFile(
-  tags: string[],
-  naming: Record<string, string> = DEFAULT_NAMING,
-  conceptThreshold = DEFAULT_CONCEPT_THRESHOLD,
-  pending: string[] = [],
-  rejected: string[] = []
-): string {
-  const tagLines = tags.length
-    ? tags.map((t) => `- ${slugify(t)}`).join('\n')
-    : '_No tags yet. Ingest a few notes, then run "Tidy the wiki" to build the vocabulary from them._';
-  const namingLines = Object.entries(naming)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join('\n');
-  const pendingLines = pending.length
-    ? pending.map((t) => `- ${slugify(t)}`).join('\n')
-    : '(none)';
-  const rejectedLines = rejected.length
-    ? rejected.map((t) => `- ${slugify(t)}`).join('\n')
-    : '(none)';
-  // Docs as collapsed callouts, data in the open. In live preview — where
-  // people actually edit — a "[!info]-" renders as a one-line pill until
-  // clicked, so each section costs one line of chrome. (An earlier pass
-  // removed the callouts on the argument that source view unfolds them; that
-  // argument was wrong for live preview, which is the common case.)
-  //
-  // The split that matters is ownership, and it is enforced by regeneration,
-  // not by a stamp: on every start the file is parsed and rebuilt from this
-  // template, so the callouts always match the running version — delete one
-  // and it is back next start — while the five data slots ride through the
-  // parse untouched. The parser ignores every "> " line, which is exactly why
-  // the docs may live in callouts (keep digits out of the threshold one).
-  return (
-    `# Wiki Schema\n\n` +
-    `> [!info]- How this file works\n` +
-    `> The wiki's tag rules — plain markdown, read before every ingest. **The lists are yours; the explanations are the plugin's.** Edit tags freely and they are never overwritten; the callouts (this one included) are rewritten on every start, so deleting or editing them does not stick. Anything else you write in this file will not survive a restart either — your own notes belong in your own notes.\n` +
-    `>\n` +
-    `> Three ways it changes, all yours: edit by hand (read before every ingest) · **Tidy the wiki** rebuilds the vocabulary from the tags in use, and brings existing pages in line afterwards. Nothing changes without an approval of yours.\n\n` +
-    `## Tags\n\n` +
-    `> [!info]- What goes here\n` +
-    `> Your vocabulary — **one \`- tag\` per line, right below this box.** Ingest reuses these instead of coining near-synonyms (\`llm-eval\` vs \`evals\`), which is what lets pages cluster into concept pages. Build the list with **Tidy the wiki**; edit by hand when precision matters.\n\n` +
-    `${tagLines}\n\n` +
-    `## Naming\n\n` +
-    `> [!info]- What this does\n` +
-    `> \`concept:\` is fed into the tag-naming prompt — a nudge to a small model, not a guarantee. File names are lower-cased and hyphenated mechanically no matter what this says.\n\n` +
-    `${namingLines}\n\n` +
-    `## Concept threshold\n\n` +
-    `> [!info]- What this does\n` +
-    `> How many pages must share a tag before **Build a concept page** offers the cluster. Leave it blank and it falls back to the default.\n\n` +
-    `${conceptThreshold}\n\n` +
-    `## Pending\n\n` +
-    `> [!info]- How to clear these\n` +
-    `> New tags ingest coined, waiting on you. Move a line up into \`## Tags\` to keep it · delete it to reject it · move it down into \`## Rejected\` to ban it. **Tidy the wiki** clears the queue wholesale, behind a preview. A tag waiting here already helps later ingests reuse it.\n\n` +
-    `${pendingLines}\n\n` +
-    `## Rejected\n\n` +
-    `> [!info]- What this is\n` +
-    `> Your veto, and it outranks everything: never re-proposed, never applied, never queued. Deleting a tag from \`## Tags\` alone lasts only until the next Organize — a page still carrying it brings it back. A line here is permanent.\n\n` +
-    `${rejectedLines}\n`
-  );
-}
-
-function schemaSection(content: string, heading: string): string {
-  const re = new RegExp(`^##\\s+${heading}\\s*$`, 'im');
-  const m = content.match(re);
-  if (!m || m.index === undefined) return '';
-  const after = content.slice(m.index + m[0].length);
-  const next = after.search(/^##\s+/m);
-  return next === -1 ? after : after.slice(0, next);
-}
-
-export function parseSchema(content: string): WikiSchema {
-  const tags = schemaSection(content, 'Tags')
-    .split('\n')
-    .map((l) => l.trim())
-    // A bullet whose content starts with "(" is a placeholder/comment, not a tag.
-    .filter((l) => l.startsWith('- ') && !l.slice(2).trim().startsWith('('))
-    .map((l) => l.slice(2).trim())
-    .filter(Boolean);
-  const naming: Record<string, string> = {};
-  for (const l of schemaSection(content, 'Naming').split('\n')) {
-    const m = l.match(/^([a-z][a-z0-9-]*)\s*:\s*(.+)$/i);
-    if (m) naming[m[1].toLowerCase()] = m[2].trim();
-  }
-  // Read the threshold from the section's own lines, ignoring callout lines:
-  // this takes the FIRST number it finds, so any digit inside an explanatory
-  // "> ..." block above the value would otherwise be parsed as the threshold.
-  // Dropping "> " lines also makes a hand-written callout harmless.
-  const tm = schemaSection(content, 'Concept threshold')
-    .split('\n')
-    .filter((l) => !l.trim().startsWith('>'))
-    .join('\n')
-    .match(/\d+/);
-  const pending = schemaSection(content, 'Pending')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith('- '))
-    .map((l) => l.slice(2).trim())
-    .filter((t) => t && t.toLowerCase() !== '(none)');
-  const rejected = schemaSection(content, 'Rejected')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith('- '))
-    .map((l) => l.slice(2).trim())
-    .filter((t) => t && t.toLowerCase() !== '(none)');
-  return {
-    tags,
-    naming: Object.keys(naming).length ? naming : DEFAULT_NAMING,
-    conceptThreshold: tm ? parseInt(tm[0], 10) : DEFAULT_CONCEPT_THRESHOLD,
-    pending,
-    rejected,
-  };
-}
 
 export async function readSchema(vault: Vault): Promise<WikiSchema> {
   const content = await readIfExists(vault, schemaPath());
@@ -1253,50 +1064,6 @@ export function isUnmodifiedSeed(text: string): boolean {
   return contentHash(stripSeedStamp(text)) === m[1];
 }
 
-// Lexical retrieval over the index, per the "read the index, then read the
-// pages it points to" plan — deliberately no embeddings, no graph algorithm.
-// Function words match every summary and drown out the real signal —
-// "what's the common mistake between X and Y" was retrieving pages that
-// merely contained "common" and "between".
-const STOPWORDS = new Set([
-  'the', 'and', 'for', 'are', 'but', 'not', 'you', 'your', 'with', 'can',
-  'what', 'which', 'when', 'where', 'why', 'how', 'does', 'did', 'from',
-  'have', 'has', 'had', 'this', 'that', 'these', 'those', 'will', 'would',
-  'should', 'could', 'about', 'into', 'over', 'than', 'then', 'them',
-  'they', 'there', 'their', 'make', 'made', 'between', 'common', 'more',
-  'most', 'some', 'such', 'only', 'also', 'very', 'just', 'been', 'was',
-  'were', 'its', 'out', 'use', 'using', 'used', 'note', 'notes', 'talk',
-  'talking', 'say', 'says', 'tell', 'show',
-]);
-
-// Kanji/kana/fullwidth ranges — CJK has no spaces, so a whitespace/ASCII
-// tokenizer drops it entirely and a Chinese or Japanese question matched
-// zero pages (issue #23).
-const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
-
-export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
-  const q = question.toLowerCase();
-  const ascii = q.split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
-  // CJK: no word boundaries, so use sliding 2-char windows (bigrams) as
-  // terms — specific enough to avoid single-char particle noise (的/は/て),
-  // and they substring-match the equally-CJK haystack.
-  const cjk: string[] = [];
-  for (const run of q.match(CJK_RUN) ?? []) {
-    if (run.length === 1) cjk.push(run);
-    else for (let i = 0; i < run.length - 1; i++) cjk.push(run.slice(i, i + 2));
-  }
-  const terms = [...new Set([...ascii, ...cjk])];
-  if (!terms.length) return [];
-  const scored = entries
-    .map((e) => {
-      const haystack = `${e.title} ${e.summary}`.toLowerCase();
-      const score = terms.reduce((acc, t) => acc + (haystack.includes(t) ? 1 : 0), 0);
-      return { e, score };
-    })
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score);
-  return scored.slice(0, 3).map((s) => s.e);
-}
 
 /**
  * Load the retrieved pages.
@@ -1327,66 +1094,23 @@ export async function loadPages(
 
 // One-hop link expansion (issue #14): given the seed pages the lexical
 // scorer picked, pull in the wiki pages they link to and the pages that link
-// to them. A wiki-link neighbour is often the page that actually holds the
-// answer even when its own summary didn't share the question's words —
-// lexical retrieval alone can't see that, the link graph can.
+// to them. The walk itself is linkNeighbours() in src/pure.ts; the metadata
+// cache is the only part of it that needs an App.
 export function expandByLinks(
   app: App,
   seeds: IndexEntry[],
   allEntries: IndexEntry[],
   maxExtra: number
 ): IndexEntry[] {
-  if (!seeds.length || maxExtra <= 0) return [];
-  const byPath = new Map(allEntries.map((e) => [`${e.linkPath}.md`, e]));
-  const seedPaths = new Set(seeds.map((e) => `${e.linkPath}.md`));
-  const prefix = `${wikiDir()}/`;
-  const resolved = app.metadataCache.resolvedLinks;
-  const neighbours = new Set<string>();
-
-  // Outbound: seed -> targets.
-  for (const seedPath of seedPaths) {
-    for (const tgt of Object.keys(resolved[seedPath] ?? {})) {
-      if (byPath.has(tgt) && !seedPaths.has(tgt)) neighbours.add(tgt);
-    }
-  }
-  // Inbound: any wiki page -> a seed (backlinks).
-  for (const [src, targets] of Object.entries(resolved)) {
-    if (!src.startsWith(prefix) || !byPath.has(src) || seedPaths.has(src)) continue;
-    if (Object.keys(targets).some((t) => seedPaths.has(t))) neighbours.add(src);
-  }
-
-  const extra: IndexEntry[] = [];
-  for (const p of neighbours) {
-    const e = byPath.get(p);
-    if (e) extra.push(e);
-    if (extra.length >= maxExtra) break;
-  }
-  return extra;
+  return linkNeighbours({
+    resolvedLinks: app.metadataCache.resolvedLinks,
+    seeds,
+    allEntries,
+    maxExtra,
+    wikiPrefix: `${wikiDir()}/`,
+  });
 }
 
-/**
- * A filename from arbitrary text, for a file that lands in the user's vault.
- *
- * Not slugify(). That is the right shape for a tag and for a card the plugin
- * owns, but this file goes among someone's own notes, where `2026 roadmap.md`
- * is what a person would have typed and `2026-roadmap.md` is the plugin
- * imposing a house style on a folder that is not its own.
- *
- * Keep the words; remove only what a filesystem or Obsidian objects to. The
- * fallback covers a question that is entirely punctuation — rare, and still
- * has to produce a file.
- */
-export function safeFileName(text: string, fallback: string): string {
-  const cleaned = text
-    .replace(/[\\/:*?"<>|#^[\]]/g, ' ')
-    // eslint-disable-next-line no-control-regex -- the control characters are the point: they are being stripped out of a filename before they can enter the vault
-    .replace(/[\u0000-\u001f]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^[.\s]+|[.\s]+$/g, '')
-    .slice(0, 80)
-    .trim();
-  return cleaned || fallback;
-}
 
 /**
  * A note written from a chat answer, for the user's own vault.

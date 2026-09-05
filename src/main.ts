@@ -57,6 +57,7 @@ import {
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
+import { chunkForImprove, estimateImproveTokens } from './pure';
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
 // runtime can load inside Obsidian's Electron renderer with zero external
@@ -121,161 +122,6 @@ async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
 
 // Model download/caching moved to src/model-store.ts (resumable, on-disk).
 
-// Rough token cost per script: CJK (Han/kana/Hangul/fullwidth) runs ~1.5
-// tokens per character, everything else ~4 characters per token. Deliberately
-// pessimistic — overshooting the context window truncates the rewrite
-// silently, which is the worst failure mode we have.
-const CJK_RE = /[\u3000-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
-function estimateTokens(text: string): number {
-  const cjk = (text.match(CJK_RE) ?? []).length;
-  return Math.ceil(cjk * 1.5 + (text.length - cjk) / 4);
-}
-
-// One unit of work for Improve. `raw` keeps its own trailing newlines so that
-// concatenating every chunk's raw text reproduces the source byte for byte —
-// that is what lets us stitch the rewritten pieces back together without
-// inventing or eating blank lines. `verbatim` chunks are passed through
-// untouched (an over-budget fenced code block: it must be preserved exactly
-// anyway, so there is nothing for the copy editor to do).
-interface ImproveChunk {
-  raw: string;
-  verbatim: boolean;
-}
-
-// Split markdown into blocks that are safe to send separately: fenced code
-// blocks stay whole, headings start a new block, and blank lines end one.
-// Every block carries its trailing newlines, so blocks.join('') === src.
-function splitMarkdownBlocks(src: string): string[] {
-  const lines = src.split('\n');
-  const blocks: string[] = [];
-  let buf: string[] = [];
-  let fence: string | null = null;
-  const flush = () => {
-    // Each entry already carries its own line break, so this is a plain
-    // concatenation — joining on '\n' here would duplicate every newline.
-    if (buf.length) blocks.push(buf.join(''));
-    buf = [];
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const last = i === lines.length - 1;
-    const withNl = last ? line : line + '\n';
-    if (fence) {
-      buf.push(withNl);
-      if (new RegExp(`^\\s{0,3}${fence}\\s*$`).test(line)) {
-        fence = null;
-        flush();
-      }
-      continue;
-    }
-    const open = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
-    if (open) {
-      flush();
-      fence = open[1];
-      buf.push(withNl);
-      continue;
-    }
-    if (/^\s{0,3}#{1,6}\s/.test(line)) {
-      flush();
-      buf.push(withNl);
-      continue;
-    }
-    if (line.trim() === '') {
-      // Blank lines belong to the block they close, so the separator
-      // survives the round trip.
-      if (buf.length) {
-        buf.push(withNl);
-        // Keep consuming a run of blank lines, then end the block.
-        while (i + 1 < lines.length && lines[i + 1].trim() === '') {
-          i++;
-          buf.push(i === lines.length - 1 ? lines[i] : lines[i] + '\n');
-        }
-        flush();
-      } else {
-        blocks.push(withNl);
-      }
-      continue;
-    }
-    buf.push(withNl);
-  }
-  flush();
-  return blocks;
-}
-
-// Break one over-budget block into pieces that fit. Prefers line boundaries,
-// then sentence-ending punctuation (CJK notes routinely hold a 1500-character
-// paragraph on a single line), and only then a hard character cut.
-function splitOversizedBlock(block: string, budget: number): string[] {
-  const out: string[] = [];
-  const flushable = (piece: string) => {
-    if (piece) out.push(piece);
-  };
-  let rest = block;
-  while (estimateTokens(rest) > budget) {
-    // Binary-search the longest prefix that fits, then walk back to the
-    // nearest natural boundary inside it.
-    let lo = 1;
-    let hi = rest.length;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (estimateTokens(rest.slice(0, mid)) <= budget) lo = mid;
-      else hi = mid - 1;
-    }
-    const head = rest.slice(0, lo);
-    const nl = head.lastIndexOf('\n');
-    const sentence = Math.max(
-      head.lastIndexOf('。'),
-      head.lastIndexOf('！'),
-      head.lastIndexOf('？'),
-      head.lastIndexOf('. '),
-      head.lastIndexOf('! '),
-      head.lastIndexOf('? ')
-    );
-    let cut = lo;
-    if (nl > lo * 0.4) cut = nl + 1;
-    else if (sentence > lo * 0.4) cut = sentence + 1;
-    flushable(rest.slice(0, cut));
-    rest = rest.slice(cut);
-  }
-  flushable(rest);
-  return out;
-}
-
-// Pack a note into chunks that each fit the per-pass input budget. Chunk
-// boundaries land on headings or blank lines wherever possible, so rejoining
-// the rewritten pieces is a plain concatenation.
-function chunkForImprove(content: string, budget: number): ImproveChunk[] {
-  if (estimateTokens(content) <= budget) return [{ raw: content, verbatim: false }];
-  const chunks: ImproveChunk[] = [];
-  let buf = '';
-  const flush = () => {
-    if (buf) chunks.push({ raw: buf, verbatim: false });
-    buf = '';
-  };
-  for (const block of splitMarkdownBlocks(content)) {
-    if (estimateTokens(block) > budget) {
-      flush();
-      // A single fenced block over budget has to be preserved verbatim
-      // anyway; cutting it would corrupt the code.
-      if (/^\s{0,3}(`{3,}|~{3,})/.test(block)) {
-        chunks.push({ raw: block, verbatim: true });
-      } else {
-        for (const piece of splitOversizedBlock(block, budget)) {
-          chunks.push({ raw: piece, verbatim: false });
-        }
-      }
-      continue;
-    }
-    // Prefer to break in front of a heading once the current chunk is
-    // half full: a pass that starts at a section head reads as a section,
-    // not as a fragment cut mid-argument.
-    if (buf && /^\s{0,3}#{1,6}\s/.test(block) && estimateTokens(buf) >= budget * 0.5) flush();
-    if (buf && estimateTokens(buf + block) > budget) flush();
-    buf += block;
-  }
-  flush();
-  return chunks;
-}
 
 // Tag picker for concept-page building (issue #19): only tags shared by two
 // or more pages are offered, since a concept page over a single page is
@@ -2940,7 +2786,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         new ConfirmModal(this.app, {
           title: 'Improve a long note',
           body:
-            `${usingSelection ? 'The selection' : `"${file.basename}"`} is ~${estimateTokens(body)} tokens — ` +
+            `${usingSelection ? 'The selection' : `"${file.basename}"`} is ~${estimateImproveTokens(body)} tokens — ` +
             "more than one pass fits in the model's context window, so Improve will work through it in " +
             `${passes} passes, split on headings and blank lines, and stitch the result back together.\n\n` +
             'Budget roughly half a minute per pass. You still review the whole result before anything is written.',
@@ -3003,7 +2849,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               // Output is a same-sized rewrite of the input; cap it just above
               // the input estimate instead of a flat 2048 so short passes can't
               // run away and long CJK passes aren't silently truncated.
-              maxOutputTokens: Math.min(2048, estimateTokens(text) + 300),
+              maxOutputTokens: Math.min(2048, estimateImproveTokens(text) + 300),
             },
           });
           const message = await conversation.sendMessage(text);
