@@ -17,6 +17,7 @@ import {
   buildAnswerNote,
   buildChatTranscript,
   safeFileName,
+  wikiChatsDir,
   wikiSourcesDir,
   clampToTokens,
   estimateTokens,
@@ -460,8 +461,15 @@ export class ChatView extends ItemView {
     }
     const firstQ = turns.find((t) => t.role === 'user')?.content ?? 'conversation';
     const title = firstQ.length > 80 ? `${firstQ.slice(0, 77).trim()}…` : firstQ.trim();
-    const sources = turns.flatMap((t) => t.sources ?? []);
-    const folder = this.answerFolder(sources);
+    // One folder, not beside the note. A saved ANSWER belongs next to the
+    // material it came from, because it is about that material and you want
+    // it where you would look for it. A conversation is a working record: it
+    // can move between notes and modes, it is read once and rarely linked,
+    // and scattering one copy per note it happened to touch buries the notes
+    // under sediment. So they collect in one place — and that place is
+    // excluded from every path that could read them back, which is the whole
+    // reason they can be collected safely.
+    const folder = wikiChatsDir();
     const stem = safeFileName(
       `${MODEL_PREFIX} — chat — ${title}`,
       `${MODEL_PREFIX} — chat ${window.moment().format('YYYY-MM-DD HHmmss')}`
