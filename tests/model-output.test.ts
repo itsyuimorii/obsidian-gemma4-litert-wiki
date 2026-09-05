@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import {
   looksCutOff,
   looksRepetitive,
+  nextOutputCap,
   parseModelJson,
   scanJsonObject,
   textOf,
@@ -247,4 +248,81 @@ test('textOf never throws on a shape it did not expect', () => {
   for (const junk of [undefined, null, 0, {}, [null], [undefined], [{ text: 'no type' }]]) {
     assert.equal(typeof textOf(junk), 'string', JSON.stringify(junk ?? null));
   }
+});
+
+// --- whether a second attempt should get more room -------------------------
+
+const widen = (over: Partial<Parameters<typeof nextOutputCap>[0]> = {}) =>
+  nextOutputCap({
+    current: 768,
+    granted: 4096,
+    inputTokens: 1200,
+    reason: 'cut-off',
+    repetitive: false,
+    ...over,
+  });
+
+test('a cut-off run that was not looping gets more room', () => {
+  assert.deepEqual(widen(), { widen: true, cap: 1536 });
+});
+
+test('a cut-off run that WAS looping gets no more room', () => {
+  // The gate. A repetition loop that runs into the cap and a genuine
+  // truncation are the same observable — both stop at budget, both end
+  // mid-sentence, both leave a brace open. Widening on that evidence buys a
+  // longer loop at double the decode time and still fails.
+  assert.deepEqual(widen({ repetitive: true }), { widen: false, why: 'looping' });
+});
+
+test('a failure that is not truncation is not a room problem', () => {
+  for (const reason of ['no-json', 'invalid-json', null] as const) {
+    assert.deepEqual(widen({ reason }), { widen: false, why: 'not-cut-off' }, String(reason));
+  }
+});
+
+test('the widened cap never eats the context the input needs', () => {
+  // A long note leaves little room; doubling would overrun the window.
+  const out = widen({ current: 768, granted: 4096, inputTokens: 3000 });
+  assert.equal(out.widen, false);
+  assert.equal(out.widen === false && out.why, 'no-headroom');
+});
+
+test('a cap is only widened by an amount worth another generation', () => {
+  // 100 extra tokens does not justify another 20-30 seconds.
+  const out = nextOutputCap({
+    current: 768,
+    granted: 768 + 100 + 512 + 1,
+    inputTokens: 1,
+    reason: 'cut-off',
+    repetitive: false,
+  });
+  assert.deepEqual(out, { widen: false, why: 'no-headroom' });
+});
+
+test('headroom caps the widening below a plain doubling', () => {
+  // Doubling would be 1536; the window only affords 1300.
+  const out = nextOutputCap({
+    current: 768,
+    granted: 1300 + 200 + 512,
+    inputTokens: 200,
+    reason: 'cut-off',
+    repetitive: false,
+  });
+  assert.deepEqual(out, { widen: true, cap: 1300 });
+});
+
+test('the granted window is what bounds it, so a smaller grant widens less', () => {
+  const generous = widen({ granted: 8192 });
+  const tight = widen({ granted: 3000 });
+  assert.deepEqual(generous, { widen: true, cap: 1536 }, 'room to double');
+  assert.deepEqual(tight, { widen: true, cap: 1288 }, 'bounded by the grant');
+
+  // Tighter still, and it stops being worth a second generation at all.
+  assert.deepEqual(widen({ granted: 2600 }), { widen: false, why: 'no-headroom' });
+});
+
+test('the decision is a pure function of its inputs', () => {
+  const args = { current: 512, granted: 4096, inputTokens: 900, reason: 'cut-off' as const, repetitive: false };
+  const first = JSON.stringify(nextOutputCap(args));
+  for (let i = 0; i < 10; i++) assert.equal(JSON.stringify(nextOutputCap(args)), first);
 });
