@@ -17,6 +17,7 @@ import {
   buildAnswerNote,
   buildChatTranscript,
   safeFileName,
+  rebuildChatsIndex,
   wikiChatsDir,
   wikiSourcesDir,
   clampToTokens,
@@ -486,6 +487,10 @@ export class ChatView extends ItemView {
           await this.app.vault.createFolder(dir).catch(() => {});
         }
         await this.app.vault.create(notePath, content);
+        // The folder's own table of contents, rebuilt from what is in it. The
+        // wiki index is deliberately untouched: a conversation there would be
+        // read as material by wiki-mode retrieval.
+        await rebuildChatsIndex(this.app.vault, this.app);
         await appendLog(this.app.vault, 'chat', notePath);
         notify('done', `Saved: ${notePath}`);
       })().catch((err) => {

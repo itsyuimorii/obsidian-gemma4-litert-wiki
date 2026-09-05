@@ -483,6 +483,8 @@ const CHATS_README =
   `> That is deliberate, and it is what makes keeping them safe. A model's answer that re-entered the wiki would come back months later cited to your own notes and indistinguishable from something you wrote — so an answer is output, never input. If a conversation contains something that should become material, **put it in a note of your own and scan that**; it becomes a card like any other note, because everything the wiki retrieves derives from a note you wrote.\n\n` +
   `> [!info] The one thing here that is yours\n` +
   `> Everything else under this folder is rebuilt from your notes if you delete it. **These files are not.** They are the only irreplaceable thing in the plugin's own directory, so if you clear out \`${'$'}{_wikiDir}\` to start over, move this folder out first.\n\n` +
+  `> [!info] Finding one again\n` +
+  `> \`index.md\` in this folder lists everything you saved, newest first, with the date and how many exchanges it holds. It is rebuilt on every save. **It is not the wiki index** — that one is what wiki chat reads before answering, and nothing here ever goes into it.\n\n` +
   `> [!info] Reading one back\n` +
   `> Each question is a heading, so the outline pane gives you the thread at a glance. Every answer keeps the **Sources** it stood on at the time, and an answer given from general knowledge rather than your notes says so on its own line — the same distinction the panel makes on screen.\n`;
 
@@ -688,7 +690,7 @@ const FOLDER_READMES: Array<[() => string, () => string]> = [
 // intends to do with your vault until it has already done it. Every call is
 // a no-op once the folders exist.
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [wikiDir(), wikiSourcesDir(), wikiConceptsDir(), wikiSkillsDir()]) {
+  for (const dir of [wikiDir(), wikiSourcesDir(), wikiConceptsDir(), wikiSkillsDir(), wikiChatsDir()]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
@@ -771,6 +773,69 @@ export async function upsertIndexEntry(
     lines.push(line);
   }
   await writeFile(vault, indexPath(), lines.join('\n').replace(/\n{3,}/g, '\n\n'));
+}
+
+export function chatsIndexPath(): string {
+  return normalizePath(`${wikiChatsDir()}/index.md`);
+}
+
+// A function, not a const: the bodies of these are built when they are needed,
+// because _wikiDir is set from settings after this module is imported.
+function chatsIndexHeader(): string {
+  return (
+    `# Saved conversations\n\n` +
+    `One line per conversation you kept: a link, the date, and how many exchanges it holds.\n\n` +
+    `> [!info]- What this file is, and is not\n` +
+    `> A table of contents for this folder, so a conversation you saved months ago is findable without opening files one by one. **Nothing here is retrieved.**\n` +
+    `>\n` +
+    `> This is not [[${_wikiDir}/index|${_wikiDir}/index]] — that one is what wiki-mode chat reads before deciding which pages to open, and a conversation must never appear in it. A model's own answer read back as material comes back months later cited to your own notes and indistinguishable from something you wrote.\n` +
+    `>\n` +
+    `> Rebuilt whenever a conversation is saved, so deleting a file here leaves a stale line until the next save. Edit it freely: it is regenerated, never parsed.\n\n` +
+    `## Conversations\n\n`
+  );
+}
+
+/**
+ * Rebuild the conversation index from what is actually in the folder.
+ *
+ * Rebuilt rather than appended to, unlike the wiki index. That one is
+ * authoritative — retrieval reads it, so an entry going missing costs an
+ * answer, and it is repaired by Tidy. This one is a convenience listing over
+ * files that are their own source of truth, so the cheapest correct thing is
+ * to look at the folder.
+ */
+export async function rebuildChatsIndex(vault: Vault, app: App): Promise<void> {
+  const dir = vault.getAbstractFileByPath(normalizePath(wikiChatsDir()));
+  const files: TFile[] = [];
+  if (dir && 'children' in dir) {
+    for (const child of (dir as unknown as { children: unknown[] }).children) {
+      if (child instanceof TFile && child.extension === 'md' && child.basename !== 'index' &&
+          child.basename.toLowerCase() !== 'readme') {
+        files.push(child);
+      }
+    }
+  }
+  const rows = files
+    .map((f) => {
+      const fm = app.metadataCache.getFileCache(f)?.frontmatter;
+      const created = typeof fm?.created === 'string' ? fm.created : '';
+      const turns = typeof fm?.turns === 'number' ? fm.turns : 0;
+      const title = typeof fm?.title === 'string' && fm.title ? fm.title : f.basename;
+      return { path: f.path.replace(/\.md$/, ''), title, created, turns };
+    })
+    // Newest first: the one you want back is almost always the last one you had.
+    .sort((a, b) => (b.created || '').localeCompare(a.created || '') || a.title.localeCompare(b.title));
+
+  const body = rows.length
+    ? rows
+        .map(
+          (r) =>
+            `- [[${r.path}|${r.title}]]${r.created ? ` — ${r.created}` : ''}` +
+            (r.turns ? `, ${r.turns} exchange${r.turns === 1 ? '' : 's'}` : '')
+        )
+        .join('\n')
+    : '_Nothing saved yet. Press the save icon in the chat panel to keep a conversation._';
+  await writeFile(vault, chatsIndexPath(), `${chatsIndexHeader()}${body}\n`);
 }
 
 export async function appendLog(vault: Vault, action: string, title: string): Promise<void> {
@@ -1431,6 +1496,12 @@ export function buildChatTranscript(
     `written_by: ${opts.model}\n` +
     `created: ${date}\n` +
     `kind: conversation\n` +
+    // Read by the folder's index so it can list a conversation without
+    // opening it. `title` because the filename is sanitised and the real
+    // question is not, and `turns` because "how long was that one" is the
+    // thing you scan an index for.
+    `title: "${opts.titleLabel.replace(/"/g, "'")}"\n` +
+    `turns: ${turns.filter((t) => t.role === 'user').length}\n` +
     sourcesYaml +
     `---\n\n` +
     `# ${opts.titleLabel}\n\n` +
