@@ -38,6 +38,11 @@ export function isRuntimeFile(fileName: string): boolean {
 
 const PARTIAL_SUFFIX = '.partial';
 
+// How long the stream may go silent before the download is treated as dead.
+// Generous on purpose: this is not a deadline for the whole transfer, only for
+// the gap between two chunks.
+const STALL_MS = 60_000;
+
 // The glue .js and its .wasm are requested back to back, and a reload can ask
 // again while the first fetch is still running. One promise per file keeps a
 // slow 31 MB download from being started twice.
@@ -87,8 +92,33 @@ async function download(
   // existsSync() would then treat as cached forever.
   const partial = final + PARTIAL_SUFFIX;
   const url = CDN_BASE + fileName;
-  const response = await fetch(url);
+
+  // A stall is the failure this has to survive, not a refusal. A CDN that
+  // accepts the connection and then sends nothing leaves `reader.read()`
+  // pending forever, and because the caller marks the plugin busy for the
+  // duration, every other command refuses with "Busy" until Obsidian is
+  // restarted — with nothing on screen saying why. The timer is reset by
+  // arriving bytes rather than set once, so a slow but live 31 MB download
+  // is never cut off; only a genuinely silent one is.
+  const controller = new AbortController();
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const armStall = () => {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => controller.abort(), STALL_MS);
+  };
+
+  armStall();
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    clearTimeout(stallTimer);
+    throw controller.signal.aborted
+      ? new Error(`${fileName} stopped responding after ${STALL_MS / 1000}s — check your network and try again.`)
+      : err;
+  }
   if (!response.ok || !response.body) {
+    clearTimeout(stallTimer);
     throw new Error(`Could not fetch ${fileName} (HTTP ${response.status}) from ${url}`);
   }
 
@@ -112,7 +142,14 @@ async function download(
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        fs.writeSync(handle, value);
+        armStall();
+        // writeSync is allowed to write fewer bytes than it was given, and
+        // does not loop. receivedBytes counts what was READ, so a short write
+        // would pass the completeness check below, get renamed to its final
+        // name, and be cached as a valid-looking truncated runtime forever.
+        for (let off = 0; off < value.byteLength; ) {
+          off += fs.writeSync(handle, value, off, value.byteLength - off);
+        }
         receivedBytes += value.byteLength;
         // ~1 report/second, matching the model download's cadence.
         const now = Date.now();
@@ -135,7 +172,13 @@ async function download(
     }
   } catch (err) {
     fs.rmSync(partial, { force: true });
-    throw err;
+    throw controller.signal.aborted
+      ? new Error(
+          `${fileName} stopped arriving after ${STALL_MS / 1000}s of silence — nothing was kept, so run it again to retry.`
+        )
+      : err;
+  } finally {
+    clearTimeout(stallTimer);
   }
 
   fs.renameSync(partial, final);
