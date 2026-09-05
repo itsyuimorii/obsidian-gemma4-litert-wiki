@@ -75,6 +75,8 @@ rest build and maintain a layer beside your notes and never touch them.
 - **Saved answers are never retrieved.** Karpathy's gist says explorations should compound and says nothing about trust, which is the poisoning loop — a wrong or stale answer re-entering context with the same weight as the notes. So a saved answer is not in the retrieval set at all: it is an ordinary note of yours, kept to re-read, with frontmatter recording which model wrote it and from which sources. The one route back in is deliberate and human — judge it, and ingest it like anything else you wrote.
 - **Concept pages** — pick a tag or mention two or more pages share, and the plugin writes a page *above* them that links down into each one. Ingest ripples into them, and member lists self-heal in both directions.
 
+<p align="center"><img src="assets/poster/poster-p04.png" alt="The review modal showing a drafted card in full — summary, tags, key points and confidence — above Cancel and Approve and write." width="900"></p>
+
 **Keeping it honest** — a wiki nobody reviews is the failure mode this is built against:
 
 - **Review board** — three ways a page goes bad, in one queue: low self-rated confidence, **source drift** (the raw note changed since ingest, caught by `source_hash`), and staleness. Concept overviews are checked too.
@@ -82,6 +84,8 @@ rest build and maintain a layer beside your notes and never touch them.
 - **Contradiction sweep** — checks pairs of pages that share a tag for claims that disagree, recently-changed pairs first. It flags with the model's reason quoted and **never edits** — you decide which one was wrong.
 - **Tidy the wiki** — one command that checks first and then fixes only what you tick. The check is model-free: orphan pages, index entries pointing at deleted pages, pages missing from the index, and how far your pages' tags have drifted from the vocabulary. The four repairs — make links mutual, drop dead index entries, rebuild the vocabulary, apply it to existing pages — are always offered, ticked where the check found something; each runs in turn behind its own preview. Availability is never tied to detection, because a check good enough to pick a sensible default is not good enough to be the only way in.
 - **Background count** (off by default) — periodically *counts* new or changed notes into a status-bar chip. Counting never runs the model; drafting only happens when you click.
+
+<p align="center"><img src="assets/poster/poster-p08.png" alt="The review board listing three pages flagged DRIFTED, LOW and STALE." width="900"></p>
 
 **Config as notes** — the rules live as plain markdown you can read, edit and version:
 
@@ -160,6 +164,8 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 > like a wiki and asks before creating a second one, but the cleanest fix is to rename it the same
 > way on both.
 
+<p align="center"><img src="assets/poster/poster-p11.png" alt="The skills menu open with Quiz, Flashcards and Find gaps built in, plus the user's own skill files, and numbered questions in the panel." width="900"></p>
+
 ## 🔁 What to run when
 
 Sixteen commands, four habits. Everything else is occasional.
@@ -174,6 +180,8 @@ Sixteen commands, four habits. Everything else is occasional.
 Chat needs no schedule — it reads whatever the wiki holds. And the two
 commands that write into your own notes, **Improve** and **Suggest tags &
 links**, are run on one note when you want them, never as routine.
+
+<p align="center"><img src="assets/poster/poster-p10.png" alt="The Tidy dialog listing four repairs with two ticked and a Run 2 of these button." width="900"></p>
 
 ## ⌨️ Current commands
 
@@ -224,6 +232,8 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 | **[Test] Load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without the model — isolates runtime issues from model issues. |
 | **[Test] Fix grammar of selection** | Runs a real generation on the selection, logging prefill/decode speed and time-to-first-token to the console. |
 | **[Test] JSON reliability test (5 runs)** | Five independent structured-JSON generations against the selection, reported as a pass rate — the risk test for whether the model can reliably drive the ingest pipeline. |
+
+> **Every feature, one plate each:** [gemma-wiki-demo.vercel.app/tour.html](https://gemma-wiki-demo.vercel.app/tour.html) — fourteen sections, most important first. Or [step through the deck](https://gemma-wiki-demo.vercel.app) as 23 scenes.
 
 ## 🔧 How it works
 
