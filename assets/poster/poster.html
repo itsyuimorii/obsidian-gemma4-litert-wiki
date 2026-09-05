@@ -1,244 +1,248 @@
 <title>Gemma Wiki Posters</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
 <style>
-  /* One visual world, deliberately: these are posters, they render dark on any
-     host. Every colour is painted explicitly; tokens mirror demo-shared.css. */
+  /* Skim-Recap poster language, carried over deliberately: light airy ground
+     with a perspective grid floor, one big ink headline whose payoff phrase is
+     the only saturated colour, letterspaced mono eyebrows, and the product
+     itself floating as a soft white card. Accent here is the plugin's own
+     light-theme violet (#705DCF, from demo-shared.css's inner tokens); green
+     appears only in the on-device pill, as status. */
   :root {
-    --bg: #0C0916;
-    --violet: #A78BFA;
-    --violet-deep: #7C5CFF;
-    --violet-glow: rgba(139, 109, 255, 0.45);
-    --green: #4ADE80;
-    --green-soft: rgba(74, 222, 128, 0.14);
-    --red: #F0708A;
-    --text: #EBE8F5;
-    --muted: #8F87AD;
-    --dim: #6A6386;
-    --line: rgba(167, 139, 250, 0.17);
+    --ground: #F1F3F6;
+    --ink: #16181D;
+    --muted: #565C66;
+    --faint: #9AA1AB;
+    --accent: #705DCF;
+    --green: #1F9D55;
+    --green-bg: #E5F5EC;
+    --card: #FFFFFF;
+    --card-line: #E7EAEE;
+    --pink: #FFC9DE;
     --sans: 'Inter', -apple-system, sans-serif;
-    --mono: 'JetBrains Mono', monospace;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --shadow: 0 34px 64px -24px rgba(24, 32, 46, 0.22), 0 6px 18px -8px rgba(24, 32, 46, 0.10);
+    --shadow-lg: 0 46px 90px -30px rgba(24, 32, 46, 0.30), 0 10px 26px -12px rgba(24, 32, 46, 0.12);
   }
-  body { margin: 0; background: #060410; font-family: var(--sans); }
-  .sheet { display: flex; flex-direction: column; align-items: flex-start; gap: 48px; padding: 48px; }
-  .label { color: #8F87AD; font: 600 13px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+  body { margin: 0; background: #DFE3E8; font-family: var(--sans); }
+  .sheet { display: flex; flex-direction: column; gap: 40px; padding: 40px; align-items: flex-start; }
+  .tag { font: 600 12px/1 var(--mono); letter-spacing: 0.1em; color: #6B7280; text-transform: uppercase; }
 
   .poster {
-    position: relative; overflow: hidden; flex: none;
+    position: relative; overflow: hidden; width: 1280px; height: 800px; flex: none;
     background:
-      radial-gradient(1000px 620px at 78% 30%, rgba(124, 92, 255, 0.16) 0%, transparent 62%),
-      radial-gradient(700px 500px at 12% 88%, rgba(124, 92, 255, 0.07) 0%, transparent 60%),
-      var(--bg);
-    color: var(--text);
+      radial-gradient(900px 560px at 18% 10%, #FDFDFE 0%, transparent 60%),
+      radial-gradient(1000px 600px at 90% 90%, #E7EBF0 0%, transparent 55%),
+      var(--ground);
+    color: var(--ink);
+    box-sizing: border-box;
   }
-  /* faint dot grid — the deck's texture, barely there */
-  .poster::before {
-    content: ''; position: absolute; inset: 0;
-    background-image: radial-gradient(rgba(167,139,250,0.10) 1px, transparent 1px);
-    background-size: 26px 26px;
-    mask-image: radial-gradient(80% 80% at 50% 40%, #000 0%, transparent 100%);
+  /* the perspective floor */
+  .floor {
+    position: absolute; left: -12%; right: -12%; bottom: -8%; height: 52%;
+    background-image:
+      linear-gradient(#CBD2DA 1px, transparent 1px),
+      linear-gradient(90deg, #CBD2DA 1px, transparent 1px);
+    background-size: 84px 84px;
+    transform: perspective(900px) rotateX(58deg);
+    transform-origin: 50% 100%;
+    opacity: 0.28;
+    mask-image: linear-gradient(to top, #000 30%, transparent 95%);
   }
-  .poster > * { position: relative; }
+  .poster > .content { position: relative; height: 100%; box-sizing: border-box; }
 
-  /* ---------- shared pieces ---------- */
-  .brand { display: flex; align-items: center; gap: 14px; }
-  .brand svg { display: block; }
-  .brand .name { font: 600 20px/1 var(--sans); letter-spacing: -0.01em; }
-  .brand .name em { font-style: normal; color: var(--violet); }
+  .eyebrow { font: 600 14px/1 var(--mono); letter-spacing: 0.22em; color: var(--faint); text-transform: uppercase; }
+  h1 { margin: 0; font-weight: 800; font-size: 64px; line-height: 1.06; letter-spacing: -0.028em; text-wrap: balance; }
+  h1 .pay { color: var(--accent); }
+  .sub { margin: 0; font-weight: 500; font-size: 24px; line-height: 1.45; color: var(--muted); letter-spacing: -0.01em; max-width: 560px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 9px; text-transform: uppercase;
+    font: 600 13px/1 var(--mono); letter-spacing: 0.14em; color: var(--green);
+    background: var(--green-bg); border: 1px solid #CDEBDA; border-radius: 999px; padding: 11px 18px;
+  }
+  .pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 
-  h1 { margin: 0; font-weight: 800; letter-spacing: -0.035em; line-height: 0.98; text-wrap: balance; }
-  h1 em { font-style: italic; color: var(--violet); margin-right: 0.06em; }
-  .sub { color: var(--muted); font-weight: 500; letter-spacing: -0.01em; line-height: 1.45; margin: 0; }
+  .copyblock { display: flex; flex-direction: column; gap: 26px; align-items: flex-start; }
 
+  /* ---------- card kit (the product) ---------- */
+  .uicard { background: var(--card); border-radius: 22px; box-shadow: var(--shadow); }
+  .uicard.raise { box-shadow: var(--shadow-lg); }
+  .cardhead { display: flex; align-items: center; justify-content: space-between; }
+  .brandline { font: 600 12px/1 var(--mono); letter-spacing: 0.18em; color: var(--faint); }
+  .brandline b { color: var(--ink); font-weight: 600; }
+  .localdot { display: inline-flex; align-items: center; gap: 7px; font: 600 11px/1 var(--mono); letter-spacing: 0.12em; color: var(--green); background: var(--green-bg); border-radius: 999px; padding: 7px 12px; }
+  .localdot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  .btnrow { display: flex; align-items: center; gap: 12px; justify-content: flex-end; }
+  .btn { font: 600 15px/1 var(--sans); border-radius: 999px; padding: 13px 22px; }
+  .btn.dark { background: #111318; color: #fff; }
+  .btn.lite { background: #fff; color: var(--ink); border: 1px solid var(--card-line); box-shadow: 0 2px 8px rgba(24,32,46,0.06); }
+
+  /* note page behind the panel (poster 1) */
+  .notepage {
+    position: absolute; right: -40px; top: 84px; width: 560px; height: 760px;
+    background: #fff; border-radius: 26px 26px 0 0; box-shadow: var(--shadow);
+    padding: 48px 52px; box-sizing: border-box;
+    font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 1.6; color: #2A2D33;
+  }
+  .notepage h4 { font-family: var(--sans); font-size: 24px; margin: 0 0 18px; letter-spacing: -0.01em; }
+  .notepage p { margin: 0 0 16px; }
+  .notepage .hl { background: var(--pink); padding: 1px 4px; border-radius: 3px; }
+
+  .chatpanel {
+    position: absolute; right: 175px; top: 250px; width: 470px;
+    border-radius: 22px; padding: 26px 28px; box-sizing: border-box;
+    background: #fff;
+  }
+  .chatpanel .q {
+    margin: 20px 0 16px; margin-left: 60px;
+    background: #F2F3F5; border-radius: 16px 16px 4px 16px; padding: 14px 18px;
+    font: 500 16px/1.5 var(--sans); color: var(--ink);
+  }
+  .chatpanel .a { font: 400 16px/1.62 var(--sans); color: #33373E; margin: 0 0 16px; }
+  .chatpanel .a b { font-weight: 600; }
+  .srcrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .srclabel { font: 600 11px/1 var(--mono); letter-spacing: 0.14em; color: var(--faint); margin-right: 2px; }
+  .srcchip { font: 500 13px/1 var(--sans); color: var(--accent); background: rgba(112, 93, 207, 0.10); border-radius: 999px; padding: 7px 13px; }
+  .metaline { font: 600 11px/1 var(--mono); letter-spacing: 0.13em; color: var(--faint); display: flex; gap: 10px; align-items: center; margin-bottom: 18px; }
+  .metaline .g { color: var(--green); }
+
+  /* poster 2: review modal */
+  .modal {
+    position: absolute; right: 84px; top: 108px; width: 600px;
+    border-radius: 24px; padding: 34px 38px; box-sizing: border-box; background: #fff;
+  }
+  .modal .mtitle { font: 700 22px/1.2 var(--sans); letter-spacing: -0.01em; margin: 14px 0 6px; }
+  .modal .mpath { font: 500 12.5px/1 var(--mono); color: var(--faint); }
+  .modal .page {
+    margin: 22px 0; border: 1px solid var(--card-line); border-radius: 16px; padding: 24px 26px;
+    background: #FBFBFC;
+  }
+  .modal .page h5 { margin: 0 0 12px; font: 700 19px/1.2 var(--sans); }
+  .modal .page p { margin: 0 0 12px; font: 400 15px/1.55 var(--sans); color: #3A3E45; }
+  .modal .tags { display: flex; gap: 8px; margin-bottom: 14px; }
+  .modal .tag2 { font: 500 13px/1 var(--sans); color: var(--accent); background: rgba(112,93,207,0.10); border-radius: 999px; padding: 6px 12px; }
+  .modal .kp { margin: 0; padding-left: 20px; font: 400 15px/1.6 var(--sans); color: #3A3E45; }
+  .modal .conf { font: 600 11px/1 var(--mono); letter-spacing: 0.13em; color: var(--green); margin-top: 14px; }
+
+  /* poster 3: the terminal contrast, light edition */
   .term {
-    font-family: var(--mono); font-weight: 400;
-    background: linear-gradient(155deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.018) 100%);
-    border: 1px solid var(--line); border-radius: 14px;
-    display: inline-flex; flex-direction: column; gap: 0.62em;
+    position: absolute; right: 110px; top: 150px; width: 520px;
+    border-radius: 24px; padding: 34px 40px; box-sizing: border-box; background: #fff;
+    font-family: var(--mono); font-size: 21px; line-height: 1.5;
+    display: flex; flex-direction: column; gap: 20px;
   }
-  .term .no  { color: var(--dim); text-decoration: line-through; text-decoration-color: rgba(240,112,138,0.75); text-decoration-thickness: 2px; }
-  .term .no  b { font-weight: 400; color: var(--red); text-decoration: none; margin-right: 0.7em; }
-  .term .yes { color: var(--text); font-weight: 600; }
-  .term .yes b { font-weight: 600; color: var(--green); margin-right: 0.7em; }
-
-  .chips { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .chip {
-    font: 600 15px/1 var(--sans); letter-spacing: 0.02em;
-    color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
-    padding: 9px 16px;
-  }
-  .chip.live { color: var(--green); border-color: rgba(74,222,128,0.35); background: var(--green-soft); }
-  .url { font: 600 17px/1 var(--mono); color: var(--violet); }
-
-  /* the spark, the one loud thing */
-  .mark { position: absolute; pointer-events: none; }
-  .mark svg { display: block; filter: drop-shadow(0 0 46px var(--violet-glow)) drop-shadow(0 0 120px rgba(124,92,255,0.30)); }
-
-  /* ---------- A: 1200×630 (OG / link card) ---------- */
-  .og { width: 1200px; height: 630px; display: flex; flex-direction: column; justify-content: space-between; padding: 56px 64px; box-sizing: border-box; }
-  .og h1 { font-size: 84px; max-width: 640px; }
-  .og .sub { font-size: 25px; max-width: 560px; }
-  .og .term { font-size: 20px; padding: 24px 30px; }
-  .og .mark { right: 48px; top: 44px; }
-  .og .col { display: flex; flex-direction: column; gap: 28px; align-items: flex-start; }
-  .og .foot { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-
-  /* ---------- B: 1080×1080 (square) ---------- */
-  .sq { width: 1080px; height: 1080px; display: flex; flex-direction: column; justify-content: space-between; padding: 72px; box-sizing: border-box; }
-  .sq h1 { font-size: 104px; max-width: 860px; }
-  .sq .sub { font-size: 28px; max-width: 700px; }
-  .sq .term { font-size: 23px; padding: 30px 36px; }
-  .sq .mark { right: 56px; top: 60px; }
-  .sq .col { display: flex; flex-direction: column; gap: 34px; align-items: flex-start; }
-  .sq .foot { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-
-  /* ---------- C: 1080×1350 (portrait) ---------- */
-  .pt { width: 1080px; height: 1350px; display: flex; flex-direction: column; justify-content: space-between; padding: 80px 72px; box-sizing: border-box; }
-  .pt h1 { font-size: 122px; max-width: 940px; }
-  .pt .sub { font-size: 29px; max-width: 740px; }
-  .pt .term { font-size: 26px; padding: 36px 44px; }
-  .pt .mark { right: 56px; top: 66px; }
-  .pt { gap: 0; }
-  .pt .col { display: flex; flex-direction: column; gap: 52px; align-items: flex-start; flex: 1; justify-content: center; padding-bottom: 40px; }
-  .pt .brand { margin-bottom: -8px; }
-  .pt .stats { display: flex; gap: 14px; align-self: stretch; }
-  .pt .stat {
-    flex: 1; border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px;
-    background: linear-gradient(155deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.012) 100%);
-  }
-  .pt .stat { padding: 28px 28px; }
-  .pt .stat b { display: block; font: 800 46px/1 var(--sans); letter-spacing: -0.02em; color: var(--text); font-variant-numeric: tabular-nums; }
-  .pt .stat span { display: block; margin-top: 8px; font: 500 16px/1.3 var(--sans); color: var(--muted); }
-  .pt .foot { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+  .term .no { color: #A7ADB6; text-decoration: line-through; text-decoration-color: rgba(224, 92, 122, 0.55); text-decoration-thickness: 2px; }
+  .term .no b { font-weight: 500; color: #E05C7A; text-decoration: none; margin-right: 14px; }
+  .term .yes { color: var(--ink); font-weight: 600; }
+  .term .yes b { color: var(--green); margin-right: 14px; }
+  .term .foot { margin-top: 8px; padding-top: 22px; border-top: 1px solid var(--card-line); font: 600 12px/1.6 var(--mono); letter-spacing: 0.1em; color: var(--faint); }
+  .term .foot .g { color: var(--green); }
 </style>
 
 <div class="sheet">
 
-  <div class="label">A · 1200×630 · og / link card</div>
-  <div class="poster og" id="og">
-    <div class="mark">
-      <svg width="240" height="240" viewBox="0 0 48 48" fill="none">
-        <path d="M9.98 6 H38.02 a1.92 1.92 0 0 1 1.92 1.92 V39.98 a1.92 1.92 0 0 1 -1.92 1.92 H9.98 a3.98 3.98 0 0 1 -3.98 -3.98 V9.98 a3.98 3.98 0 0 1 3.98 -3.98 Z" stroke="#A78BFA" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" opacity="0.55"/>
-        <path d="M14.02 6 V42" stroke="#A78BFA" stroke-width="3.4" stroke-linecap="round" opacity="0.55"/>
-        <path d="M27.84 15.84 l2.53 5.63 5.63 2.53 -5.63 2.53 -2.53 5.63 -2.53 -5.63 -5.63 -2.53 5.63 -2.53 Z" fill="#EBE8F5"/>
-      </svg>
+<div class="tag">1 · chat — hero</div>
+<div class="poster" id="p1">
+  <div class="floor"></div>
+  <div class="content" style="padding: 72px 0 0 64px;">
+    <div class="copyblock" style="max-width: 620px;">
+      <div class="eyebrow">Gemma 4 LiteRT Wiki · Obsidian plugin</div>
+      <h1>Ask your vault.<br><span class="pay">The model is in the&nbsp;app.</span></h1>
+      <p class="sub">Gemma 4 answers from your own notes, inside Obsidian's own process. No Ollama, no API key, no server to run.</p>
+      <span class="pill">Runs on your device</span>
     </div>
-    <div class="col">
-      <div class="brand">
-        <svg width="30" height="30" viewBox="0 0 48 48" fill="none">
-          <path d="M9.98 6 H38.02 a1.92 1.92 0 0 1 1.92 1.92 V39.98 a1.92 1.92 0 0 1 -1.92 1.92 H9.98 a3.98 3.98 0 0 1 -3.98 -3.98 V9.98 a3.98 3.98 0 0 1 3.98 -3.98 Z" stroke="#A78BFA" stroke-width="4" stroke-linejoin="round"/>
-          <path d="M14.02 6 V42" stroke="#A78BFA" stroke-width="4" stroke-linecap="round"/>
-          <path d="M27.84 15.84 l2.53 5.63 5.63 2.53 -5.63 2.53 -2.53 5.63 -2.53 -5.63 -5.63 -2.53 5.63 -2.53 Z" fill="#EBE8F5"/>
-        </svg>
-        <span class="name">Gemma 4 LiteRT <em>Wiki</em></span>
-      </div>
-      <h1>The model is <em>in</em> the app.</h1>
-      <div class="term">
-        <span class="no"><b>✗</b>ollama serve</span>
-        <span class="no"><b>✗</b>localhost:11434</span>
-        <span class="no"><b>✗</b>api_key: sk-________</span>
-        <span class="yes"><b>✓</b>Obsidian</span>
-      </div>
-    </div>
-    <div class="foot">
-      <div class="chips">
-        <span class="chip live">Obsidian community plugin</span>
-        <span class="chip">Free</span>
-        <span class="chip">Offline</span>
-        <span class="chip">Open source</span>
-      </div>
-      <span class="url">gemma-wiki-demo.vercel.app</span>
-    </div>
-  </div>
 
-  <div class="label">B · 1080×1080 · square</div>
-  <div class="poster sq" id="sq">
-    <div class="mark">
-      <svg width="280" height="280" viewBox="0 0 48 48" fill="none">
-        <path d="M9.98 6 H38.02 a1.92 1.92 0 0 1 1.92 1.92 V39.98 a1.92 1.92 0 0 1 -1.92 1.92 H9.98 a3.98 3.98 0 0 1 -3.98 -3.98 V9.98 a3.98 3.98 0 0 1 3.98 -3.98 Z" stroke="#A78BFA" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" opacity="0.5"/>
-        <path d="M14.02 6 V42" stroke="#A78BFA" stroke-width="3.4" stroke-linecap="round" opacity="0.5"/>
-        <path d="M27.84 15.84 l2.53 5.63 5.63 2.53 -5.63 2.53 -2.53 5.63 -2.53 -5.63 -5.63 -2.53 5.63 -2.53 Z" fill="#EBE8F5"/>
-      </svg>
+    <div class="notepage">
+      <h4>Grind size and extraction</h4>
+      <p>Grind size sets how much coffee surface the water can reach. Finer grounds expose more area, so compounds dissolve faster.</p>
+      <p><span class="hl">Too fine, and the shot over-extracts into bitterness</span>; too coarse and it under-extracts, thin and sour.</p>
+      <p>Most guides put the target extraction window at 18–22% for espresso, adjusting grind before anything else.</p>
     </div>
-    <div class="col">
-      <div class="brand">
-        <svg width="34" height="34" viewBox="0 0 48 48" fill="none">
-          <path d="M9.98 6 H38.02 a1.92 1.92 0 0 1 1.92 1.92 V39.98 a1.92 1.92 0 0 1 -1.92 1.92 H9.98 a3.98 3.98 0 0 1 -3.98 -3.98 V9.98 a3.98 3.98 0 0 1 3.98 -3.98 Z" stroke="#A78BFA" stroke-width="4" stroke-linejoin="round"/>
-          <path d="M14.02 6 V42" stroke="#A78BFA" stroke-width="4" stroke-linecap="round"/>
-          <path d="M27.84 15.84 l2.53 5.63 5.63 2.53 -5.63 2.53 -2.53 5.63 -2.53 -5.63 -5.63 -2.53 5.63 -2.53 Z" fill="#EBE8F5"/>
-        </svg>
-        <span class="name">Gemma 4 LiteRT <em>Wiki</em></span>
-      </div>
-      <h1>The model is <em>in</em> the app.</h1>
-      <p class="sub">Gemma 4 answers from your own notes, entirely inside Obsidian. Chat, quiz, improve, relink — and a wiki it maintains for you.</p>
-      <div class="term">
-        <span class="no"><b>✗</b>ollama serve</span>
-        <span class="no"><b>✗</b>localhost:11434</span>
-        <span class="no"><b>✗</b>api_key: sk-________</span>
-        <span class="yes"><b>✓</b>Obsidian</span>
-      </div>
-    </div>
-    <div class="foot">
-      <div class="chips">
-        <span class="chip live">Obsidian community plugin</span>
-        <span class="chip">Free</span>
-        <span class="chip">Offline</span>
-      </div>
-      <span class="url">gemma-wiki-demo.vercel.app</span>
-    </div>
-  </div>
 
-  <div class="label">C · 1080×1350 · portrait</div>
-  <div class="poster pt" id="pt">
-    <div class="mark">
-      <svg width="300" height="300" viewBox="0 0 48 48" fill="none">
-        <path d="M9.98 6 H38.02 a1.92 1.92 0 0 1 1.92 1.92 V39.98 a1.92 1.92 0 0 1 -1.92 1.92 H9.98 a3.98 3.98 0 0 1 -3.98 -3.98 V9.98 a3.98 3.98 0 0 1 3.98 -3.98 Z" stroke="#A78BFA" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" opacity="0.5"/>
-        <path d="M14.02 6 V42" stroke="#A78BFA" stroke-width="3.4" stroke-linecap="round" opacity="0.5"/>
-        <path d="M27.84 15.84 l2.53 5.63 5.63 2.53 -5.63 2.53 -2.53 5.63 -2.53 -5.63 -5.63 -2.53 5.63 -2.53 Z" fill="#EBE8F5"/>
-      </svg>
-    </div>
-    <div class="col">
-      <div class="brand">
-        <svg width="34" height="34" viewBox="0 0 48 48" fill="none">
-          <path d="M9.98 6 H38.02 a1.92 1.92 0 0 1 1.92 1.92 V39.98 a1.92 1.92 0 0 1 -1.92 1.92 H9.98 a3.98 3.98 0 0 1 -3.98 -3.98 V9.98 a3.98 3.98 0 0 1 3.98 -3.98 Z" stroke="#A78BFA" stroke-width="4" stroke-linejoin="round"/>
-          <path d="M14.02 6 V42" stroke="#A78BFA" stroke-width="4" stroke-linecap="round"/>
-          <path d="M27.84 15.84 l2.53 5.63 5.63 2.53 -5.63 2.53 -2.53 5.63 -2.53 -5.63 -5.63 -2.53 5.63 -2.53 Z" fill="#EBE8F5"/>
-        </svg>
-        <span class="name">Gemma 4 LiteRT <em>Wiki</em></span>
+    <div class="chatpanel uicard raise">
+      <div class="cardhead">
+        <span class="brandline">GEMMA / <b>WIKI</b></span>
+        <span class="localdot">LOCAL</span>
       </div>
-      <h1>The model is <em>in</em> the app.</h1>
-      <p class="sub">Gemma 4 answers from your own notes, entirely inside Obsidian — and maintains a wiki above them: index, tags, links.</p>
-      <div class="term">
-        <span class="no"><b>✗</b>ollama serve</span>
-        <span class="no"><b>✗</b>localhost:11434</span>
-        <span class="no"><b>✗</b>api_key: sk-________</span>
-        <span class="yes"><b>✓</b>Obsidian</span>
+      <div class="q">Why does grind size change extraction?</div>
+      <p class="a">Finer grounds expose more surface, so water extracts faster — go too fine and you cross into bitterness. <b>Your note pins the target window at 18–22%</b> and says to adjust grind before anything else.</p>
+      <div class="srcrow">
+        <span class="srclabel">SOURCES</span>
+        <span class="srcchip">grind-size-and-extraction</span>
+        <span class="srcchip">espresso-extraction-basics</span>
       </div>
-      <div class="stats">
-        <div class="stat"><b>0</b><span>servers, API keys, accounts</span></div>
-        <div class="stat"><b>1</b><span>download, then fully offline</span></div>
-        <div class="stat"><b>100%</b><span>answers grounded in your notes</span></div>
+      <div class="metaline"><span class="g">● GEMMA</span> · ON THIS DEVICE · GROUNDED</div>
+      <div class="btnrow">
+        <span class="btn lite">Save as note</span>
+        <span class="btn dark">Copy</span>
       </div>
-    </div>
-    <div class="foot">
-      <div class="chips">
-        <span class="chip live">Obsidian community plugin</span>
-        <span class="chip">Free &amp; open source</span>
-      </div>
-      <span class="url">gemma-wiki-demo.vercel.app</span>
     </div>
   </div>
+</div>
+
+<div class="tag">2 · ingest — the review gate</div>
+<div class="poster" id="p2">
+  <div class="floor"></div>
+  <div class="content" style="padding: 72px 0 0 64px;">
+    <div class="copyblock" style="max-width: 560px;">
+      <div class="eyebrow">Review-gated ingest</div>
+      <h1>Your notes become a wiki. <span class="pay">You approve every page.</span></h1>
+      <p class="sub">One card per note — summary, tags, key points — shown in full before a single byte is written.</p>
+      <span class="pill">Nothing written without you</span>
+    </div>
+
+    <div class="modal uicard raise">
+      <div class="cardhead">
+        <span class="brandline">GEMMA / <b>WIKI</b></span>
+        <span class="localdot">LOCAL</span>
+      </div>
+      <div class="mtitle">Review wiki page before writing</div>
+      <div class="mpath">Will create: gemma-wiki/cards/grind-size-and-extraction.md</div>
+      <div class="page">
+        <h5>Grind size and extraction</h5>
+        <div class="tags"><span class="tag2">#coffee</span><span class="tag2">#extraction</span></div>
+        <p>Grind size controls how much surface the water reaches, which sets the speed and evenness of extraction.</p>
+        <ul class="kp">
+          <li>Finer grind → more surface → faster extraction</li>
+          <li>Target window: 18–22%, grind adjusted first</li>
+        </ul>
+        <div class="conf">CONFIDENCE: HIGH · SOURCE: notes/grind size.md</div>
+      </div>
+      <div class="btnrow">
+        <span class="btn lite">Cancel</span>
+        <span class="btn dark">Approve and write</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tag">3 · offline</div>
+<div class="poster" id="p3">
+  <div class="floor"></div>
+  <div class="content" style="padding: 72px 0 0 64px;">
+    <div class="copyblock" style="max-width: 600px;">
+      <div class="eyebrow">No server · No account</div>
+      <h1>One download. <span class="pay">Then it's yours.</span></h1>
+      <p class="sub">Gemma 4 is cached on your disk, once. After that the plugin never touches the network — that's architecture, not a policy.</p>
+      <span class="pill">Free &amp; open source</span>
+    </div>
+
+    <div class="term uicard raise">
+      <span class="no"><b>✗</b>ollama serve</span>
+      <span class="no"><b>✗</b>localhost:11434</span>
+      <span class="no"><b>✗</b>api_key: sk-________</span>
+      <span class="yes"><b>✓</b>Obsidian</span>
+      <div class="foot">OBSIDIAN COMMUNITY PLUGIN<br><span class="g">gemma-wiki-demo.vercel.app</span></div>
+    </div>
+  </div>
+</div>
 
 </div>
 <script>
-  // ?solo=og|sq|pt strips the sheet chrome so headless Chrome can screenshot
-  // one poster at its exact pixel size.
   const solo = new URLSearchParams(location.search).get('solo');
   if (solo) {
     document.querySelector('.sheet').style.cssText = 'padding:0;gap:0';
-    for (const el of document.querySelectorAll('.label')) el.remove();
-    for (const el of document.querySelectorAll('.poster')) {
-      if (el.id !== solo) el.remove();
-    }
-    document.body.style.background = 'transparent';
+    for (const el of document.querySelectorAll('.tag')) el.remove();
+    for (const el of document.querySelectorAll('.poster')) if (el.id !== solo) el.remove();
   }
 </script>
