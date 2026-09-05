@@ -12,7 +12,12 @@
     "noUnusedLocals": true,
     "noImplicitAny": false,
     "allowJs": true,
+    // tests/ import `../src/pure.ts` with the extension, because Node runs
+    // them straight from source under its own type stripping — no build step,
+    // no test runner. tsc has to be told that is allowed before it will check
+    // them, and it only is with noEmit, which is the only way tsc runs here.
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
