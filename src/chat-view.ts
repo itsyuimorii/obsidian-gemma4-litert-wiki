@@ -445,6 +445,95 @@ export class ChatView extends ItemView {
     this.turns = [];
     this.messagesEl.empty();
     this.buildEmptyState();
+    // Clear means clear. Leaving the saved copy behind would resurrect the
+    // thread on the next open, which is the opposite of what the button says.
+    void this.persistThread();
+  }
+
+  /**
+   * Keep the thread across a close (#100).
+   *
+   * Two caps, because unbounded plugin data is how a data.json becomes
+   * megabytes without anyone noticing: the most recent exchanges only, and a
+   * character ceiling on top for the case where a few answers are enormous.
+   * Trimmed from the front so what survives is what you were last looking at.
+   */
+  private async persistThread(): Promise<void> {
+    const MAX_TURNS = 20;
+    const MAX_CHARS = 60_000;
+    let kept = this.turns.slice(-MAX_TURNS);
+    while (kept.length && kept.reduce((n, t) => n + t.content.length, 0) > MAX_CHARS) kept.shift();
+    // A lone assistant turn restores as an answer to nothing.
+    while (kept.length && kept[0].role === 'assistant') kept.shift();
+    const next = kept.length ? kept : undefined;
+    const before = JSON.stringify(this.plugin.settings.lastThread ?? null);
+    if (JSON.stringify(next ?? null) === before) return;
+    this.plugin.settings.lastThread = next;
+    await this.plugin.saveSettings();
+  }
+
+  /**
+   * Put a saved thread back on screen.
+   *
+   * Rendered from the record, not replayed through the model: these answers
+   * were already generated and paid for, and re-running them would be both
+   * slow and — the model being sampled — a different answer under the same
+   * question.
+   */
+  private async restoreThread(): Promise<void> {
+    const saved = this.plugin.settings.lastThread;
+    if (!saved?.length) return;
+    this.turns = saved.map((t) => ({ ...t }));
+    this.emptyStateEl.hide();
+    for (let i = 0; i < saved.length; i++) {
+      const turn = saved[i];
+      if (turn.role === 'user') {
+        this.appendUserMessage(turn.content);
+        this.lastQuestion = turn.content;
+        continue;
+      }
+      const { body, row } = this.appendAssistantMessage();
+      const rendered = body.createDiv({ cls: 'gemma4-chat-markdown' });
+      await MarkdownRenderer.render(this.app, turn.content, rendered, indexPath(), this);
+      const sources = turn.sources ?? [];
+      if (turn.grounding === 'direct') {
+        const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
+        warnRow.createSpan({
+          cls: 'gemma4-chat-sources-label',
+          text: '⚠ Gemma general knowledge — not from your notes',
+        });
+      } else if (sources.length) {
+        const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
+        sourcesRow.createSpan({ cls: 'gemma4-chat-sources-label', text: 'Sources' });
+        for (const src of sources) {
+          const link = sourcesRow.createEl('a', { cls: 'gemma4-chat-source-link', text: src.title });
+          link.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            void this.app.workspace.openLinkText(src.linkPath, '', false);
+          });
+        }
+      }
+      const question = saved[i - 1]?.role === 'user' ? saved[i - 1].content : '';
+      this.addAssistantActions(row, () => turn.content, question, sources, turn.grounding !== 'direct');
+    }
+
+    // Say when the ground has moved. Silently re-grounding a restored thread
+    // onto whatever note happens to be open would put this panel's own answers
+    // under material they were never about — the one thing its Sources row
+    // exists to prevent. So it is stated, and the user decides.
+    const was = [...saved].reverse().find((t) => t.grounding)?.grounding;
+    const now = this.groundingKey(false, false);
+    // `now` must name a real note, not just be in note mode: with nothing
+    // open the key is a bare "note:", and the notice would claim the panel is
+    // grounded in a note the user does not have open.
+    if (was?.startsWith('note:') && now.startsWith('note:') && now !== 'note:' && was !== now) {
+      const name = was.slice('note:'.length).split('/').pop()?.replace(/\.md$/, '') ?? 'another note';
+      this.appendInfoMessage(
+        `Restored from your last session. Those answers are about "${name}"; this panel is now ` +
+          'grounded in the note you have open, so a follow-up will be answered from that one.'
+      );
+    }
+    this.scrollToBottom();
   }
 
   private autoGrowInput() {
@@ -483,6 +572,7 @@ export class ChatView extends ItemView {
   async onClose(): Promise<void> {
     this.activeConversation?.cancel();
     this.plugin.setChatBusy(false);
+    await this.persistThread();
   }
 
   getViewType(): string {
@@ -718,6 +808,9 @@ export class ChatView extends ItemView {
     // The scan chip is also the stop button, so it has to know when a scan
     // starts and ends — including scans started from the command palette.
     this.register(this.plugin.onScanState(() => this.renderSuggestions()));
+
+    // Last, so the restored thread lands in a panel that is fully built.
+    await this.restoreThread();
   }
 
   private setMode(mode: 'note' | 'wiki') {
@@ -1369,6 +1462,7 @@ export class ChatView extends ItemView {
         sources: context.ungrounded ? [] : context.sources,
         grounding: context.grounding,
       });
+      void this.persistThread();
       // Ungrounded answers can't be saved to the wiki — filing model guesses
       // as sourced pages is exactly the pollution the grounding model avoids.
       this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded, promptLabel);
