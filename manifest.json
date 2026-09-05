@@ -3,7 +3,7 @@
   "name": "Gemma 4 LiteRT Wiki",
   "version": "1.0.4",
   "minAppVersion": "1.11.4",
-  "description": "Free local AI with Gemma 4 E4B — right inside your vault. Chat with notes or your vault, then build a living wiki inspired by Andrej Karpathy’s LLM-wiki pattern—with concepts, tags, links, and schema. Generate quizzes and flashcards locally.",
+  "description": "Free local AI with Gemma 4 E4B — right inside your vault. Chat with your notes or vault, build a living wiki inspired by Andrej Karpathy's LLM-wiki pattern — with indexes, concepts, tags, links, and schema. Generate quizzes and flashcards locally.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
