@@ -7,7 +7,7 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process through LiteRT-LM and WebGPU,<br>bringing free local AI directly to your vault.</b></p>
+<p align="center"><b>Gemma 4 E4B runs</b> inside Obsidian's own process through LiteRT-LM and WebGPU, bringing <b>free local AI</b> directly to your vault.</p>
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
@@ -17,15 +17,10 @@ Chat with your notes or your entire vault, then build a living wiki inspired by 
 
 Not Ollama, not LM Studio, not a localhost server — the model is *in* the app, via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both listed under [Privacy](#-privacy) — it never touches the network again.
 
-
-
 <p align="center"><img src="assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900"></p>
-
-> **Status: 1.0.4, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
 
 ## 📑 Contents
 
-- [📑 Contents](#-contents)
 - [✨ Features at a glance](#-features-at-a-glance)
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)
@@ -60,6 +55,14 @@ Two of the sixteen write into a note you wrote, both behind a preview. The
 rest build and maintain a layer beside your notes and never touch them.
 
 <p align="center"><img src="assets/poster/poster-p03.png" alt="Three layers: your notes (yours, immutable), gemma-wiki (the model maintains it), schema.md (yours, the rules)." width="900"></p>
+
+It implements **[Andrej Karpathy's LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: your raw notes are never modified *by the model* — the immutability constraint binds the LLM, not you, and editing your own notes is the normal fix when a chat surfaces a mistake (the wiki detects the change and offers to re-ingest). A separate, cross-linked wiki layer is built above them — one card per note, and **every page is shown to you in full before a single byte is written**.
+
+From there: chat grounded in one note or in the whole wiki, quiz yourself on either, build concept pages across everything sharing a tag, and let it flag its own decay with lint, provenance and contradiction checks. **Sources are listed by the plugin, never cited by the model** — citation is the one thing a small local model would get wrong without anyone noticing.
+
+Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
+
+> **Status: 1.0.5, in the community plugin store.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `gemma-wiki/` layer with cross-links, a `gemma-wiki/index.md` catalog and append-only `gemma-wiki/log.md`, index-first grounded chat with deterministic source attribution, answers saved beside the material that produced them (kept to re-read, never retrieved), a model-free check-then-repair pass, and canned single-task skills. Benchmarks below are from real use.
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
