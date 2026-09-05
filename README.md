@@ -7,7 +7,7 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Gemma 4 E4B runs</b> inside Obsidian's own process through LiteRT-LM and WebGPU, bringing <b>free local AI</b> directly to your vault.</p>
+<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process.</b><br>Build <b>Andrej Karpathy's living LLM wiki</b> with Gemma 4 E4B.</p>
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
