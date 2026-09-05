@@ -1,9 +1,9 @@
 {
   "id": "gemma-litert-wiki",
-  "name": "Gemma 4 LiteRT Wiki",
+  "name": "Gemma 4 E4B LLM Wiki",
   "version": "1.0.6",
   "minAppVersion": "1.11.4",
-  "description": "Gemma 4 E4B runs in-process, right inside your vault. Build Andrej Karpathy's living LLM wiki with Gemma 4 E4B: indexes, concepts, tags, links, schema — plus grounded chat, quizzes and flashcards, all local after one download.",
+  "description": "Chat with a note or your whole vault, with the model already inside — no provider, no API key, no Ollama. Gemma 4 E4B runs in-process, building Karpathy's LLM wiki as you go: index, concepts, tags, links. Quizzes and flashcards too.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
