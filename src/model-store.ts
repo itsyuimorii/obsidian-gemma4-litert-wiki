@@ -134,7 +134,13 @@ async function downloadResumable(
       if (done) break;
       if (value) {
         await new Promise<void>((resolve, reject) =>
-          out.write(Buffer.from(value), (err) => (err ? reject(err) : resolve()))
+          // Rejecting with whatever the callback hands over is only an Error
+          // when the platform types say so; wrapping makes the rejection
+          // reason an Error in every environment, which is what the caller's
+          // `err instanceof Error` checks and the status toast both assume.
+          out.write(Buffer.from(value), (err) =>
+            err ? reject(err instanceof Error ? err : new Error(String(err))) : resolve()
+          )
         );
         received += value.byteLength;
         const now = Date.now();
@@ -181,7 +187,13 @@ export async function migrateFromLegacyCache(
       if (done) break;
       if (value) {
         await new Promise<void>((resolve, reject) =>
-          out.write(Buffer.from(value), (err) => (err ? reject(err) : resolve()))
+          // Rejecting with whatever the callback hands over is only an Error
+          // when the platform types say so; wrapping makes the rejection
+          // reason an Error in every environment, which is what the caller's
+          // `err instanceof Error` checks and the status toast both assume.
+          out.write(Buffer.from(value), (err) =>
+            err ? reject(err instanceof Error ? err : new Error(String(err))) : resolve()
+          )
         );
         written += value.byteLength;
       }
