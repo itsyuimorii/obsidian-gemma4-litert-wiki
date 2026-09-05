@@ -399,6 +399,7 @@ export function wikiScaffoldPaths(): { path: string; what: string }[] {
     { path: `${wikiSourcesDir()}/`, what: 'One summary card per ingested note' },
     { path: `${wikiConceptsDir()}/`, what: 'Pages built across a shared tag' },
     { path: `${wikiSkillsDir()}/`, what: 'One file per ⚡ menu entry' },
+    { path: `${wikiChatsDir()}/`, what: 'Conversations you chose to keep' },
     { path: indexPath(), what: 'Catalog — wiki chat reads this first' },
     { path: logPath(), what: 'Append-only record of what ran' },
     { path: schemaPath(), what: 'Tag vocabulary, naming rules, rejected tags' },
@@ -473,10 +474,27 @@ const README_PREAMBLE =
   `> [!info] Generated file — your edits are replaced when Obsidian starts\n` +
   `> The plugin owns every \`README\` in this folder and rewrites them on startup, so they always describe the version you are running. Nothing here is a setting. **Anything you want to keep belongs in a note of your own.**\n\n`;
 
-const FOLDER_READMES: Array<[() => string, string]> = [
-  [() => `${wikiSkillsDir()}/README.md`, SKILLS_README],
+const CHATS_README =
+  `# chats\n\n` +
+  `**A conversation you pressed save on.** The chat panel keeps your last thread on its own, so this folder is not a log of everything you asked — it holds the threads you decided were worth keeping, one file each, named after the question that started them.\n\n` +
+  `> [!info] These are not material\n` +
+  `> Nothing here is retrieved, indexed, linted, relinked, retagged, or swept for contradictions. **Wiki chat cannot see this folder**, and neither can a scan.\n` +
+  `>\n` +
+  `> That is deliberate, and it is what makes keeping them safe. A model's answer that re-entered the wiki would come back months later cited to your own notes and indistinguishable from something you wrote — so an answer is output, never input. If a conversation contains something that should become material, **put it in a note of your own and scan that**; it becomes a card like any other note, because everything the wiki retrieves derives from a note you wrote.\n\n` +
+  `> [!info] The one thing here that is yours\n` +
+  `> Everything else under this folder is rebuilt from your notes if you delete it. **These files are not.** They are the only irreplaceable thing in the plugin's own directory, so if you clear out \`${'$'}{_wikiDir}\` to start over, move this folder out first.\n\n` +
+  `> [!info] Reading one back\n` +
+  `> Each question is a heading, so the outline pane gives you the thread at a glance. Every answer keeps the **Sources** it stood on at the time, and an answer given from general knowledge rather than your notes says so on its own line — the same distinction the panel makes on screen.\n`;
+
+// Both halves are thunks. The body used to be a plain string built at import
+// time, which froze `${_wikiDir}` at the default: rename the folder to `brain`
+// and its regenerated README still opened with `# gemma-wiki`.
+const FOLDER_READMES: Array<[() => string, () => string]> = [
+  [() => `${wikiSkillsDir()}/README.md`, () => SKILLS_README],
+  [() => `${wikiChatsDir()}/README.md`, () => CHATS_README],
   [
     () => `${_wikiDir}/README.md`,
+    () =>
     `# ${_wikiDir}\n\n` +
       `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified *by the plugin* — they stay wherever you keep them, and **editing them yourself is normal**: fix the note, and the wiki notices (the card shows as *drifted* on the review board) and offers to catch up. **Fixing the original note is the real fix; editing a card is a temporary patch that the next re-ingest overwrites.** *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
       `> [!info] Where the plugin lives` + `\n` +
@@ -620,10 +638,13 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] Deleting things\n` +
       `> Delete any page freely — its index entry is dropped automatically.\n` +
       `>\n` +
-      `> Delete a **folder** and it is recreated empty the next time Obsidian starts, or from **Settings → Repair folders**. **The pages that were inside it are not restored** — the plugin maintains this scaffolding, it does not back it up. Run **Tidy the wiki** afterwards to clear the index entries they left behind.\n`,
+      `> Delete a **folder** and it is recreated empty the next time Obsidian starts, or from **Settings → Repair folders**. **The pages that were inside it are not restored** — the plugin maintains this scaffolding, it does not back it up. Run **Tidy the wiki** afterwards to clear the index entries they left behind.\n` +
+      `>\n` +
+      `> **One exception: \`chats/\`.** Every other page here is rebuilt from your notes if you lose it — a card by re-ingesting, a concept page by rebuilding it. A saved conversation has no source to rebuild from. If you are clearing this folder out to start over, move that one somewhere else first.\n`,
   ],
   [
     () => `${wikiSourcesDir()}/README.md`,
+    () =>
     `# cards\n\n` +
       `**One card here for each note you have ingested** — a model-written summary: key points, tags, and how confident the model was about its own extraction.\n\n` +
       `> [!info] A card is not your note\n` +
@@ -645,6 +666,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
   ],
   [
     () => `${wikiConceptsDir()}/README.md`,
+    () =>
     `# concepts\n\n` +
       `**Pages built *across* other pages.** Everything in \`cards/\` is about one note. A concept page is about a *theme*: pick a tag or a mention that two or more pages share, and the plugin writes a page above them that links down into each one.\n\n` +
       `> [!info] Why this folder exists\n` +
@@ -703,9 +725,9 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   // that froze a README forever the moment it was edited; that left stale
   // documentation in the vault with nothing marking it stale, and it made a
   // second rule where the card already set one: build output gets rebuilt.
-  for (const [pathOf, body] of FOLDER_READMES) {
+  for (const [pathOf, bodyOf] of FOLDER_READMES) {
     const path = normalizePath(pathOf());
-    const text = README_PREAMBLE + body;
+    const text = README_PREAMBLE + bodyOf();
     const existing = vault.getAbstractFileByPath(path);
     if (!existing) {
       await vault.create(path, text).catch(() => {});
