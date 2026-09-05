@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.js",
+    "test": "node --test 'tests/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "check:release": "node scripts/check-release.mjs",
     "lint": "eslint src --max-warnings 4"
