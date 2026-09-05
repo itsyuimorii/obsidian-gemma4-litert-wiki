@@ -1,7 +1,7 @@
 {
   "id": "gemma-litert-wiki",
   "name": "Gemma 4 E4B LLM Wiki",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "minAppVersion": "1.11.4",
   "description": "Gemma 4 E4B runs in-process: no provider, no API key, no Ollama. Build Andrej Karpathy's LLM wiki — index, concepts, tags, links, schema — and chat with a note or your whole vault, grounded in what you wrote. Quizzes and flashcards too.",
   "author": "itsyuimorii",
