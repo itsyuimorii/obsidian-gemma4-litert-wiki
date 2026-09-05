@@ -1,8 +1,5 @@
 import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
-import * as http from 'node:http';
-import type { Server } from 'node:http';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { fs, http, path, type Bytes, type HttpServer } from './node-api';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
@@ -168,7 +165,7 @@ class ConceptTagModal extends FuzzySuggestModal<TagCluster> {
 }
 
 export default class LiteRtSpikePlugin extends Plugin {
-  private server: Server | null = null;
+  private server: HttpServer | null = null;
   private serverBaseUrl: string | null = null;
   /** The directory the loopback server serves — also where the glue is required from. */
   private wasmDir: string | null = null;
@@ -3702,7 +3699,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         res.writeHead(403).end();
         return;
       }
-      const serve = (data: Buffer) => {
+      const serve = (data: Bytes) => {
         const ext = path.extname(filePath);
         res.writeHead(200, {
           'Content-Type': MIME[ext] ?? 'application/octet-stream',
