@@ -7,9 +7,9 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Run Gemma 4 locally — right inside Obsidian via LiteRT-LM and WebGPU.</b><br><em>A private, Karpathy-pattern LLM wiki for your notes.</em></p>
+<p align="center"><b>Gemma 4 runs inside Obsidian's own process through LiteRT-LM and WebGPU,<br>bringing free local AI directly to your vault.</b></p>
 
-Chat with your notes or entire vault, then turn them into a living wiki following *[Andrej Karpathy's LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)* — with **indexes, concepts, tags, links, and schema**. Generate quizzes and flashcards from your notes, all running *locally* with **no ongoing cost** after the one-time model download — powered by **Gemma 4 E4B** running inside Obsidian's own process through LiteRT-LM and WebGPU.
+Chat with your notes or your entire vault, then build a living wiki inspired by **[Andrej Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: indexes, concepts, tags, links, and schema. Turn your notes into quizzes and flashcards — **all processed locally**, with no ongoing cost after the one-time model download.
 
 Not Ollama, not LM Studio, not a localhost server — the model is *in* the app, via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both listed under [Privacy](#-privacy) — it never touches the network again.
 
