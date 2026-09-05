@@ -58,7 +58,17 @@ import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
 import { chunkForImprove, estimateImproveTokens } from './pure';
-import { looksCutOff, looksRepetitive, parseModelJson, textOf } from './model-output';
+import {
+  looksCutOff,
+  looksRepetitive,
+  nextOutputCap,
+  parseModelJson,
+  textOf,
+  type ParseFailure,
+} from './model-output';
+
+/** The output budget one extraction starts with. A card is a small object. */
+const INGEST_OUTPUT_TOKENS = 768;
 
 /** What a provenance check on one page produced, including the ways it can fail. */
 type ProvenanceCheck = { ok: true; unsupported: string[] } | { ok: false; reason: string };
@@ -3180,9 +3190,18 @@ export default class LiteRtSpikePlugin extends Plugin {
       ? ` When you must coin a new tag, name it following this convention: ${schema.naming.concept}.`
       : '';
 
+    // The second attempt used to run with exactly the same parameters as the
+    // first: try again and hope. It now knows why the first one failed, which
+    // is enough to widen the output budget in the one case where more room is
+    // the actual fix — and, more importantly, to NOT widen in the case that
+    // looks identical from the outside. See nextOutputCap.
+    let cap = INGEST_OUTPUT_TOKENS;
+    let failure: { reason: ParseFailure | null; repetitive: boolean } | null = null;
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       onProgress(attempt === 1 ? 'Extracting…' : 'Extracting (retry)…');
       let conversation: import('@litert-lm/core').Conversation | undefined;
+      failure = null;
       try {
         conversation = await engine.createConversation({
           preface: {
@@ -3211,14 +3230,19 @@ export default class LiteRtSpikePlugin extends Plugin {
           },
           sessionConfig: {
             samplerParams: { type: SamplerType.GREEDY },
-            maxOutputTokens: 768,
+            maxOutputTokens: cap,
           },
         });
 
         const message = await conversation.sendMessage(noteContent);
         const raw = textOf(message.content);
         const read = parseModelJson<NoteExtraction>(raw);
-        if (!read.ok) throw new Error(`Model output unusable (${read.reason}).`);
+        if (!read.ok) {
+          // Recorded before it is thrown, because the retry has to know
+          // whether this was a run out of room or a run off the rails.
+          failure = { reason: read.reason, repetitive: looksRepetitive(raw).repetitive };
+          throw new Error(`Model output unusable (${read.reason}).`);
+        }
         const parsed = read.value;
         const valid =
           typeof parsed?.summary === 'string' &&
@@ -3240,6 +3264,9 @@ export default class LiteRtSpikePlugin extends Plugin {
             looksRepetitive(parsed.summary).repetitive ||
             parsed.key_points.some((k) => looksRepetitive(k).repetitive)
           ) {
+            // Parsed cleanly and is still a loop, so more room is certainly
+            // not the fix. Recorded so the retry does not go looking for one.
+            failure = { reason: null, repetitive: true };
             throw new Error('Model output collapsed into a repetition loop.');
           }
           // Tolerate a missing/invalid confidence rather than failing the
@@ -3276,6 +3303,23 @@ export default class LiteRtSpikePlugin extends Plugin {
         throw new Error('Model returned JSON with the wrong shape.');
       } catch (err) {
         if (attempt === 2) throw err;
+        const decision = nextOutputCap({
+          current: cap,
+          // The window the engine granted, not the one in settings — those
+          // differ, which is the whole reason the granted value is kept.
+          granted: this.effectiveContextTokens ?? this.settings.contextTokens ?? 4096,
+          inputTokens: estimateImproveTokens(noteContent),
+          reason: failure?.reason ?? null,
+          repetitive: failure?.repetitive ?? false,
+        });
+        if (decision.widen) {
+          console.warn(
+            `[gemma-litert-wiki] extraction was cut off at ${cap} tokens; retrying at ${decision.cap}`
+          );
+          cap = decision.cap;
+        } else {
+          console.warn(`[gemma-litert-wiki] retrying at the same cap (${decision.why})`);
+        }
       } finally {
         await conversation?.delete().catch(() => {});
       }

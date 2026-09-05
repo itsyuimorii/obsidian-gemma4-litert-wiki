@@ -241,3 +241,59 @@ export function textOf(content: unknown): string {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Whether trying again with more room is worth the time
+// ---------------------------------------------------------------------------
+
+/**
+ * The cap a second attempt should get, or why it should not get a bigger one.
+ *
+ * The gate is the whole point of this function, and it is a conjunction of the
+ * two checks above rather than any new machinery. A repetition loop that runs
+ * into the cap and a genuine truncation are THE SAME OBSERVABLE: both stop at
+ * budget, both end mid-sentence, both leave a brace unclosed. Widening on that
+ * evidence alone buys a longer loop at roughly double the decode time, and
+ * still fails — which on a local model is real seconds per attempt, and on a
+ * multi-pass run compounds per pass.
+ *
+ * So: widen only when the output was cut off AND did not look like a loop.
+ * Everything else retries at the same cap or gives up, and says which.
+ *
+ * `granted` must be the window the ENGINE reported back, not the number in
+ * settings — LiteRT-LM does not always give us what we asked for, which is why
+ * that value is read back and kept at all.
+ */
+export type WidenDecision =
+  | { widen: true; cap: number }
+  | { widen: false; why: 'not-cut-off' | 'looping' | 'no-headroom' };
+
+/** Room left for the system prompt and the chat template, which the input estimate does not cover. */
+const PROMPT_RESERVE = 512;
+
+/** Below this much extra room, a second 20-30s generation is not worth starting. */
+const WORTH_RETRYING = 128;
+
+export function nextOutputCap(opts: {
+  /** The cap the failed attempt ran under. */
+  current: number;
+  /** The context window the engine granted. */
+  granted: number;
+  /** Estimated tokens of input this call carries. */
+  inputTokens: number;
+  /** Why reading the output failed, or null if it failed some other way. */
+  reason: ParseFailure | null;
+  /** Whether that same output also looked like a repetition loop. */
+  repetitive: boolean;
+}): WidenDecision {
+  const { current, granted, inputTokens, reason, repetitive } = opts;
+  // A reply with no JSON in it, or one that is malformed but closed, did not
+  // run out of room — it went wrong somewhere more room will not reach.
+  if (reason !== 'cut-off') return { widen: false, why: 'not-cut-off' };
+  if (repetitive) return { widen: false, why: 'looping' };
+
+  const headroom = granted - inputTokens - PROMPT_RESERVE;
+  const cap = Math.min(current * 2, headroom);
+  if (cap < current + WORTH_RETRYING) return { widen: false, why: 'no-headroom' };
+  return { widen: true, cap: Math.floor(cap) };
+}
