@@ -4,6 +4,16 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.2 — 2026-09-05
+
+- **Plugin ID is now `gemma-litert-wiki`** (was `gemma4-litert-wiki`). The
+  community directory allows only lowercase letters and hyphens in an ID — no
+  digits — and rejected the submission. If you installed manually under the
+  old folder name, rename the folder to `gemma-litert-wiki`; your settings
+  travel with it, since Obsidian keys them to the folder.
+- The chat panel's view type follows the ID, so the panel re-docks once on
+  first launch after this update.
+
 ## 1.0.1 — 2026-09-05
 
 The chat panel becomes a conversation, keeps its thread, and can save it.

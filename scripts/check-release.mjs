@@ -21,8 +21,12 @@ for (const k of ['id','name','version','minAppVersion','description','author','i
   ok(`has ${k}`, m[k] !== undefined);
 ok('version is semver', SEMVER.test(m.version), m.version);
 ok('minAppVersion is semver', SEMVER.test(m.minAppVersion), m.minAppVersion);
-ok('id is lowercase/hyphen only', /^[a-z0-9-]+$/.test(m.id), m.id);
+// Letters and hyphens ONLY — no digits. The submission form rejected
+// `gemma4-litert-wiki` for the 4; this check had allowed [0-9] and let it
+// through to the dashboard.
+ok('id is lowercase letters/hyphens only (no digits)', /^[a-z-]+$/.test(m.id), m.id);
 ok('id has no "obsidian"', !/obsidian/i.test(m.id));
+ok('id does not end with "plugin"', !/plugin$/.test(m.id), m.id);
 ok('name has no "Obsidian"', !/obsidian/i.test(m.name), m.name);
 ok('name has no "Plugin"', !/plugin/i.test(m.name));
 ok(`description <= 250 (is ${m.description.length})`, m.description.length <= 250);

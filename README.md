@@ -141,7 +141,7 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 - Network access for those one-time downloads only — no network calls after that
 
 > **If you sync this vault, exclude the model file.** It is downloaded to
-> `<vault>/.obsidian/plugins/gemma4-litert-wiki/gemma-4-E4B-it-web.litertlm` — Obsidian gives a
+> `<vault>/.obsidian/plugins/gemma-litert-wiki/gemma-4-E4B-it-web.litertlm` — Obsidian gives a
 > plugin nowhere outside the vault to write — so iCloud, Dropbox, and Obsidian Sync with
 > "community plugins" enabled will all replicate ~3 GB to every machine. Each machine can download
 > it once for itself in a fraction of that time. The wiki folder itself is ordinary markdown and
