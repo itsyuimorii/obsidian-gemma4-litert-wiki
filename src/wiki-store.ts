@@ -1344,6 +1344,77 @@ export function buildAnswerNote(
 }
 
 
+/**
+ * A whole conversation as one note.
+ *
+ * The counterpart to buildAnswerNote, and it exists for the same reason a
+ * per-answer save does: an exchange you want to keep should end up somewhere
+ * you can read it later without this plugin installed. What is different is
+ * where it lands. The first version of this wrote into `gemma-wiki/chats/` —
+ * a folder the plugin tells you is safe to delete, and one auto-ingest is
+ * hard-coded to walk past, so the transcript could never become material
+ * however good it was. It goes in your own folders now, like a saved answer.
+ *
+ * Every question gets a heading, so the file explorer's outline and the
+ * document outline both give you the thread at a glance. Sources are recorded
+ * per answer rather than pooled at the end: in a thread that switched notes,
+ * one list at the bottom would attribute all of it to whatever came last.
+ */
+export function buildChatTranscript(
+  turns: ChatTurnRecord[],
+  opts: { model: string; titleLabel: string }
+): string {
+  const date = new Date().toISOString().slice(0, 10);
+  // Union of everything cited, for frontmatter — the per-answer lists below
+  // stay authoritative about which answer stood on what.
+  const seen = new Map<string, string>();
+  for (const t of turns) for (const s of t.sources ?? []) seen.set(s.linkPath, s.title);
+  const sourcesYaml = seen.size
+    ? `sources:\n${[...seen.values()].map((t) => `  - "[[${t}]]"`).join('\n')}\n`
+    : '';
+
+  const body: string[] = [];
+  let first = true;
+  for (const turn of turns) {
+    if (turn.role === 'user') {
+      const q = turn.content.trim();
+      // The H1 is this question, so heading it again puts the same line twice
+      // at the top of the note. It still appears in the outline — as the H1 —
+      // with the follow-ups nested under it, which is the shape the thread
+      // actually has. A long first question is truncated in the title, so the
+      // two differ and the heading is kept.
+      if (first) {
+        first = false;
+        if (q === opts.titleLabel) continue;
+      }
+      // A heading has to be one line. A pasted paragraph as a question keeps
+      // its first line as the heading and the rest as a quote under it.
+      const [head, ...rest] = q.split('\n');
+      body.push(`## ${head.trim()}`);
+      if (rest.join('\n').trim()) body.push(rest.map((l) => `> ${l}`).join('\n'));
+      continue;
+    }
+    body.push(turn.content.trim());
+    if (turn.grounding === 'direct') {
+      body.push('*Answered from general knowledge, not from your notes.*');
+    } else if (turn.sources?.length) {
+      body.push(
+        `**Sources:** ${turn.sources.map((s) => `[[${s.linkPath}|${s.title}]]`).join(' · ')}`
+      );
+    }
+  }
+
+  return (
+    `---\n` +
+    `written_by: ${opts.model}\n` +
+    `created: ${date}\n` +
+    `kind: conversation\n` +
+    sourcesYaml +
+    `---\n\n` +
+    `# ${opts.titleLabel}\n\n` +
+    `${body.join('\n\n')}\n`
+  );
+}
 
 // Which raw notes already have a wiki page: read the source frontmatter of
 // every page under wiki/. Used for the file-explorer badge and the chat

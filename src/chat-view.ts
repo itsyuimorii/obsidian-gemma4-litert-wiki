@@ -15,6 +15,7 @@ import type LiteRtSpikePlugin from './main';
 import {
   appendLog,
   buildAnswerNote,
+  buildChatTranscript,
   safeFileName,
   wikiSourcesDir,
   clampToTokens,
@@ -439,6 +440,53 @@ export class ChatView extends ItemView {
     }
   }
 
+  /**
+   * The whole thread as one note, through the same gate as everything else.
+   *
+   * Named after the first question, which is what a person would call the
+   * conversation if asked, and placed by the same rule as a saved answer:
+   * beside the material it came from. In a thread that moved between notes
+   * the first source wins — one file has to live somewhere, and the per-answer
+   * Sources lines inside it keep the rest honest.
+   */
+  private async saveConversation() {
+    // Only completed exchanges. A trailing question whose generation failed
+    // would be saved as a heading with nothing under it.
+    const turns = [...this.turns];
+    while (turns.length && turns.at(-1)!.role === 'user') turns.pop();
+    if (!turns.length) {
+      notify('noop', 'Nothing to save yet — ask something first.');
+      return;
+    }
+    const firstQ = turns.find((t) => t.role === 'user')?.content ?? 'conversation';
+    const title = firstQ.length > 80 ? `${firstQ.slice(0, 77).trim()}…` : firstQ.trim();
+    const sources = turns.flatMap((t) => t.sources ?? []);
+    const folder = this.answerFolder(sources);
+    const stem = safeFileName(
+      `${MODEL_PREFIX} — chat — ${title}`,
+      `${MODEL_PREFIX} — chat ${window.moment().format('YYYY-MM-DD HHmmss')}`
+    );
+    const notePath = this.freePath(folder, stem);
+    const content = buildChatTranscript(turns, { model: MODEL_LABEL, titleLabel: title });
+    // Never overwriting, for the same reason a saved answer never is: this is
+    // the user's folder, and " 2" costs a duplicate where replacing costs
+    // whatever was in the file.
+    new IngestPreviewModal(this.app, notePath, content, false, () => {
+      void (async () => {
+        const dir = notePath.slice(0, notePath.lastIndexOf('/'));
+        if (dir && !this.app.vault.getAbstractFileByPath(dir)) {
+          await this.app.vault.createFolder(dir).catch(() => {});
+        }
+        await this.app.vault.create(notePath, content);
+        await appendLog(this.app.vault, 'chat', notePath);
+        notify('done', `Saved: ${notePath}`);
+      })().catch((err) => {
+        console.error('[gemma4-litert-wiki] saving the conversation failed', err);
+        notify('error', `Could not save the conversation — ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, 'Review note before writing').open();
+  }
+
   private clearChat() {
     if (this.busy) this.activeConversation?.cancel();
     this.lastQuestion = null;
@@ -604,6 +652,17 @@ export class ChatView extends ItemView {
     // Grouped at the right so the two icons sit together, not pushed to
     // opposite ends by the title's auto margin.
     const headerActions = titleRow.createDiv({ cls: 'gemma4-chat-header-actions' });
+    // Beside the bin, where it used to be. The per-message save keeps one
+    // answer; this keeps the thread — including the questions, which are the
+    // half you cannot reconstruct from the answers.
+    const saveConvBtn = headerActions.createEl('button', {
+      cls: 'gemma4-chat-clear',
+      attr: { 'aria-label': 'Save conversation as a note' },
+    });
+    setIcon(saveConvBtn, 'save');
+    setTooltip(saveConvBtn, 'Save conversation as a note');
+    saveConvBtn.addEventListener('click', () => void this.saveConversation());
+
     const clearBtn = headerActions.createEl('button', {
       cls: 'gemma4-chat-clear',
       attr: { 'aria-label': 'Clear chat' },
