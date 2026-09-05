@@ -145,15 +145,44 @@ console.log('\n== plugin guidelines ==');
 
 // The command table in the README is the first thing a reviewer compares
 // against the palette. It drifted once already, when five commands became one.
+//
+// Both directions are checked, because they fail differently. A command
+// missing from the README is a gap a reviewer asks about; a README row naming
+// a command that no longer exists is an instruction that does not work, and
+// that is the one that shipped.
 console.log('\n== README matches the code ==');
 {
-  const readme = fs.readFileSync('README.md', 'utf8');
   const mainTs = fs.readFileSync('src/main.ts', 'utf8');
-  const rows = new Set([...readme.matchAll(/^\| \*\*([^*]+)\*\*/gm)].map((x) => x[1]));
   const cmds = [...mainTs.matchAll(/name: '([^']+)',/g)].map((x) => x[1]);
-  const undocumented = cmds.filter((c) => !rows.has(c));
-  ok(`every command is in the README (${cmds.length} commands)`, undocumented.length === 0,
-     undocumented.join(' | '));
+  const live = new Set(cmds);
+
+  // Only the `| Command | ... |` tables are read. The README has other tables
+  // with a bold first column, and counting those would make the second check
+  // fire on every one of their rows.
+  const commandTableRows = (markdown) => {
+    const rows = [];
+    let inTable = false;
+    for (const line of markdown.split('\n')) {
+      if (/^\|\s*(Command|コマンド)\s*\|/.test(line)) { inTable = true; continue; }
+      if (!inTable) continue;
+      if (!line.startsWith('|')) { inTable = false; continue; }
+      if (/^\|[\s\-|]+\|$/.test(line)) continue;
+      const m = line.match(/^\|\s*\*\*([^*]+)\*\*/);
+      if (m) rows.push(m[1].trim());
+    }
+    return rows;
+  };
+
+  for (const file of ['README.md', 'README.ja.md']) {
+    const rows = commandTableRows(fs.readFileSync(file, 'utf8'));
+    // A parser that matched nothing would pass both checks silently.
+    ok(`${file} has a command table`, rows.length >= 10, `${rows.length} rows`);
+    const undocumented = cmds.filter((c) => !rows.includes(c));
+    ok(`${file}: every command is documented (${cmds.length} commands)`,
+       undocumented.length === 0, undocumented.join(' | '));
+    const dead = rows.filter((r) => !live.has(r));
+    ok(`${file}: every documented command exists`, dead.length === 0, dead.join(' | '));
+  }
 }
 
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nALL PASS');
