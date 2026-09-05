@@ -1,5 +1,6 @@
 import { App, Modal } from 'obsidian';
-import { indexPath, isWikiPage, logPath, wikiDir, readIndexEntries } from './wiki-store';
+import { fmOf, indexPath, isWikiPage, logPath, wikiDir, readIndexEntries } from './wiki-store';
+import { findDuplicatePairs, type DuplicateCandidate, type DuplicatePair } from './pure';
 
 // Lint v1, deliberately model-free: orphans and index health are graph
 // facts the metadata cache already knows. LLM-driven lint phases
@@ -43,6 +44,57 @@ export async function runLint(app: App): Promise<LintReport> {
 }
 
 
+/**
+ * Cards that look like they are about the same subject as another card.
+ *
+ * Model-free, like the rest of the check: every input already exists on disk.
+ * `mentions:` is written at ingest, and the alias table comes from schema.md,
+ * where Retag leaves the old-tag-to-vocabulary-tag decisions the user already
+ * approved. Resolving both through the aliases is what lets a page still
+ * carrying `llm-eval` be seen as the same subject as one carrying `evals`.
+ *
+ * Concept pages are excluded on purpose. They are named BY a tag, so two of
+ * them about one idea is a duplicate TAG, and the repair for that is the
+ * vocabulary rebuild — a different box in the same dialog.
+ */
+export interface SameSubjectReport {
+  pairs: DuplicatePair[];
+  /** How many qualified in all, so a capped list does not read as the whole answer. */
+  total: number;
+}
+
+export async function findSameSubject(
+  app: App,
+  aliases: Record<string, string>,
+  cap: number
+): Promise<SameSubjectReport> {
+  const candidates: DuplicateCandidate[] = [];
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!isWikiPage(f)) continue;
+    const fm = fmOf(app, f);
+    if (fm?.kind === 'concept') continue;
+    // A card is a page with a source note behind it. Anything else in the
+    // wiki folder — an index, a README — has no subject to be duplicated.
+    if (typeof fm?.source !== 'string' || !fm.source) continue;
+    const raw = fm?.mentions;
+    const mentions = Array.isArray(raw) ? raw.map((m) => String(m)).filter((m) => m.trim()) : [];
+    candidates.push({
+      linkPath: f.path.replace(/\.md$/, ''),
+      title: f.basename,
+      mentions,
+      mtime: f.stat.mtime,
+    });
+  }
+
+  // Already linked in either direction means the relationship is recorded,
+  // which is all this finding was ever going to ask for.
+  const resolved = app.metadataCache.resolvedLinks;
+  const linked = (a: string, b: string) =>
+    !!resolved[`${a}.md`]?.[`${b}.md`] || !!resolved[`${b}.md`]?.[`${a}.md`];
+
+  return findDuplicatePairs({ pages: candidates, aliases, linked, cap });
+}
+
 /** Model-free read of the tag vocabulary's state, for the tidy report. */
 export interface TagHealth {
   /** Tags in `## Tags` — the list ingest is allowed to reuse. */
@@ -78,6 +130,7 @@ export interface TagHealth {
 export class TidyModal extends Modal {
   private report: LintReport;
   private tags: TagHealth;
+  private sameSubject: SameSubjectReport;
   private onApply: (chosen: Set<string>) => Promise<void>;
   private chosen = new Set<string>();
 
@@ -85,11 +138,13 @@ export class TidyModal extends Modal {
     app: App,
     report: LintReport,
     tags: TagHealth,
+    sameSubject: SameSubjectReport,
     onApply: (chosen: Set<string>) => Promise<void>
   ) {
     super(app);
     this.report = report;
     this.tags = tags;
+    this.sameSubject = sameSubject;
     this.onApply = onApply;
   }
 
@@ -120,6 +175,26 @@ export class TidyModal extends Modal {
         'gone. A page that genuinely relates to nothing stays an orphan.',
       this.report.orphans,
       orphans > 0
+    );
+
+    // Fifth repair, and the only one that is about meaning rather than about
+    // the graph. It sits after relink because relink is what makes existing
+    // links mutual, and a pair this finding would report may already have
+    // been joined by then.
+    const dupes = this.sameSubject.pairs.length;
+    const total = this.sameSubject.total;
+    this.finding(
+      'dedupe',
+      dupes
+        ? `${dupes} pair${dupes === 1 ? '' : 's'} of pages look like they are about the same thing` +
+          (total > dupes ? ` (of ${total} found)` : '')
+        : 'Same-subject pages — no unlinked pair looks like one subject',
+      'Links each pair to the other, so the relationship is at least recorded. Nothing is merged and ' +
+        'nothing is deleted — two notes about one subject are two pieces of writing, and which to keep ' +
+        'is yours. Where a pair is really a cluster, "Build a concept page" is the better answer. ' +
+        'No model, nothing to review beyond the preview.',
+      this.sameSubject.pairs.map((p) => `${p.a.title}  ·  ${p.b.title}  — ${p.because}`),
+      dupes > 0
     );
 
     const missing = this.report.missing.length;

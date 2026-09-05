@@ -5,9 +5,9 @@
   </picture>
 </p>
 
-<h1 align="center">Gemma Wiki</h1>
+<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
 
-<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process.</b><br>Build <b>Andrej Karpathy's living LLM wiki</b> with Gemma 4 E4B.</p>
+<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b><br>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
@@ -26,7 +26,7 @@
 - [✨ Features at a glance](#-features-at-a-glance)
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)
-- [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
+- [🔌 How this differs from other AI plugins](#-how-this-differs-from-other-ai-plugins)
 - [📋 Requirements](#-requirements)
 - [🔁 What to run when](#-what-to-run-when)
 - [⌨️ Current commands](#️-current-commands)
@@ -64,7 +64,7 @@ From there: chat grounded in one note or in the whole wiki, quiz yourself on eit
 
 Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
 
-> **Status: 1.0.7, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
+> **Status: 1.0.8, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
@@ -92,7 +92,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 
 **Config as notes** — the rules live as plain markdown you can read, edit and version:
 
-- **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. *Organize tags* has local Gemma merge near-synonyms into one vocabulary; *Retag* applies it to existing pages, both behind a preview.
+- **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. **Tidy the wiki** rebuilds the vocabulary from the tags your pages actually use — having local Gemma fold near-synonyms together — and applies it to existing pages. Two separate ticks, each behind its own preview. The rebuild is also a button in Settings. Approving a retag also writes an **aliases** list — `old-tag: vocabulary-tag` — so a page still carrying the old name is still recognised as being about the same subject; edit or delete those lines freely, and an alias pointing at a rejected tag is ignored.
 - **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. `fill: true` puts the prompt in the input box and waits rather than sending, for a skill that has to be aimed at something. Ships with a README and two examples, which carry a `stamp:` hash so a later release can improve them **unless you have edited the file**, in which case it is yours forever.
 - **`chats/`** — a conversation you pressed save on, one file per thread, with its own `index.md` listing them newest first. **Nothing in it is retrieved, indexed, linted or scanned** — an answer is output, never input, and a chat sitting in the wiki index would be indistinguishable from a page. It is also the only thing under the wiki folder the plugin cannot rebuild from your notes, so move it out before clearing that folder.
 - **Every folder has a README** explaining what belongs in it, and the layout is shown in Settings with per-row state, generated from the same list the scaffold builds from.
@@ -136,16 +136,23 @@ Most "local AI" Obsidian plugins still depend on a second, independently-running
 
 This project asks a narrower question: **can the model run in the exact same process as the plugin, using only what Electron and WebGPU already provide?** The answer, validated end to end (see [Benchmarks](#-benchmarks)), is yes — for short, well-scoped text tasks. Whether it's enough to carry a full Karpathy-style wiki (entity/concept extraction, cross-referencing, contradiction detection) is the open question this project is working through, one validated step at a time, in public commit history.
 
-## 🔌 How this differs from Ollama / LM Studio plugins
+## 🔌 How this differs from other AI plugins
 
-|  | This project | Ollama/LM Studio-backed plugins |
+The first row is the only one this project can claim and the others cannot. Most of the rest of the table is the price of it.
+
+|  | This project | Plugins backed by a provider |
 |---|---|---|
-| **External process** | None. The model runs inside Obsidian's own renderer. | Requires Ollama/LM Studio installed and running separately. |
-| **Setup** | Install the plugin; first run downloads the model once. | Install the plugin *and* a separate app; configure a connection between them. |
-| **API surface** | Nothing to configure and no inference API. There *is* one moving part worth naming: the WebGPU runtime can only be handed multi-gigabyte weights over HTTP, so the plugin runs a loopback server on an ephemeral port to feed itself the model and runtime bytes off your own disk. It binds `127.0.0.1`, carries no inference endpoint, and lives only while the plugin is loaded. | Talks to `localhost:11434` (or similar) over HTTP — a separate app you start, configure and keep running. |
-| **Trade-off** | Ties the plugin to whatever LiteRT-LM supports today. | More provider flexibility, but a heavier setup and a permanently-running background app. |
+| **Where the model runs** | Inside Obsidian's own renderer process. There is no second program to install, to start, or to keep running. | In something else — Ollama, LM Studio, a cloud endpoint, a document-conversion service. This holds even for the ones offering a fully-local mode: local there means a daemon you install and leave running. |
+| **What you set up** | Install the plugin. The first run downloads the model, once. | Install the plugin, then obtain the other half: an application to run, or an API key to create and pay for. |
+| **After the first run** | No network calls at all. | A cloud provider is a request per operation; a local daemon is a process that has to be alive at the moment you press the key. |
+| **Which model** | One. Gemma 4 E4B, plus whatever LiteRT-LM comes to support. You cannot bring your own. | Your pick, frontier cloud models included — far more capable than anything that fits in a renderer process. Sixteen or more providers is unremarkable in this category. |
+| **Mobile** | No, and structurally so: it needs WebGPU and ~3 GB on disk. | Yes, wherever the provider is reachable over HTTP. |
+| **What it can read** | Markdown notes. | Markdown, and commonly PDFs, images and Office documents as well — through providers that take files directly, or a conversion backend. |
+| **Interface language** | English. This README is also in Japanese; the plugin's interface is not translated. | Often many. Eleven-language interfaces exist in this category. |
+| **What it costs to run** | ~3 GB of disk, once. | Free against a local daemon; per-token against a cloud provider. |
+| **The one moving part** | No inference API and nothing to configure — but the WebGPU runtime can only be handed multi-gigabyte weights over HTTP, so the plugin runs a loopback server on an ephemeral port to feed itself the model and runtime bytes off your own disk. It binds `127.0.0.1`, carries no inference endpoint, and lives only while the plugin is loaded. | `localhost:11434`, or a vendor's HTTPS endpoint — an address you configure, and on the cloud side a place your notes are sent. |
 
-This isn't a claim that local-in-renderer is strictly *better* — it's a different point in the design space, and "fully local" only matters if the output quality holds up. That's exactly what the benchmarks below are trying to establish honestly, including where the approach is weaker.
+None of this says local-in-renderer is *better*. Gemma 4 E4B inside Obsidian is weaker than a frontier model behind an API, reads fewer kinds of file, speaks fewer languages, and will never run on your phone. What it buys is that there is nothing else to install, nothing to keep alive, and nothing leaving the machine after the first download — and that only matters if the output holds up. Establishing that honestly, including where the approach is weaker, is what the benchmarks below are for.
 
 ## 📋 Requirements
 
@@ -268,7 +275,7 @@ All numbers are from `Conversation.getBenchmarkInfo()` — real LiteRT-LM instru
 | Warm engine, 274-token input | 386.5 tok/s | 29.5 tok/s | **0.74 s** |
 | Warm engine, 634-token input (full paragraph) | 494.7 tok/s | 29.1 tok/s | 1.3 s |
 
-**Takeaway:** the ~28 s cold-start figure that shows up on the very first call is a one-time GPU shader-compilation / weight-conversion cost, not a per-call tax — once the engine is warm, prefill throughput jumps roughly 5-6×, and short-selection latency drops to sub-second. Decode speed (~29 tok/s) is stable regardless of input length or warm/cold state.
+**Takeaway:** the 28-second cold-start figure that shows up on the very first call is a one-time GPU shader-compilation / weight-conversion cost, not a per-call tax — once the engine is warm, prefill throughput jumps roughly 5-6×, and short-selection latency drops to sub-second. Decode speed (about 29 tok/s) is stable regardless of input length or warm/cold state.
 
 **Quality**, checked by hand against six English test passages (basic typos, subtle grammar, a passage with zero errors, a bulleted list, technical jargon that should *not* be "corrected", and a 700-word article with errors scattered through the final paragraph): zero missed errors, zero hallucinated changes, exact-match output on the already-correct passage, all technical terms and list formatting preserved, and no quality drop-off between the first and last paragraph of the long passage.
 

@@ -1,8 +1,5 @@
 import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
-import * as http from 'node:http';
-import type { Server } from 'node:http';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { fs, http, path, type Bytes, type HttpServer } from './node-api';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
@@ -42,7 +39,8 @@ import {
   type IndexEntry,
   type NoteExtraction,
 } from './wiki-store';
-import { runLint, TidyModal, type TagHealth } from './lint';
+import { findSameSubject, runLint, TidyModal, type TagHealth } from './lint';
+import type { DuplicatePair } from './pure';
 import {
   collectWikiPages,
   ContradictionReportModal,
@@ -58,7 +56,21 @@ import {
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
-import { chunkForImprove, estimateImproveTokens } from './pure';
+import { chunkForImprove, estimateImproveTokens, improveOutputBudget } from './pure';
+import {
+  looksCutOff,
+  looksRepetitive,
+  nextOutputCap,
+  parseModelJson,
+  textOf,
+  type ParseFailure,
+} from './model-output';
+
+/** The output budget one extraction starts with. A card is a small object. */
+const INGEST_OUTPUT_TOKENS = 768;
+
+/** What a provenance check on one page produced, including the ways it can fail. */
+type ProvenanceCheck = { ok: true; unsupported: string[] } | { ok: false; reason: string };
 
 // Throwaway spike plugin. v0.0.1-2 proved WebGPU + the LiteRT-LM WASM
 // runtime can load inside Obsidian's Electron renderer with zero external
@@ -153,7 +165,7 @@ class ConceptTagModal extends FuzzySuggestModal<TagCluster> {
 }
 
 export default class LiteRtSpikePlugin extends Plugin {
-  private server: Server | null = null;
+  private server: HttpServer | null = null;
   private serverBaseUrl: string | null = null;
   /** The directory the loopback server serves — also where the glue is required from. */
   private wasmDir: string | null = null;
@@ -888,6 +900,10 @@ export default class LiteRtSpikePlugin extends Plugin {
           }
 
           const RUNS = 5;
+          // Named because the truncation check needs the same number the
+          // session was given; a budget stated in two places is a budget that
+          // drifts.
+          const MAX_OUTPUT = 512;
           const p = new Progress('JSON reliability test: loading model…');
           try {
             const engine = await this.ensureEngine((text) => {
@@ -919,7 +935,7 @@ export default class LiteRtSpikePlugin extends Plugin {
                   },
                   sessionConfig: {
                     samplerParams: { type: SamplerType.GREEDY },
-                    maxOutputTokens: 512,
+                    maxOutputTokens: MAX_OUTPUT,
                   },
                 });
 
@@ -929,45 +945,47 @@ export default class LiteRtSpikePlugin extends Plugin {
                 for (;;) {
                   const { done, value } = await reader.read();
                   if (done) break;
-                  const content = value?.content;
-                  if (typeof content === 'string') raw += content;
-                  else if (Array.isArray(content)) {
-                    for (const part of content) {
-                      if (part.type === 'text' && part.text) raw += part.text;
-                    }
-                  }
+                  raw += textOf(value?.content);
                 }
 
-                // Small models often wrap JSON in ```json ... ``` despite
-                // being told not to — strip that before parsing rather than
-                // counting it as a hard failure.
-                const cleaned = raw
-                  .trim()
-                  .replace(/^```(?:json)?\s*/i, '')
-                  .replace(/```\s*$/i, '')
-                  .trim();
+                // The two measurements this command exists to produce, beside
+                // the pass/fail. The repetition thresholds in model-output.ts
+                // are set conservatively and have NOT been calibrated against
+                // this model — doing that means reading these numbers off real
+                // replies and seeing where good output and looping output
+                // actually separate. Printed on every run, valid or not, so a
+                // sample can be gathered by running this a few times.
+                const loop = looksRepetitive(raw);
+                const cut = looksCutOff(raw, MAX_OUTPUT);
+                const measured =
+                  `run=${loop.longestRun} distinct=${loop.distinctRatio.toFixed(3)}` +
+                  `${loop.repetitive ? ' LOOPING' : ''}` +
+                  `${cut.atBudget ? ' at-budget' : ''}${cut.midSentence ? ' mid-sentence' : ''}`;
 
-                try {
-                  const parsed: unknown = JSON.parse(cleaned);
-                  const rec = (parsed ?? {}) as Record<string, unknown>;
+                const read = parseModelJson<Record<string, unknown>>(raw);
+                if (!read.ok) {
+                  log(`Run ${i}: ${read.reason}`, 'raw:', raw, measured);
+                  outcomes.push(`Run ${i}: ${read.reason.toUpperCase()} [${measured}] — raw: ${raw}`);
+                } else {
+                  const rec = read.value;
                   const valid =
-                    typeof parsed === 'object' &&
-                    parsed !== null &&
                     typeof rec.summary === 'string' &&
                     Array.isArray(rec.tags) &&
                     rec.tags.length === 3 &&
                     rec.tags.every((t: unknown) => typeof t === 'string');
-                  if (valid) {
+                  if (valid && !loop.repetitive) {
                     successCount++;
-                    log(`Run ${i}: OK`, parsed);
-                    outcomes.push(`Run ${i}: OK — ${JSON.stringify(parsed)}`);
+                    log(`Run ${i}: OK`, rec, measured);
+                    outcomes.push(`Run ${i}: OK [${measured}] — ${JSON.stringify(rec)}`);
+                  } else if (valid) {
+                    // The shape passed and the content is a loop. This is the
+                    // exact failure the shape checks cannot see.
+                    log(`Run ${i}: valid shape, repetition loop`, rec, measured);
+                    outcomes.push(`Run ${i}: LOOP [${measured}] — ${JSON.stringify(rec)}`);
                   } else {
-                    log(`Run ${i}: parsed but wrong shape`, parsed, 'raw:', raw);
-                    outcomes.push(`Run ${i}: WRONG SHAPE — ${cleaned}`);
+                    log(`Run ${i}: parsed but wrong shape`, rec, 'raw:', raw, measured);
+                    outcomes.push(`Run ${i}: WRONG SHAPE [${measured}] — ${JSON.stringify(rec)}`);
                   }
-                } catch (parseErr) {
-                  log(`Run ${i}: JSON.parse failed`, parseErr, 'raw:', raw);
-                  outcomes.push(`Run ${i}: PARSE FAILED — raw: ${raw}`);
                 }
               } finally {
                 await conversation?.delete().catch(() => {});
@@ -1326,7 +1344,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       notify('noop', 'Every proposed tag is on the Rejected list — nothing to write.');
       return false;
     }
-    const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold, [], existing.rejected);
+    const content = buildSchemaFile({ ...existing, tags: vocab, pending: [] });
     const path = schemaPath();
     const overwriting = !!this.app.vault.getAbstractFileByPath(path);
     // Resolves when the dialog is answered, not when it opens. Tidy runs
@@ -1577,6 +1595,10 @@ export default class LiteRtSpikePlugin extends Plugin {
       return;
     }
     const flags: ProvenanceFlag[] = [];
+    // Pages the model could not be read on. Counted rather than swallowed:
+    // "8 checked, all clean" is a different sentence from "6 checked, all
+    // clean, 2 could not be read".
+    let unchecked = 0;
     try {
       for (let i = 0; i < samples.length; i++) {
         const s = samples[i];
@@ -1584,9 +1606,18 @@ export default class LiteRtSpikePlugin extends Plugin {
         const srcFile = this.app.vault.getAbstractFileByPath(s.sourcePath);
         if (!(srcFile instanceof TFile)) continue; // source note gone
         const srcText = clampToTokens(cleanClippedMarkdown(await this.app.vault.read(srcFile)), this.budget('provenance')).text;
-        const unsupported = await this.checkProvenance(srcText, s.keyPoints);
-        if (unsupported.length) {
-          flags.push({ linkPath: s.linkPath, title: s.title, sourcePath: s.sourcePath, unsupported });
+        const result = await this.checkProvenance(srcText, s.keyPoints);
+        if (!result.ok) {
+          unchecked++;
+          continue;
+        }
+        if (result.unsupported.length) {
+          flags.push({
+            linkPath: s.linkPath,
+            title: s.title,
+            sourcePath: s.sourcePath,
+            unsupported: result.unsupported,
+          });
         }
       }
       this.statusEnd();
@@ -1595,7 +1626,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusFail('Provenance check', err);
       return;
     }
-    new ProvenanceReportModal(this.app, flags, samples.length).open();
+    new ProvenanceReportModal(this.app, flags, samples.length - unchecked, unchecked).open();
   }
 
   // One strict-JSON call: given the tags currently in use (with counts),
@@ -1639,13 +1670,13 @@ export default class LiteRtSpikePlugin extends Plugin {
       const list = tagsWithCounts.map(([t, n]) => `- ${t} (${n})`).join('\n');
       this.status('Asking Gemma to organize the vocabulary…');
       const message = await conversation.sendMessage(`Tags in use:\n${list}`);
-      let raw = '';
-      const c = message.content;
-      if (typeof c === 'string') raw = c;
-      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) return [];
-      const parsed = JSON.parse(match[0]) as { vocabulary?: unknown };
+      const raw = textOf(message.content);
+      const read = parseModelJson<{ vocabulary?: unknown }>(raw);
+      if (!read.ok) {
+        console.error(`[gemma-litert-wiki] cleanTagVocabulary: ${read.reason}`, raw);
+        return [];
+      }
+      const parsed = read.value;
       if (!Array.isArray(parsed.vocabulary)) return [];
       return [...new Set(parsed.vocabulary.filter((t): t is string => typeof t === 'string').map((t) => slugify(t)).filter(Boolean))];
     } finally {
@@ -1746,11 +1777,44 @@ export default class LiteRtSpikePlugin extends Plugin {
               fm.tags = c.to;
             });
           }
+          // Keep the mapping instead of discarding it. Deciding that
+          // `llm-eval` means `evals` is the whole of an alias, the user has
+          // just approved exactly that judgment on the screen above, and it
+          // costs no model call to write down. Without it the knowledge lives
+          // only in the rewritten pages, so a page that was not retagged —
+          // one added later, one the user reverted — reads as unrelated to
+          // its own subject forever.
+          await this.rememberTagAliases(mapping);
           await appendLog(this.app.vault, 'retag', `${changes.length} pages to vocabulary`);
           notify('done', `Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`);
         });
       },
     }).open();
+  }
+
+  /**
+   * Write an approved retag mapping into schema.md's `## Aliases`.
+   *
+   * Additive and never destructive: an alias the user edited or deleted by
+   * hand is theirs, so an existing entry is left alone rather than rewritten.
+   * A mapping onto a tag the user has since banned is dropped, because
+   * `## Rejected` outranks everything.
+   */
+  private async rememberTagAliases(mapping: Map<string, string>) {
+    const schema = await readSchema(this.app.vault);
+    const rejected = new Set(schema.rejected.map((t) => slugify(t)));
+    const aliases = { ...schema.aliases };
+    let added = 0;
+    for (const [from, to] of mapping) {
+      const a = slugify(from);
+      const b = slugify(to);
+      if (!a || !b || a === b || rejected.has(b)) continue;
+      if (aliases[a]) continue;
+      aliases[a] = b;
+      added++;
+    }
+    if (!added) return;
+    await writeWikiPage(this.app.vault, schemaPath(), buildSchemaFile({ ...schema, aliases }));
   }
 
   // One strict-JSON call: old tag -> closest vocabulary tag. Flat object in,
@@ -1780,13 +1844,20 @@ export default class LiteRtSpikePlugin extends Plugin {
       const message = await conversation.sendMessage(
         `Vocabulary:\n${vocab.map((v) => `- ${v}`).join('\n')}\n\nOld tags:\n${oldTags.map((t) => `- ${t}`).join('\n')}`
       );
-      let raw = '';
-      const c = message.content;
-      if (typeof c === 'string') raw = c;
-      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('Model returned no JSON.');
-      const parsed = JSON.parse(match[0]) as { mapping?: Record<string, unknown> };
+      const raw = textOf(message.content);
+      const read = parseModelJson<{ mapping?: Record<string, unknown> }>(raw);
+      if (!read.ok) {
+        // Named, because the three failures want three different responses:
+        // a run that was cut off is worth repeating, a reply with no JSON in
+        // it is not.
+        console.error(`[gemma-litert-wiki] mapTagsToVocabulary: ${read.reason}`, raw);
+        throw new Error(
+          read.reason === 'cut-off'
+            ? 'The model ran out of room before it finished — try again, or retag fewer tags at once.'
+            : 'The model did not return usable JSON.'
+        );
+      }
+      const parsed = read.value;
       const out = new Map<string, string>();
       const vocabSet = new Set(vocab);
       for (const t of oldTags) {
@@ -1822,12 +1893,18 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.status('Checking the wiki…');
     const report = await runLint(this.app);
     const tags = await this.tagHealth();
+    // Capped for the same reason the contradiction sweep caps: a list longer
+    // than a dialog can show is a list nobody reads, and the count says how
+    // many were left out.
+    const schemaNow = await readSchema(this.app.vault);
+    const sameSubject = await findSameSubject(this.app, schemaNow.aliases, 12);
     this.statusEnd();
-    new TidyModal(this.app, report, tags, async (chosen) => {
+    new TidyModal(this.app, report, tags, sameSubject, async (chosen) => {
       // Free repairs first: they change the link graph the model would
       // otherwise be asked about, so running them first is fewer calls.
       if (chosen.has('reconcile')) await this.reconcileWiki();
       if (chosen.has('relink')) await this.relinkWikiPages();
+      if (chosen.has('dedupe')) await this.linkSameSubjectPairs(sameSubject.pairs);
       // Two independent boxes: rebuild, apply, or both. Chaining them was the
       // merge quietly deleting the "I edited schema.md by hand" path.
       //
@@ -1958,25 +2035,94 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
       new RelinkPreviewModal(this.app, proposals, () => {
         this.runApproved('Relink', async () => {
-          for (const prop of proposals) {
-            const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
-            if (!(file instanceof TFile)) continue;
-            const content = await this.app.vault.read(file);
-            const section =
-              `\n## Related\n\n` +
-              prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
-              `\n`;
-            // Replace rather than append: Related is the last section a
-            // generated page carries, so truncating at it is safe, and a
-            // plain append would leave two headings.
-            const cut = content.indexOf('\n## Related');
-            const head = cut === -1 ? content : content.slice(0, cut);
-            await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
-            await appendLog(this.app.vault, 'relink', prop.title);
-          }
+          await this.writeRelatedSections(proposals, 'relink');
           notify('done', `Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`);
         });
       }).open();
+  }
+
+  /**
+   * Record the relationship between pages that look like one subject.
+   *
+   * Deliberately the smallest possible repair. It adds each page of a flagged
+   * pair to the other's Related section and stops there: nothing is merged,
+   * nothing is deleted, and no page is rewritten beyond that one section. Two
+   * notes about a subject are two pieces of writing and which of them to keep
+   * — if either — is not a decision a tag-similarity check has any standing to
+   * make. The plugin's job here is to stop the pair being invisible.
+   *
+   * Free: the pairs were found without a model and linking them needs none.
+   */
+  private async linkSameSubjectPairs(pairs: DuplicatePair[]) {
+    if (!pairs.length) {
+      notify('noop', 'No same-subject pairs to link.');
+      return;
+    }
+    const entries = await this.liveIndexEntries();
+    const titleOf = new Map(entries.map((e) => [e.linkPath, e.title]));
+
+    // Accumulate per page: one page can be in several pairs, and writing its
+    // Related section twice would drop the first edit.
+    const wanted = new Map<string, Set<string>>();
+    const add = (from: string, to: string) => {
+      if (!wanted.has(from)) wanted.set(from, new Set());
+      wanted.get(from)!.add(to);
+    };
+    for (const p of pairs) {
+      add(p.a.linkPath, p.b.linkPath);
+      add(p.b.linkPath, p.a.linkPath);
+    }
+
+    const proposals: RelinkProposal[] = [];
+    for (const [linkPath, targets] of wanted) {
+      const file = this.app.vault.getAbstractFileByPath(`${linkPath}.md`);
+      if (!(file instanceof TFile)) continue;
+      const existing = this.readRelatedLinksOn(await this.app.vault.read(file));
+      // Keep what the page already says, drop links to pages that are gone,
+      // and add the partner. A repair that quietly removed a link the user
+      // had would not be the smallest possible repair.
+      const now = [...new Set([...existing.filter((lp) => titleOf.has(lp)), ...targets])].sort();
+      if (now.length === existing.length && now.every((lp, i) => existing[i] === lp)) continue;
+      proposals.push({
+        pagePath: `${linkPath}.md`,
+        title: titleOf.get(linkPath) ?? file.basename,
+        related: now.map((lp) => ({ linkPath: lp, title: titleOf.get(lp) ?? lp })),
+      });
+    }
+
+    if (!proposals.length) {
+      notify('noop', 'Those pages already link to each other.');
+      return;
+    }
+    new RelinkPreviewModal(this.app, proposals, () => {
+      this.runApproved('Link same-subject pages', async () => {
+        await this.writeRelatedSections(proposals, 'dedupe');
+        notify(
+          'done',
+          `Linked ${pairs.length} pair${pairs.length === 1 ? '' : 's'} across ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`
+        );
+      });
+    }).open();
+  }
+
+  /** Replace the Related section on each proposed page. Shared by relink and dedupe. */
+  private async writeRelatedSections(proposals: RelinkProposal[], action: string) {
+    for (const prop of proposals) {
+      const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
+      if (!(file instanceof TFile)) continue;
+      const content = await this.app.vault.read(file);
+      const section =
+        `\n## Related\n\n` +
+        prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
+        `\n`;
+      // Replace rather than append: Related is the last section a generated
+      // page carries, so truncating at it is safe, and a plain append would
+      // leave two headings.
+      const cut = content.indexOf('\n## Related');
+      const head = cut === -1 ? content : content.slice(0, cut);
+      await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
+      await appendLog(this.app.vault, action, prop.title);
+    }
   }
 
   private async reconcileWiki() {
@@ -2127,10 +2273,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
       const list = members.map((m) => `- ${m.title}: ${m.summary}`).join('\n');
       const message = await conversation.sendMessage(`Concept: ${tag}\n\nPages:\n${list}`);
-      let raw = '';
-      const c = message.content;
-      if (typeof c === 'string') raw = c;
-      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
+      const raw = textOf(message.content);
       const text = raw.trim().replace(/^#+\s.*$/gm, '').trim();
       if (!text) throw new Error('Model returned an empty overview.');
       return text;
@@ -2175,13 +2318,15 @@ export default class LiteRtSpikePlugin extends Plugin {
       const message = await conversation.sendMessage(
         `Entry A — ${titleA}: ${summaryA}\n\nEntry B — ${titleB}: ${summaryB}`
       );
-      let raw = '';
-      const c = message.content;
-      if (typeof c === 'string') raw = c;
-      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) return null;
-      const parsed = JSON.parse(match[0]) as { contradict?: unknown; reason?: unknown };
+      const raw = textOf(message.content);
+      const read = parseModelJson<{ contradict?: unknown; reason?: unknown }>(raw);
+      if (!read.ok) {
+        // `null` here means "these two pages agree", so an unreadable reply
+        // must not quietly become one.
+        console.error(`[gemma-litert-wiki] checkContradiction: ${read.reason}`, raw);
+        return null;
+      }
+      const parsed = read.value;
       // Accept every reasonable spelling of yes. The field is named
       // "contradict", which reads boolean, so a model very naturally answers
       // `true` — and matching only the exact string "yes" turned that into a
@@ -2209,8 +2354,14 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   // One strict-JSON judgment per page: which claims does the source not
   // support? Validated against the actual key-point list (the model can only
-  // flag points that were really there); a bad parse drops the page.
-  async checkProvenance(sourceText: string, keyPoints: string[]): Promise<string[]> {
+  // flag points that were really there).
+  //
+  // This used to return `[]` on a bad parse, a failed generation or a thrown
+  // error — the same value it returns when every key point traced cleanly. So
+  // a run that never finished reported the page as verified, which is the
+  // worst direction for this check to fail in. The caller now gets a result it
+  // has to look at, and the report says how many pages could not be checked.
+  async checkProvenance(sourceText: string, keyPoints: string[]): Promise<ProvenanceCheck> {
     const engine = await this.ensureEngine((t) => this.status(t));
     const { SamplerType } = await import('@litert-lm/core');
     let conversation: import('@litert-lm/core').Conversation | undefined;
@@ -2233,19 +2384,25 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
       const claimsBlock = keyPoints.map((p) => `- ${p}`).join('\n');
       const message = await conversation.sendMessage(`Source:\n${sourceText}\n\nClaims:\n${claimsBlock}`);
-      let raw = '';
-      const c = message.content;
-      if (typeof c === 'string') raw = c;
-      else if (Array.isArray(c)) for (const part of c) if (part.type === 'text' && part.text) raw += part.text;
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) return [];
-      const parsed = JSON.parse(match[0]) as { unsupported?: unknown };
-      if (!Array.isArray(parsed.unsupported)) return [];
+      const raw = textOf(message.content);
+      const read = parseModelJson<{ unsupported?: unknown }>(raw);
+      if (!read.ok) {
+        console.error(`[gemma-litert-wiki] checkProvenance: ${read.reason}`, raw);
+        return { ok: false, reason: read.reason };
+      }
+      if (!Array.isArray(read.value.unsupported)) {
+        return { ok: false, reason: 'invalid-json' };
+      }
       const valid = new Set(keyPoints);
-      return parsed.unsupported.filter((u): u is string => typeof u === 'string' && valid.has(u));
+      return {
+        ok: true,
+        unsupported: read.value.unsupported.filter(
+          (u): u is string => typeof u === 'string' && valid.has(u)
+        ),
+      };
     } catch (err) {
       console.error('[gemma-litert-wiki] checkProvenance parse/gen failed', err);
-      return [];
+      return { ok: false, reason: 'error' };
     } finally {
       await conversation?.delete().catch(() => {});
     }
@@ -2853,33 +3010,55 @@ export default class LiteRtSpikePlugin extends Plugin {
         this.status(`Improving "${file.basename}"${label}…`);
         // A fresh conversation per pass: the previous section must not sit in
         // context, or the budget the chunking just enforced means nothing.
+        // Output is a same-sized rewrite of the input, so the cap has to be
+        // the input estimate plus headroom — not a flat ceiling. It used to
+        // read `Math.min(2048, estimate + 300)`, which is the flat ceiling the
+        // line above it says it avoids: with the default 64,000-token context
+        // MAX_INPUT_TOKENS is 24,000, so a chunk was allowed to be twelve
+        // times longer than the rewrite it was given room for. Anything past
+        // ~2,048 tokens — roughly 8 KB of English, an ordinary long note, and
+        // one chunk rather than several, so not even the multi-pass warning
+        // fired — came back cut off at the budget and went into the preview
+        // looking like the finished rewrite.
+        //
+        // budget('improve') already divides the context by 2.2 precisely so
+        // the input AND a same-sized rewrite both fit, so estimate + 300 is
+        // guaranteed to have room. MAX_INPUT_TOKENS + 300 is the ceiling for
+        // the same reason, and it binds only if a chunk overshoots its own
+        // budget.
+        const budget = improveOutputBudget(text, MAX_INPUT_TOKENS);
         let conversation: import('@litert-lm/core').Conversation | undefined;
         try {
           conversation = await engine.createConversation({
             preface: { messages: [{ role: 'system', content: systemPrompt }] },
             sessionConfig: {
               samplerParams: { type: SamplerType.GREEDY },
-              // Output is a same-sized rewrite of the input; cap it just above
-              // the input estimate instead of a flat 2048 so short passes can't
-              // run away and long CJK passes aren't silently truncated.
-              maxOutputTokens: Math.min(2048, estimateImproveTokens(text) + 300),
+              maxOutputTokens: budget,
             },
           });
           const message = await conversation.sendMessage(text);
-          let raw = '';
-          const c = message.content;
-          if (typeof c === 'string') raw = c;
-          else if (Array.isArray(c)) {
-            for (const part of c) {
-              if (part.type === 'text' && part.text) raw += part.text;
-            }
-          }
+          const raw = textOf(message.content);
           const improved = raw
             .trim()
             .replace(/^```(?:markdown|md)?\s*/i, '')
             .replace(/```\s*$/i, '')
             .trim();
           if (!improved) throw new Error('Model returned an empty result.');
+          // Improve overwrites the user's own note, so a pass that did not
+          // finish is worse than a pass that did nothing. Both checks below
+          // fail the pass into the path that already exists for that: keep
+          // the author's text for this section and say so at the end.
+          //
+          // A chunk cut out of the middle of a long paragraph legitimately
+          // ends mid-sentence, and its rewrite will too — so the output only
+          // counts as cut off when the input it was given did not end that
+          // way.
+          if (looksCutOff(improved, budget).cutOff && !looksCutOff(text).midSentence) {
+            throw new Error('Model output stopped mid-sentence at the token budget.');
+          }
+          if (looksRepetitive(improved).repetitive && !looksRepetitive(text).repetitive) {
+            throw new Error('Model output collapsed into a repetition loop.');
+          }
           pieces.push(leading + improved + trailing);
         } catch (err) {
           // One bad pass must not cost the user the other twenty: keep the
@@ -3030,20 +3209,13 @@ export default class LiteRtSpikePlugin extends Plugin {
         const message = await conversation.sendMessage(
           `New page summary: ${summary}\n\nCatalog:\n${catalog}`
         );
-        let raw = '';
-        const content = message.content;
-        if (typeof content === 'string') raw = content;
-        else if (Array.isArray(content)) {
-          for (const part of content) {
-            if (part.type === 'text' && part.text) raw += part.text;
-          }
+        const raw = textOf(message.content);
+        const read = parseModelJson<{ related?: unknown }>(raw);
+        if (!read.ok) {
+          console.error(`[gemma-litert-wiki] pickRelated: ${read.reason}`, raw);
+          return [];
         }
-        const cleaned = raw
-          .trim()
-          .replace(/^```(?:json)?\s*/i, '')
-          .replace(/```\s*$/i, '')
-          .trim();
-        const parsed = JSON.parse(cleaned) as { related?: unknown };
+        const parsed = read.value;
         if (!Array.isArray(parsed.related)) return [];
         const byTitle = new Map(candidates.map((e) => [e.title, e]));
         // Entries are titles. An object with a `title` is still accepted —
@@ -3150,9 +3322,18 @@ export default class LiteRtSpikePlugin extends Plugin {
       ? ` When you must coin a new tag, name it following this convention: ${schema.naming.concept}.`
       : '';
 
+    // The second attempt used to run with exactly the same parameters as the
+    // first: try again and hope. It now knows why the first one failed, which
+    // is enough to widen the output budget in the one case where more room is
+    // the actual fix — and, more importantly, to NOT widen in the case that
+    // looks identical from the outside. See nextOutputCap.
+    let cap = INGEST_OUTPUT_TOKENS;
+    let failure: { reason: ParseFailure | null; repetitive: boolean } | null = null;
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       onProgress(attempt === 1 ? 'Extracting…' : 'Extracting (retry)…');
       let conversation: import('@litert-lm/core').Conversation | undefined;
+      failure = null;
       try {
         conversation = await engine.createConversation({
           preface: {
@@ -3181,25 +3362,20 @@ export default class LiteRtSpikePlugin extends Plugin {
           },
           sessionConfig: {
             samplerParams: { type: SamplerType.GREEDY },
-            maxOutputTokens: 768,
+            maxOutputTokens: cap,
           },
         });
 
         const message = await conversation.sendMessage(noteContent);
-        let raw = '';
-        const content = message.content;
-        if (typeof content === 'string') raw = content;
-        else if (Array.isArray(content)) {
-          for (const part of content) {
-            if (part.type === 'text' && part.text) raw += part.text;
-          }
+        const raw = textOf(message.content);
+        const read = parseModelJson<NoteExtraction>(raw);
+        if (!read.ok) {
+          // Recorded before it is thrown, because the retry has to know
+          // whether this was a run out of room or a run off the rails.
+          failure = { reason: read.reason, repetitive: looksRepetitive(raw).repetitive };
+          throw new Error(`Model output unusable (${read.reason}).`);
         }
-        const cleaned = raw
-          .trim()
-          .replace(/^```(?:json)?\s*/i, '')
-          .replace(/```\s*$/i, '')
-          .trim();
-        const parsed = JSON.parse(cleaned) as NoteExtraction;
+        const parsed = read.value;
         const valid =
           typeof parsed?.summary === 'string' &&
           Array.isArray(parsed.tags) &&
@@ -3209,6 +3385,22 @@ export default class LiteRtSpikePlugin extends Plugin {
           parsed.key_points.length >= 1 &&
           parsed.key_points.every((p) => typeof p === 'string');
         if (valid) {
+          // A repetition loop lands INSIDE a valid JSON string, so every check
+          // above passes it: `summary` is a string and `tags` has three
+          // entries whether the summary says something or says one phrase
+          // forty times. Greedy decoding at 768 output tokens is well inside
+          // the range where such a loop completes rather than truncating, so
+          // nothing else here would notice. Throwing spends the one retry this
+          // function already has.
+          if (
+            looksRepetitive(parsed.summary).repetitive ||
+            parsed.key_points.some((k) => looksRepetitive(k).repetitive)
+          ) {
+            // Parsed cleanly and is still a loop, so more room is certainly
+            // not the fix. Recorded so the retry does not go looking for one.
+            failure = { reason: null, repetitive: true };
+            throw new Error('Model output collapsed into a repetition loop.');
+          }
           // Tolerate a missing/invalid confidence rather than failing the
           // whole extraction — default to 'med'.
           if (!['high', 'med', 'low'].includes(parsed.confidence)) parsed.confidence = 'med';
@@ -3243,6 +3435,23 @@ export default class LiteRtSpikePlugin extends Plugin {
         throw new Error('Model returned JSON with the wrong shape.');
       } catch (err) {
         if (attempt === 2) throw err;
+        const decision = nextOutputCap({
+          current: cap,
+          // The window the engine granted, not the one in settings — those
+          // differ, which is the whole reason the granted value is kept.
+          granted: this.effectiveContextTokens ?? this.settings.contextTokens ?? 4096,
+          inputTokens: estimateImproveTokens(noteContent),
+          reason: failure?.reason ?? null,
+          repetitive: failure?.repetitive ?? false,
+        });
+        if (decision.widen) {
+          console.warn(
+            `[gemma-litert-wiki] extraction was cut off at ${cap} tokens; retrying at ${decision.cap}`
+          );
+          cap = decision.cap;
+        } else {
+          console.warn(`[gemma-litert-wiki] retrying at the same cap (${decision.why})`);
+        }
       } finally {
         await conversation?.delete().catch(() => {});
       }
@@ -3503,7 +3712,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         res.writeHead(403).end();
         return;
       }
-      const serve = (data: Buffer) => {
+      const serve = (data: Bytes) => {
         const ext = path.extname(filePath);
         res.writeHead(200, {
           'Content-Type': MIME[ext] ?? 'application/octet-stream',

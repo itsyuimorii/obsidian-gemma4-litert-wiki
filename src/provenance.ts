@@ -55,11 +55,13 @@ export async function sampleWikiPages(app: App, limit: number): Promise<Provenan
 export class ProvenanceReportModal extends Modal {
   private flags: ProvenanceFlag[];
   private checked: number;
+  private unchecked: number;
 
-  constructor(app: App, flags: ProvenanceFlag[], checked: number) {
+  constructor(app: App, flags: ProvenanceFlag[], checked: number, unchecked = 0) {
     super(app);
     this.flags = flags;
     this.checked = checked;
+    this.unchecked = unchecked;
   }
 
   onOpen() {
@@ -71,8 +73,25 @@ export class ProvenanceReportModal extends Modal {
       text: `Checked ${this.checked} page${this.checked === 1 ? '' : 's'}. ${this.flags.length} have key points the source note may not support — candidates to re-ingest, not verdicts.`,
     });
 
+    // A page the model could not be read on is not a page that passed. Saying
+    // so is the difference between "all clean" and "all clean, of the ones I
+    // managed to check".
+    if (this.unchecked) {
+      contentEl.createDiv({
+        cls: 'gemma4-lint-hint',
+        text:
+          `${this.unchecked} page${this.unchecked === 1 ? '' : 's'} could not be checked — the model's ` +
+          'reply was unusable or ran out of room. Those pages were not verified; run the check again to retry them.',
+      });
+    }
+
     if (!this.flags.length) {
-      contentEl.createDiv({ cls: 'gemma4-lint-ok', text: 'No unsupported key points found in the sample.' });
+      contentEl.createDiv({
+        cls: 'gemma4-lint-ok',
+        text: this.checked
+          ? 'No unsupported key points found in the pages that were checked.'
+          : 'No page could be checked.',
+      });
       return;
     }
 

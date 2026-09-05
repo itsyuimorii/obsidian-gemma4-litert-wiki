@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chunkForImprove, estimateImproveTokens, splitMarkdownBlocks } from '../src/pure.ts';
+import { chunkForImprove, estimateImproveTokens, splitMarkdownBlocks, improveOutputBudget } from '../src/pure.ts';
 
 const SAMPLES: Record<string, string> = {
   empty: '',
@@ -105,4 +105,59 @@ test('the token estimate is pessimistic for CJK', () => {
   // the worst failure mode here — so the estimate leans high on purpose.
   assert.ok(estimateImproveTokens('あ'.repeat(100)) > estimateImproveTokens('a'.repeat(100)));
   assert.equal(estimateImproveTokens(''), 0);
+});
+
+// ---------------------------------------------------------------------------
+// The output budget one pass is given
+// ---------------------------------------------------------------------------
+//
+// The bug this covers shipped in 1.0.0 through 1.0.7 and fired on the DEFAULT
+// setting. `maxOutputTokens` read `Math.min(2048, estimate + 300)` while the
+// chunker was handed `budget('improve')`, which is 24,000 tokens at the
+// default 64,000-token context. So a note of ~4,000 tokens was one chunk — no
+// multi-pass warning — sent to the model whole, and the rewrite was stopped at
+// 2,048 tokens. The truncated text then went into the preview looking like the
+// finished result.
+//
+// The invariant is simple enough to state in one line, which is exactly why it
+// is worth having a test hold on to it: a same-sized rewrite needs at least as
+// many output tokens as the input estimates at.
+
+test('improve: the output budget is never below the input estimate', () => {
+  for (const maxInput of [1750, 3269, 14439, 24000]) {
+    for (const size of [10, 400, 4_000, 40_000, 400_000]) {
+      const text = 'The quick brown fox jumps over the lazy dog. '.repeat(Math.ceil(size / 45));
+      const estimate = estimateImproveTokens(text);
+      const budget = improveOutputBudget(text, maxInput);
+      if (estimate <= maxInput) {
+        assert.ok(
+          budget >= estimate,
+          `input ~${estimate} tok would be truncated at ${budget} tok (maxInput ${maxInput})`
+        );
+      }
+    }
+  }
+});
+
+test('improve: every chunk the chunker produces fits the budget it is given', () => {
+  // The two numbers have to be read off the same input. This is the pairing
+  // that was broken: chunkForImprove sized chunks against budget('improve'),
+  // and the output cap ignored that number entirely.
+  const note = ['# A note', '', 'Paragraph one is here. '.repeat(300), '', 'Paragraph two. '.repeat(300)].join('\n');
+  for (const maxInput of [1750, 24000]) {
+    for (const chunk of chunkForImprove(note, maxInput)) {
+      if (chunk.verbatim) continue;
+      assert.ok(
+        improveOutputBudget(chunk.raw, maxInput) >= estimateImproveTokens(chunk.raw),
+        `a ${estimateImproveTokens(chunk.raw)}-token chunk got ${improveOutputBudget(chunk.raw, maxInput)} output tokens`
+      );
+    }
+  }
+});
+
+test('improve: CJK is measured by the same estimate, not by length', () => {
+  // 1.5 tok per CJK character vs 0.25 for Latin. A flat cap truncated CJK
+  // notes at roughly a third of the character count an English note survived.
+  const cjk = '这是一段中文笔记，用来测试输出预算是否跟着输入走。'.repeat(200);
+  assert.ok(improveOutputBudget(cjk, 24000) >= estimateImproveTokens(cjk));
 });
