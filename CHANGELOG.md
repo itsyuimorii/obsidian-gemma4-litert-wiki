@@ -4,6 +4,79 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.8 — 2026-09-05
+
+### Fixed
+
+- **Improve no longer truncates the rewrite at 2,048 tokens.** The output cap
+  read `Math.min(2048, estimate + 300)` under a comment saying it was not a
+  flat ceiling. It fired on the default setting: with a 64,000-token context
+  the chunker is handed 24,000 tokens, so an ordinary long note is **one**
+  chunk — not even the multi-pass warning appeared — and its rewrite stopped
+  a fifth of the way through. A 40 KB English note estimates at 10,002 tokens
+  and was given 2,048. CJK was hit hardest, at 1.5 tokens per character
+  against 0.25 for Latin. The budget now follows the input, and the invariant
+  — never below what the input estimates at — is held by three tests instead
+  of by a comment.
+- **A failed model call no longer reads as an empty result.** Provenance
+  returned `[]` on a bad parse, a failed generation *and* a thrown error —
+  the same value it returns when every key point traced cleanly, so a run
+  that never finished reported the page as verified. The report now
+  distinguishes the two: "6 checked, 0 flagged, 2 could not be checked".
+- **One JSON extractor for all eight model calls.** Two strategies were in
+  use side by side: a regex from the first brace to the *last* one anywhere
+  in the reply, and fence-stripping that did nothing when the model put a
+  sentence before the fence. Braces are counted now, skipping string literals
+  and escapes, and the failure is named — `no-json`, `cut-off`,
+  `invalid-json` — so a reply that ran out of room is distinguishable from
+  one that returned prose.
+- **Repetition loops are caught.** A loop lands inside a valid JSON string,
+  so `summary` is a string and `tags` has three entries whether the summary
+  says something or says one phrase forty times. Ingest now spends its retry
+  on it, and Improve keeps the author's text. Thresholds are deliberately
+  conservative and not yet calibrated; `[Test] JSON reliability test` prints
+  the two measurements on every run so they can be.
+
+### Added
+
+- **Tidy notices pages about the same subject.** A fifth repair, model-free
+  like the rest of the check: same canonical title, one page's title named in
+  another's `mentions:`, or two identifying mentions in common — with a
+  mention carried by a quarter of the wiki treated as a topic rather than an
+  identity, so a vault with a strong central theme does not pair everything
+  with everything. It **links** each pair and stops. Nothing is merged,
+  nothing is deleted, and there is no setting that turns merging on: two
+  notes about one subject are two pieces of writing, and which to keep is
+  yours.
+- **`schema.md` gains an `## Aliases` section.** Approving a retag already
+  decides that `llm-eval` means `evals`; that decision is now written down
+  instead of thrown away, which is what lets a page still carrying the old
+  tag be recognised as the same subject. Hand-editable like the other five
+  sections, and an alias onto a rejected tag is ignored.
+
+### Docs
+
+- The comparison table makes the claim that is actually ours: **every other
+  implementation of this pattern needs a second thing installed and running**
+  — true even of the ones offering a fully-local mode, because local there
+  means a daemon you keep alive. The other eight rows are the price, stated
+  plainly: one model and no bringing your own, no mobile and structurally so,
+  markdown only, English interface.
+- The store, README and tour now open in the same order: Gemma 4 E4B running
+  locally and free, then Karpathy's LLM wiki, then chat.
+
+### Internal
+
+- **The Node surface is declared rather than inferred.** The directory's
+  review reported ~150 `no-unsafe-*` findings, none of them about this code:
+  its scanner type-checks without our dependencies installed, so `node:fs`,
+  `node:path` and `node:http` resolved to `any`. One file now names the 14
+  `fs`, 4 `path` and 1 `http` functions this plugin calls and crosses the
+  boundary once. Measured under the scanner's condition: **200 findings
+  before, 0 after.** `lib` also moves to ES2022, because `Array.prototype.at`
+  was resolving only by accident through a dependency's lib reference.
+- **169 tests**, up from 101.
+
 ## 1.0.7 — 2026-09-05
 
 The release that makes the plugin installable from inside Obsidian.
