@@ -1,6 +1,6 @@
 # Demo recording deck
 
-Twenty-two scripted scenes, one HTML file each, built for screen recording. Open
+Twenty-three scripted scenes, one HTML file each, built for screen recording. Open
 `index.html` and pick one; inside a scene, **Space** advances one step.
 
 Nothing here runs the plugin. These are mock-ups of the Obsidian window with the
@@ -23,7 +23,7 @@ Before recording: press `H`, then decide on `P`.
 
 | File | What it is |
 |---|---|
-| `index.html` | the deck — all 22 scenes, grouped into seven acts |
+| `index.html` | the deck — all 23 scenes, grouped into seven acts |
 | `demo-runner.js` | the step driver, the typewriter, and the icon set |
 | `ob-shell.js` | the mock Obsidian window, the shared vault, and the chat-panel pieces |
 | `demo-shared.css` | every style in the deck |

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scene 08 · Improve formatting — Gemma Wiki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+</head>
+<body>
+
+<div class="environment"></div>
+<div class="grid-floor"></div>
+<div class="ambient-blob blob-a"></div>
+
+<div class="scene-title" id="sceneTitle">
+    <div class="num">Scene 08 — Improve formatting</div>
+    <div class="txt">The one command that writes into your note, and everything holding it back.</div>
+</div>
+
+<div class="stage"></div>
+
+<div class="keycap-overlay" id="keycapOverlay"></div>
+<div class="proto-badge" id="protoBadge"><span class="d"></span>Prototype · scripted mock-up</div>
+<div class="hint-bar" id="hintBar"><kbd>Space</kbd> next · <kbd>R</kbd> restart · <kbd>H</kbd> hide chrome</div>
+
+<script src="demo-runner.js"></script>
+<script src="ob-shell.js"></script>
+<script>
+const { $, $$, typeHTML, flashKeys, beat, notice, status, statusDone, statusReview, reveal, progress } = GemmaDemo;
+
+const MESSY = `
+<p class="fmtext">---
+created: 2026-08-19
+---</p>
+<h1>agent interfaces</h1>
+<p>notes from three papers,not cleaned up. the seat problem keeps coming back</p>
+<p>*a "seat" needs identity, WebMCP has none<br>
+* so the page has to invent one<br>
+*which every page will do diferently</p>
+<p>turn-taking — same wall. two agents,one page:</p>
+<p>1. page-issued tokens<br>
+3. optimistic locking<br>
+4. or just a queue</p>`;
+
+const CLEAN = `
+<p class="fmtext">---
+created: 2026-08-19
+---</p>
+<h1>agent interfaces</h1>
+<p>Notes from three papers, not cleaned up. The seat problem keeps coming back.</p>
+<ul><li>A "seat" needs identity, WebMCP has none</li>
+<li>So the page has to invent one</li>
+<li>Which every page will do differently</li></ul>
+<p>Turn-taking — same wall. Two agents, one page:</p>
+<p>1. page-issued tokens<br>
+2. optimistic locking<br>
+3. or just a queue</p>`;
+
+OB.render({
+    tab: { name: 'agent interfaces', icon: 'file-text' },
+    words: '1,940 words',
+    tree: VAULT.tree('filed', 'agentif'),
+    editor: MESSY,
+});
+
+GemmaDemo.init([
+    { do: () => {
+        beat('A note taken in a hurry: list markers three different ways, a numbered list that skips 2, spacing gone. The words are fine — the <i>shape</i> is the mess.');
+    }},
+
+    { lock: 1400, do: () => {
+        OB.palette('improve', [{ name: 'Gemma 4 LiteRT Wiki: Improve formatting of active note (local Gemma)', icon: 'sparkles' }]);
+        beat('This is the <b>one command in the plugin that writes into a note of yours</b> — everything else writes only into <code>gemma-wiki/</code>. Which is exactly why it is the most constrained call here.');
+    }},
+
+    { lock: 1600, do: () => {
+        OB.closePalette();
+        flashKeys(['↵']);
+        OB.modal(`
+            <div class="head"><h3>Improve a long note</h3></div>
+            <div class="scroll">
+                <p>"agent interfaces" is ~2600 tokens — more than one pass fits in the model's context window, so Improve will work through it in 4 passes, split on headings and blank lines, and stitch the result back together.</p>
+                <p style="margin-top:10px">Budget roughly half a minute per pass. You still review the whole result before anything is written.</p>
+            </div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok">Run 4 passes</button></div>`, 'narrow');
+        beat('Long note, so it asks first — <b>with the cost in minutes, before it starts</b>, not discovered after. Short notes skip straight past this dialog.');
+    }},
+
+    { lock: 1800, do: () => {
+        $('#ok').classList.add('pressed');
+        OB.closeModal();
+        status('Improving "agent interfaces" — pass 1/4…');
+        beat('Each pass is one section, split on the note\'s own headings and blank lines — a boundary never lands mid-paragraph, and the frontmatter is handed back untouched rather than retyped by a model.');
+    }},
+
+    { lock: 1600, do: () => {
+        status('Improving "agent interfaces" — pass 3/4…');
+        beat('The prompt is a list of things it must <b>not</b> do: never rephrase, never translate, never touch wikilinks, tags, callouts, code, or tables. When it is unsure whether something is a typo, <b>the rule is to leave it as written</b> — a copy editor, not a co-author.');
+    }},
+
+    { lock: 1800, do: () => {
+        status(null);
+        OB.modal(`
+            <div class="head"><h3>Review your note before it is rewritten</h3><div class="path">Will overwrite: research/agent interfaces.md — 4 passes</div></div>
+            <div class="scroll md">${CLEAN}</div>
+            <div class="foot"><button class="ob-btn">Cancel</button><button class="ob-btn cta" id="ok2">Approve and write</button></div>`, 'wide');
+        beat(null);
+    }},
+
+    { lock: 2000, do: () => {
+        beat('The whole result, before a byte is written. Read what changed: markers unified, the numbered list counts again, sentence caps and one <i>diferently</i> fixed. And read what did not — <b>every word is still yours, in your order</b>.');
+    }},
+
+    { lock: 2200, do: () => {
+        beat('One more guard you cannot see: a four-pass run is minutes, and this preview waits as long as you like. If you typed into the note meanwhile, approving <b>refuses instead of merging</b> — a stitched rewrite and your hand edit are two versions, and picking between them is your call, not a merge heuristic\'s.');
+    }},
+
+    { lock: 1500, do: () => {
+        $('#ok2').classList.add('pressed');
+        OB.closeModal();
+        $('#editor').innerHTML = CLEAN;
+        notice('✅ Note updated: agent interfaces', 5000);
+        beat('Written on approval, logged in <code>log.md</code> like everything else.');
+    }},
+
+    { do: () => {
+        beat('And it aims: <b>select a section first and only that section is rewritten</b> — the range is pinned before the run, so the minutes in between cannot move the target. The ✨ <b>Formatting</b> chip in the chat panel is this same command, one click closer.');
+    }},
+]);
+
+</script>
+</body>
+</html>
