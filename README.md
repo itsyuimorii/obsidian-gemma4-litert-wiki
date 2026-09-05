@@ -11,11 +11,15 @@
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
-<p align="center"><a href="https://gemma-wiki-demo.vercel.app"><b>▶ Watch it work</b></a> — 23 interactive scenes, every feature from first run to a full wiki. Nothing to install; arrow keys to step through.</p>
+<p align="center"><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install.</p>
+
+<p align="center"><img src="assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900"></p>
 
 **Free, private, offline AI for your notes** — no API key, no subscription, no tokens ever billed, no account to make.
 
 Gemma 4 E4B runs inside Obsidian's own process via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. Not Ollama, not LM Studio, not a localhost server — the model is *in* the app. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy here is a property of the architecture, not a promise in a policy. After its one-time downloads — the ~3 GB model and the WebAssembly runtime, both listed under [Privacy](#-privacy) — the plugin never touches the network again.
+
+<p align="center"><img src="assets/poster/poster-p03.png" alt="Three layers: your notes (yours, immutable), gemma-wiki (the model maintains it), schema.md (yours, the rules)." width="900"></p>
 
 It implements **[Andrej Karpathy's LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: your raw notes are never modified *by the model* — the immutability constraint binds the LLM, not you, and editing your own notes is the normal fix when a chat surfaces a mistake (the wiki detects the change and offers to re-ingest). A separate, cross-linked wiki layer is built above them — one card per note, and **every page is shown to you in full before a single byte is written**.
 
@@ -109,6 +113,8 @@ rest build and maintain a layer beside your notes and never touch them.
 - **Three surfaces, one job each.** A toast is a *moment*, so it reports starts and results. A run is not a moment: progress lives in the status bar, which is always visible, never covers the note, cannot be dismissed by accident, and can be clicked to repeat itself. And a result dialog **only opens by itself if you never looked away** — if you went back to your notes while a multi-minute scan ran, it waits on the status bar until you ask for it, rather than stealing the window out from under whatever you were typing.
 
 ## 💬 Chat with your notes — entirely offline
+
+<p align="center"><img src="assets/poster/poster-p02.png" alt="Wiki mode: the index open in the editor while the panel answers a question spanning four pages, each named in the Sources row." width="900"></p>
 
 Click the book-and-spark ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
 

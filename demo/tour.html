@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What Gemma Wiki Does</title>
+<meta name="description" content="Every feature of the Gemma 4 LiteRT Wiki plugin for Obsidian, most important first.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%237C5CFF'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo-shared.css">
+<style>
+  /* The deck's dark violet, with the light poster plates sitting in it like
+     lit screens. Reading measure stays near 66 characters; the plates go wider
+     than the prose, which is what makes them read as exhibits rather than
+     illustrations. */
+  body, html { overflow: auto; height: auto; }
+  .wrap { position: relative; z-index: 10; max-width: 1120px; margin: 0 auto; padding: 88px 32px 140px; }
+  .prose { max-width: 660px; }
+
+  .home-link {
+    display: inline-flex; align-items: center; gap: 9px; text-decoration: none;
+    color: var(--text-dim); margin-bottom: 40px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase;
+    transition: color .2s;
+  }
+  .home-link:hover { color: var(--text-main); }
+  .home-link .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--violet); box-shadow: 0 0 12px var(--violet-glow); }
+
+  .kicker { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.6px; text-transform: uppercase; color: var(--violet); }
+  h1 { font-size: 52px; font-weight: 600; letter-spacing: -1.4px; line-height: 1.04; margin: 14px 0 20px; color: #fff; text-wrap: balance; }
+  .lede { font-size: 16.5px; line-height: 1.72; color: var(--text-muted); }
+  .lede b { color: var(--text-main); font-weight: 500; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 30px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase; }
+  .meta span, .meta a { color: var(--text-dim); border: 1px solid var(--glass-border-light); border-radius: 999px; padding: 6px 13px; text-decoration: none; }
+  .meta a:hover { color: var(--text-main); border-color: rgba(167,139,250,.4); }
+  .meta .hot { color: var(--violet); border-color: rgba(167,139,250,.35); background: var(--violet-soft); }
+
+  /* ---------- one feature ---------- */
+  .feat { margin-top: 92px; scroll-margin-top: 40px; }
+  .feat .head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px; }
+  .feat .n { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--violet); opacity: .7; flex: none; }
+  .feat h2 { font-size: 27px; font-weight: 600; letter-spacing: -.5px; line-height: 1.24; color: #fff; text-wrap: balance; }
+  .feat .why { font-size: 15.5px; line-height: 1.74; color: var(--text-muted); }
+  .feat .why + .why { margin-top: 13px; }
+  .feat .why b { color: var(--text-main); font-weight: 500; }
+  .feat .why code { font-family: var(--font-mono); font-size: 12.5px; color: var(--violet); background: var(--violet-soft); border-radius: 4px; padding: 1.5px 6px; }
+
+  .plate { margin-top: 26px; border-radius: 18px; overflow: hidden; border: 1px solid var(--glass-border-light); box-shadow: 0 40px 80px -34px rgba(0,0,0,.8); background: #F1F3F6; }
+  .plate img { display: block; width: 100%; height: auto; }
+  .cmd { margin-top: 14px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-dim); }
+  .cmd b { color: var(--violet); font-weight: 400; }
+
+  /* section divider between the four parts */
+  .part { margin-top: 108px; display: flex; align-items: center; gap: 18px; }
+  .part span { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.4px; text-transform: uppercase; color: var(--violet); white-space: nowrap; }
+  .part::after { content: ''; height: 1px; flex: 1; background: linear-gradient(90deg, rgba(167,139,250,.32), transparent); }
+
+  .end { margin-top: 108px; border: 1px solid var(--glass-border-light); border-radius: 20px; padding: 34px 36px; background: rgba(255,255,255,.03); }
+  .end h3 { font-size: 22px; font-weight: 600; color: #fff; letter-spacing: -.4px; margin-bottom: 10px; }
+  .end p { font-size: 14.5px; line-height: 1.7; color: var(--text-muted); max-width: 620px; }
+  .end .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .end a { text-decoration: none; font-size: 13px; font-weight: 600; border-radius: 999px; padding: 11px 20px; }
+  .end a.cta { color: #0C0916; background: var(--violet); }
+  .end a.ghost { color: var(--text-main); border: 1px solid var(--glass-border-light); }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 56px 20px 100px; }
+    h1 { font-size: 36px; }
+    .feat { margin-top: 64px; }
+    .feat h2 { font-size: 22px; }
+    .feat .head { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a class="home-link" href="index.html"><span class="dot"></span>Recording deck · 23 scenes</a>
+
+  <div class="prose">
+    <div class="kicker">Gemma 4 LiteRT Wiki · Obsidian plugin</div>
+    <h1>Everything it does, most important first.</h1>
+    <p class="lede">Gemma 4 runs <b>inside Obsidian's own process</b> — not Ollama, not LM Studio, not a localhost server you start first. From there it builds and maintains a wiki above your notes, following <b>Andrej Karpathy's LLM-wiki pattern</b>, and answers questions grounded in what you actually wrote.</p>
+    <div class="meta">
+      <span class="hot">In the community store</span>
+      <span>Free &amp; open source</span>
+      <span>Offline after one download</span>
+      <a href="https://github.com/itsyuimorii/obsidian-gemma4-litert-wiki">GitHub ↗</a>
+    </div>
+  </div>
+
+  <div class="part"><span>What makes it different</span></div>
+
+  <section class="feat" id="chat-note">
+    <div class="head"><span class="n">01</span><h2>Ask a note, and the model is already there</h2></div>
+    <div class="prose">
+      <p class="why">Every other local-AI plugin for Obsidian talks to something else — Ollama, LM Studio, a server on <code>localhost:11434</code> that you install, configure and keep running. This one loads Gemma 4 into Obsidian's own renderer through LiteRT-LM and WebGPU. <b>There is no second app.</b></p>
+      <p class="why">Ask about the note you have open and the answer is grounded in it. Follow-ups work: <i>"so why does that taste bitter?"</i> carries the previous exchange, because the panel is a conversation and not a list of unrelated questions.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note with a Sources row."></div>
+    <p class="cmd">Command · <b>Chat with active note (local Gemma)</b></p>
+  </section>
+
+  <section class="feat" id="chat-wiki">
+    <div class="head"><span class="n">02</span><h2>Or ask the whole vault at once</h2></div>
+    <div class="prose">
+      <p class="why">Switch to Wiki mode and the question goes to everything you have filed. Retrieval is <b>index-first</b>: the plugin reads <code>index.md</code> — one line per page — decides which pages are worth opening, and opens only those.</p>
+      <p class="why">Every answer ends with a <b>Sources</b> row listing exactly the pages it stood on. That row is written by the plugin, never by the model: citation is the one thing a small local model would get wrong without anyone noticing.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p02.png" alt="Wiki mode: the index open in the editor while the panel answers a question spanning four pages, each named in the Sources row."></div>
+    <p class="cmd">Mode · <b>Wiki</b> · reads index.md before deciding what to open</p>
+  </section>
+
+  <section class="feat" id="layers">
+    <div class="head"><span class="n">03</span><h2>Three layers, and only one of them is yours to lose</h2></div>
+    <div class="prose">
+      <p class="why">Karpathy's pattern separates <b>raw sources</b> (immutable), the <b>wiki</b> (owned by the model), and a <b>schema</b> file holding the conventions. This plugin implements that literally.</p>
+      <p class="why">Your notes stay wherever you keep them and the model never edits, moves or renames them. Above them sits <code>gemma-wiki/</code> — one card per note, concept pages across them, an index and an append-only log. And <code>schema.md</code> holds your tag vocabulary and a rejected list that <b>outranks the model</b>: a tag you deleted by hand never comes back.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p03.png" alt="Three stacked layers: your notes (yours, immutable), gemma-wiki (model maintains), schema.md (yours, config), with ingest and rules arrows between them."></div>
+    <p class="cmd">Layout · <b>gemma-wiki/</b> — plain markdown, readable without this plugin</p>
+  </section>
+
+  <section class="feat" id="offline">
+    <div class="head"><span class="n">04</span><h2>One download, then it never touches the network</h2></div>
+    <div class="prose">
+      <p class="why">Two one-time downloads — the ~3 GB model and the WebAssembly runtime — both cached on your disk. After that, nothing. No telemetry, no analytics, no account, no API key, no tokens ever billed.</p>
+      <p class="why"><b>Your notes are never uploaded anywhere, because there is nowhere to upload them to.</b> Privacy here is a property of the architecture rather than a promise in a policy.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p14.png" alt="The settings pane showing the local model downloaded and ready, with two guarantees: runs inside Obsidian's process, and no telemetry or account."></div>
+    <p class="cmd">Command · <b>Download model (one-time, ~3GB)</b></p>
+  </section>
+
+  <div class="part"><span>The loop</span></div>
+
+  <section class="feat" id="ingest">
+    <div class="head"><span class="n">05</span><h2>Nothing is written until you have read it</h2></div>
+    <div class="prose">
+      <p class="why">Ingesting a note produces one card: a summary, three tags, key points, the mentions it found, and the model's own <b>confidence</b> in its extraction. All of it is rendered in full, exactly as it will be saved, before a single byte lands.</p>
+      <p class="why">This is the gate every write in the plugin passes through — ingest, concept pages, retagging, relinking, and the one command that rewrites a note of yours.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p04.png" alt="The review modal showing the drafted card in full — summary, tags, key points, confidence — above Cancel and Approve and write."></div>
+    <p class="cmd">Command · <b>Ingest this note into wiki (local Gemma)</b></p>
+  </section>
+
+  <section class="feat" id="scan">
+    <div class="head"><span class="n">06</span><h2>Sweep a folder, read the shaky ones first</h2></div>
+    <div class="prose">
+      <p class="why">Scan drafts a card for every new or changed note in the folders you named, then shows them in one list <b>sorted lowest-confidence first</b> — so the pages most in need of a human eye are the ones you read while you still have patience. Untick anything that should not have become a page.</p>
+      <p class="why">Scope is opt-in: leave the folder list empty and scan refuses to run rather than sweeping your whole vault.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p05.png" alt="A batch review list of drafted pages with confidence flags, the low-confidence one at the top and unticked."></div>
+    <p class="cmd">Command · <b>Scan a folder into the wiki (batch, local Gemma)</b></p>
+  </section>
+
+  <section class="feat" id="card">
+    <div class="head"><span class="n">07</span><h2>A card knows which note it came from</h2></div>
+    <div class="prose">
+      <p class="why">Each card records <code>source</code> and <code>source_hash</code> in its frontmatter — the path of the note it summarises, and what that note looked like at the time.</p>
+      <p class="why">That hash is what makes <b>drift</b> detectable. Edit the original note and the card is now describing something that changed; the review board says so. Fixing the note is the real fix — a card edited by hand is a patch the next re-ingest overwrites.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p06.png" alt="A generated card in the editor showing key points and Related links, with the panel explaining that its frontmatter names the source note."></div>
+    <p class="cmd">Folder · <b>gemma-wiki/cards/</b> — one card per ingested note</p>
+  </section>
+
+  <section class="feat" id="concepts">
+    <div class="head"><span class="n">08</span><h2>A page above your pages</h2></div>
+    <div class="prose">
+      <p class="why">Once two or more cards share a tag or a salient mention, the plugin can write the page that sits <b>above</b> them and links down into each one. Ingesting a new note ripples into it, and member lists heal in both directions.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p07.png" alt="A concept page for coffee, linking down into four member cards, marked as generated."></div>
+    <p class="cmd">Command · <b>Build a concept page from a tag or mention (local Gemma)</b></p>
+  </section>
+
+  <div class="part"><span>Keeping it honest</span></div>
+
+  <section class="feat" id="review-board">
+    <div class="head"><span class="n">09</span><h2>It tells you when it has gone stale</h2></div>
+    <div class="prose">
+      <p class="why">A wiki nobody reviews is the failure mode this is built against. Three ways a page goes bad, in one queue: <b>low self-rated confidence</b>, <b>source drift</b> caught by the hash, and plain <b>staleness</b>. Concept overviews are checked too.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p08.png" alt="The review board listing three pages flagged DRIFTED, LOW and STALE."></div>
+    <p class="cmd">Command · <b>Review board (low-confidence, drifted, and stale pages)</b></p>
+  </section>
+
+  <section class="feat" id="honest">
+    <div class="head"><span class="n">10</span><h2>Every claim has to come from somewhere</h2></div>
+    <div class="prose">
+      <p class="why">The <b>provenance spot-check</b> takes a page's key points back to the raw note and flags the ones no sentence supports — catching the case where ingest wrote something the note never said.</p>
+      <p class="why">The <b>contradiction sweep</b> checks pairs of pages sharing a tag for claims that disagree, recently-changed pairs first. It quotes the reason and <b>never edits</b>: deciding which one was wrong is yours, and fixing the note behind it is the real repair.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p09.png" alt="The contradiction sweep showing two pages that disagree about a temperature range, flagged rather than fixed."></div>
+    <p class="cmd">Commands · <b>Provenance spot-check</b> · <b>Find contradictions in wiki</b></p>
+  </section>
+
+  <section class="feat" id="tidy">
+    <div class="head"><span class="n">11</span><h2>One command keeps the wiki tidy</h2></div>
+    <div class="prose">
+      <p class="why">The check runs <b>no model at all</b>: orphan pages, index entries pointing at deleted files, pages missing from the index, and how far your tags have drifted from the vocabulary. Then four repairs are offered — make links mutual, drop dead entries, rebuild the vocabulary, apply it to existing pages — each behind its own preview, ticked where the check found something.</p>
+      <p class="why">Availability is never tied to detection. A check good enough to pick a sensible default is not good enough to be the only way in.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p10.png" alt="The Tidy dialog listing four repairs with two ticked and a Run 2 of these button."></div>
+    <p class="cmd">Command · <b>Tidy the wiki (check, then fix what you approve)</b></p>
+  </section>
+
+  <div class="part"><span>Every day</span></div>
+
+  <section class="feat" id="skills">
+    <div class="head"><span class="n">12</span><h2>Quiz yourself on what you just wrote</h2></div>
+    <div class="prose">
+      <p class="why">The ⚡ menu holds canned single-task prompts against the open note — <b>Quiz</b>, <b>Flashcards</b>, <b>Find gaps</b>. Every answer still carries its Sources row.</p>
+      <p class="why">And the menu is extensible by dropping a file: any markdown file in <code>gemma-wiki/skills/</code> becomes a menu item, frontmatter for the name and icon, the body as the prompt. Add a file, get a command; delete it and it is gone.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p11.png" alt="The skills menu open with Quiz, Flashcards and Find gaps built in, plus two of the user's own skill files, and numbered questions in the panel."></div>
+    <p class="cmd">Panel · <b>⚡ skills</b> · plus anything in gemma-wiki/skills/</p>
+  </section>
+
+  <section class="feat" id="improve">
+    <div class="head"><span class="n">13</span><h2>Tidy the writing, keep every word</h2></div>
+    <div class="prose">
+      <p class="why">Improve is the one command that rewrites a note you wrote. It touches <b>structure, lists and obvious typos only</b> — wording and voice preserved, never translated, code blocks and callouts untouched. A long note is rewritten in passes and stitched back together, and the whole result is shown before anything is written.</p>
+      <p class="why">If you edit the note while it runs, it refuses rather than overwriting you.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p12.png" alt="The Improve preview showing the rewritten note with a note that only structure and typos changed."></div>
+    <p class="cmd">Command · <b>Improve formatting of active note (local Gemma)</b></p>
+  </section>
+
+  <section class="feat" id="chats">
+    <div class="head"><span class="n">14</span><h2>Keep a conversation — without letting it become material</h2></div>
+    <div class="prose">
+      <p class="why">Save a thread and it lands in <code>gemma-wiki/chats/</code>, named after its first question, with each answer keeping the Sources it stood on. The folder has its own index listing everything you kept, newest first.</p>
+      <p class="why">Nothing in it is retrieved, indexed, linted or scanned. <b>A chat in the wiki index would be indistinguishable from a page</b> — and an answer read back as material comes back months later cited to your own notes. An answer is output, never input. To make one count, put it in a note of your own and scan that, like anything else you wrote.</p>
+    </div>
+    <div class="plate"><img src="posters/poster-p13.png" alt="The chats folder with its own index of saved conversations, and a saved thread in the panel."></div>
+    <p class="cmd">Panel · <b>💾 Save conversation</b> · writes to gemma-wiki/chats/</p>
+  </section>
+
+  <div class="end">
+    <h3>See it move</h3>
+    <p>The recording deck walks the same features as 23 stepped scenes, from first run to a maintained wiki — scripted mock-ups, arrow keys to advance.</p>
+    <div class="row">
+      <a class="cta" href="index.html">Open the deck →</a>
+      <a class="ghost" href="https://github.com/itsyuimorii/obsidian-gemma4-litert-wiki">Source on GitHub</a>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
