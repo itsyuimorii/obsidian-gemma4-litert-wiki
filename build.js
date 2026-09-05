@@ -31,6 +31,13 @@ await build({
     BUILD_STAMP: JSON.stringify(stamp),
     __LITERT_VERSION__: JSON.stringify(litertVersion),
   },
+  // The vendor's WASM loader creates a <script> element to load the Emscripten
+  // glue. Obsidian's automated review reports that as dynamic script injection
+  // and an Error there blocks installation — and because the check is static,
+  // it fires on the string being in the bundle, not on the branch running. Our
+  // replacement requires the file off disk instead, so the string is never
+  // compiled in. See src/wasm-loader.ts.
+  alias: { '@litertjs/wasm-utils': './src/wasm-loader.ts' },
   entryPoints: ['src/main.ts'],
   outfile: 'main.js',
   bundle: true,
