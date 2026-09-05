@@ -4,6 +4,26 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.6 — 2026-09-05
+
+### Added
+
+- **Settings appear in Obsidian's settings search** (1.13+). Eight settings are
+  declared through `getSettingDefinitions()` with descriptions and aliases, so
+  typing "tokens", "badge" or "ignore" finds the right one. `display()` stays
+  for the 1.11.4 floor and for the parts of the pane that are not settings —
+  the model download with live progress, the folder-state table, the buttons
+  that open a file.
+
+### Fixed
+
+- A failed model-file write now rejects with an `Error` whatever the platform
+  types resolve to. Everything downstream — the `instanceof Error` checks, the
+  status toast printing `.message` — already assumed one.
+- The context-window dropdown would have opened with nothing selected under
+  the declarative API: its options are keyed by string while the setting is
+  stored as a number. Caught by the behavioural test, not by review.
+
 ## 1.0.5 — 2026-09-05
 
 One sentence, everywhere. The store description, the README opening and the
