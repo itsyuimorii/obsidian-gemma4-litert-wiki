@@ -1107,16 +1107,22 @@
   color: var(--text-error);
 }
 
-/* Paths in the folder map open the file they name. */
+/* Paths in the folder map open the file they name.
+
+   Drawn with a border rather than an underline: text-decoration-color and
+   text-underline-offset are only partially supported on the 1.11.4 floor this
+   plugin declares, so on an older Electron the rule degraded to a full-colour
+   underline at the default offset — louder than intended, and the hover had
+   nothing left to change. A border gives the same hairline at the same
+   distance, everywhere. */
 .gemma4-folder-path.is-link {
   cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: var(--background-modifier-border);
-  text-underline-offset: 3px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 2px;
 }
 .gemma4-folder-path.is-link:hover {
   color: var(--text-accent);
-  text-decoration-color: var(--text-accent);
+  border-bottom-color: var(--text-accent);
 }
 
 /* The one-time card shown after the plugin creates its folder. Laid out as a
