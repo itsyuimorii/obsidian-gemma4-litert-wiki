@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<h1 align="center">Gemma Wiki</h1>
+<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
 
 <p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b><br>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
 
