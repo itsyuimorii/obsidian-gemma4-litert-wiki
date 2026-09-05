@@ -157,7 +157,7 @@ export class Progress {
   /** It threw. `what` names the operation, e.g. 'Downloading the model'. */
   fail(what: string, err: unknown, vault?: Vault) {
     const text = failureText(what, err);
-    console.error(`[gemma4-litert-wiki] ${what} failed`, err);
+    console.error(`[gemma-litert-wiki] ${what} failed`, err);
     if (vault) void logNotice(vault, 'error', text);
     this.finish('error', text, DURATION.LONG);
   }

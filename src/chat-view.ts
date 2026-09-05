@@ -129,7 +129,7 @@ class NotePickerModal extends FuzzySuggestModal<TFile> {
   }
 }
 
-export const VIEW_TYPE_CHAT = 'gemma4-litert-wiki-chat-view';
+export const VIEW_TYPE_CHAT = 'gemma-litert-wiki-chat-view';
 
 // How much grounding content to feed per answer, derived from the configured
 // context window (settings) minus room for the answer and instructions.
@@ -494,7 +494,7 @@ export class ChatView extends ItemView {
         await appendLog(this.app.vault, 'chat', notePath);
         notify('done', `Saved: ${notePath}`);
       })().catch((err) => {
-        console.error('[gemma4-litert-wiki] saving the conversation failed', err);
+        console.error('[gemma-litert-wiki] saving the conversation failed', err);
         notify('error', `Could not save the conversation — ${err instanceof Error ? err.message : String(err)}`);
       });
     }, 'Review note before writing').open();
@@ -1557,7 +1557,7 @@ export class ChatView extends ItemView {
 
       this.scrollToBottom();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] chat failed', err);
+      console.error('[gemma-litert-wiki] chat failed', err);
       typing.remove();
       body.createDiv({
         cls: 'gemma4-chat-error',

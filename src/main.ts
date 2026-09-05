@@ -98,7 +98,7 @@ export function setDebugLogging(on: boolean) {
   debugLogging = on;
 }
 function log(...args: unknown[]) {
-  if (debugLogging) console.log('[gemma4-litert-wiki]', ...args);
+  if (debugLogging) console.log('[gemma-litert-wiki]', ...args);
 }
 
 async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
@@ -548,7 +548,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
   /** Report a thrown error through the status toast, in the house style. */
   private statusFail(what: string, err: unknown) {
-    console.error(`[gemma4-litert-wiki] ${what} failed`, err);
+    console.error(`[gemma-litert-wiki] ${what} failed`, err);
     this.statusEnd(failureText(what, err), 'error');
   }
 
@@ -1200,7 +1200,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (engine) {
       void engine
         .then((e) => e.delete())
-        .catch((err) => console.error('[gemma4-litert-wiki] engine teardown failed', err));
+        .catch((err) => console.error('[gemma-litert-wiki] engine teardown failed', err));
     }
   }
 
@@ -1445,7 +1445,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       vocab = await this.cleanTagVocabulary(counts);
       this.statusEnd('Vocabulary ready — review it below.');
     } catch (err) {
-      console.error('[gemma4-litert-wiki] vocab suggest failed', err);
+      console.error('[gemma-litert-wiki] vocab suggest failed', err);
       this.statusFail('Suggest', err);
       return false;
     }
@@ -1683,7 +1683,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
       this.statusEnd();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] contradiction scan failed', err);
+      console.error('[gemma-litert-wiki] contradiction scan failed', err);
       this.statusFail('Contradiction scan', err);
       return;
     }
@@ -1730,7 +1730,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
       this.statusEnd();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] provenance check failed', err);
+      console.error('[gemma-litert-wiki] provenance check failed', err);
       this.statusFail('Provenance check', err);
       return;
     }
@@ -1842,7 +1842,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       mapping = await this.mapTagsToVocabulary(vocab, [...offVocab]);
       this.statusEnd();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] retag mapping failed', err);
+      console.error('[gemma-litert-wiki] retag mapping failed', err);
       this.statusFail('Retag', err);
       return;
     }
@@ -2212,7 +2212,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           overview = await this.summarizeConcept(cluster.tag, cluster.members);
           this.statusEnd();
         } catch (err) {
-          console.error('[gemma4-litert-wiki] concept overview failed', err);
+          console.error('[gemma-litert-wiki] concept overview failed', err);
           this.statusFail('Concept page', err);
           return;
         }
@@ -2339,7 +2339,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
       return verdict;
     } catch (err) {
-      console.error('[gemma4-litert-wiki] judgeContradiction parse/gen failed', err);
+      console.error('[gemma-litert-wiki] judgeContradiction parse/gen failed', err);
       return null; // a bad judgment just drops the pair; never blocks the sweep
     } finally {
       await conversation?.delete().catch(() => {});
@@ -2383,7 +2383,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       const valid = new Set(keyPoints);
       return parsed.unsupported.filter((u): u is string => typeof u === 'string' && valid.has(u));
     } catch (err) {
-      console.error('[gemma4-litert-wiki] checkProvenance parse/gen failed', err);
+      console.error('[gemma-litert-wiki] checkProvenance parse/gen failed', err);
       return [];
     } finally {
       await conversation?.delete().catch(() => {});
@@ -2430,7 +2430,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.reviewCount = result.eligible.length + result.cappedOut;
       this.renderStatusBar();
     } catch (err) {
-      console.error('[gemma4-litert-wiki] scan badge refresh failed', err);
+      console.error('[gemma-litert-wiki] scan badge refresh failed', err);
       this.reviewCount = 0;
       this.renderStatusBar();
     }
@@ -2800,7 +2800,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           confidence: extraction.confidence,
         });
       } catch (err) {
-        console.error('[gemma4-litert-wiki] draft failed', file.path, err);
+        console.error('[gemma-litert-wiki] draft failed', file.path, err);
         failed++;
       }
     }
@@ -3023,7 +3023,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         } catch (err) {
           // One bad pass must not cost the user the other twenty: keep the
           // author's text for that section and say so at the end.
-          console.error(`[gemma4-litert-wiki] improve pass ${pass}/${passes} failed`, err);
+          console.error(`[gemma-litert-wiki] improve pass ${pass}/${passes} failed`, err);
           failed++;
           pieces.push(chunk.raw);
         } finally {
@@ -3219,7 +3219,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           // The model answered but nothing matched the catalog — a distinct
           // failure from "no page qualified", and one the user cannot see.
           console.warn(
-            '[gemma4-litert-wiki] related-pages: model returned titles that match no catalog entry',
+            '[gemma-litert-wiki] related-pages: model returned titles that match no catalog entry',
             { returned: titles, catalog: candidates.map((c) => c.title) }
           );
         }
@@ -3236,7 +3236,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // Non-blocking: ingest proceeds without related links. Logged loudly
       // because an empty Related section otherwise looks identical to
       // "nothing qualified" — this is how a broken picker stayed invisible.
-      console.error('[gemma4-litert-wiki] related-pages pick FAILED — page will have no Related section', err);
+      console.error('[gemma-litert-wiki] related-pages pick FAILED — page will have no Related section', err);
       return [];
     }
   }
@@ -3680,7 +3680,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           })
           .catch((fetchErr: unknown) => {
             const message = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-            console.error('[gemma4-litert-wiki] runtime fetch failed', fetchErr);
+            console.error('[gemma-litert-wiki] runtime fetch failed', fetchErr);
             this.statusEnd(`Runtime download failed — ${message}`, 'error');
             res.writeHead(502).end();
           });

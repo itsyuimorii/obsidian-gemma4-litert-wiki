@@ -122,7 +122,7 @@ Gemma 4 E4B は [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) と Web
 - ネットワークアクセスは、これらの初回ダウンロードのときだけ必要です。それ以降ネットワーク呼び出しは行いません
 
 > **この vault を同期している場合は、モデルファイルを除外してください。** ダウンロード先は
-> `<vault>/.obsidian/plugins/gemma4-litert-wiki/gemma-4-E4B-it-web.litertlm` です。Obsidian は
+> `<vault>/.obsidian/plugins/gemma-litert-wiki/gemma-4-E4B-it-web.litertlm` です。Obsidian は
 > プラグインに vault の外の書き込み先を与えないためです。したがって iCloud、Dropbox、および
 > 「コミュニティプラグイン」を有効にした Obsidian Sync は、いずれも約 3 GB をすべてのマシンへ
 > 複製してしまいます。各マシンが自分で一度ダウンロードするほうが、はるかに短時間で済みます。

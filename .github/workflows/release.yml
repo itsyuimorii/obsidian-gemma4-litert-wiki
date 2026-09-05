@@ -62,7 +62,7 @@ jobs:
               echo
               echo 'Community store: search for **Gemma 4 LiteRT Wiki**.'
               echo 'Manual: drop `main.js`, `manifest.json` and `styles.css` into'
-              echo '`<vault>/.obsidian/plugins/gemma4-litert-wiki/`.'
+              echo '`<vault>/.obsidian/plugins/gemma-litert-wiki/`.'
               echo
               echo '### Checksums'
               echo
