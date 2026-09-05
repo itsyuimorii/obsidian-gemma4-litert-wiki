@@ -514,17 +514,13 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
       `> | **Build a concept page** | Pick a tag or a name that several pages share; get a page written *above* them that links down into each. This is the wiki layer, not another summary. |` + `\n` +
-      `> | **Relink wiki pages** | Fills in or re-syncs the *Related* section on every page as the wiki grows. |` + `\n` +
-      `> | **Organize tags** | Reads every tag your ingests produced and folds them into one vocabulary in \`schema.md\`. |` + `\n` +
-      `> | **Retag wiki pages** | Rewrites existing pages to use that vocabulary, so near-duplicate tags collapse. |` + `\n\n` +
       `> [!info] Check the wiki against itself` + `\n` +
       `> | | What it does |` + `\n` +
       `> |---|---|` + `\n` +
       `> | **Review board** | Everything that needs a human: low-confidence pages, and pages whose source note has changed since they were made. |` + `\n` +
       `> | **Find contradictions** | Compares pages against each other and reports claims that cannot both be true. |` + `\n` +
       `> | **Provenance spot-check** | Takes key points off a page and checks each one against the note it came from. Catches invented detail. |` + `\n` +
-      `> | **Lint wiki** | Structural only, no model: orphan pages, broken index entries. |` + `\n` +
-      `> | **Reconcile wiki** | Drops index entries and links pointing at pages you deleted. |` + `\n\n` +
+      `> | **Tidy the wiki** | Checks first — orphan pages, dead index entries, tag drift, no model — then offers four repairs you tick: make links mutual, drop dead index entries, rebuild the tag vocabulary, apply it to existing pages. Each runs behind its own preview. |` + `\n\n` +
       `> [!info] The one command that edits your own note` + `\n` +
       `> **Improve formatting** is the only thing here that writes into a note of yours. It fixes headings, lists and spacing — **it does not rewrite your words**, and the rewritten note is shown to you in full before anything is saved.` + `\n` +
       `>` + `\n` +
@@ -536,10 +532,9 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | | How | Good for |` + `\n` +
       `> |---|---|---|` + `\n` +
       `> | **By hand** | Edit \`schema.md\` and save — it is read before every ingest. | A tag or two, precisely |` + `\n` +
-      `> | **Organize tags** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → *Organize tags* | Rebuilding the vocabulary from the tags your pages actually use |` + `\n` +
-      `> | **Retag wiki pages** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → *Retag* | Bringing existing pages in line after the vocabulary changed |` + `\n` +
+      `> | **Tidy the wiki** | <kbd>Cmd/Ctrl</kbd>+<kbd>P</kbd> → *Tidy the wiki* | Rebuilding the vocabulary from the tags your pages actually use, and bringing existing pages in line afterwards — two repairs, tick either or both |` + `\n` +
       `>` + `\n` +
-      `> Editing affects **future** ingests only. Pages already written keep their tags until you run *Retag*, which shows every change before writing. Nothing in the file ever changes without an approval of yours.` + `\n\n` +
+      `> Editing affects **future** ingests only. Pages already written keep their tags until you run the retag repair in *Tidy the wiki*, which shows every change before writing. Nothing in the file ever changes without an approval of yours.` + `\n\n` +
       `> [!info] What each section holds` + `\n` +
       `> | Section | What goes there |` + `\n` +
       `> |---|---|` + `\n` +
@@ -619,13 +614,13 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] The three files\n` +
       `> | File | What it is |\n` +
       `> |---|---|\n` +
-      `> | \`index.md\` | The catalog: one line per page. **Wiki-mode chat reads it first** to decide which pages to open — which is why the summaries live there and not only on the pages. **Reconcile wiki** forces a repair pass. |\n` +
+      `> | \`index.md\` | The catalog: one line per page. **Wiki-mode chat reads it first** to decide which pages to open — which is why the summaries live there and not only on the pages. **Tidy the wiki** forces a repair pass. |\n` +
       `> | \`log.md\` | Append-only record of every operation, greppable by action. |\n` +
       `> | \`schema.md\` | Your tag vocabulary, the naming rules, and the tags you rejected. Edit it by hand and the plugin obeys. |\n\n` +
       `> [!info] Deleting things\n` +
       `> Delete any page freely — its index entry is dropped automatically.\n` +
       `>\n` +
-      `> Delete a **folder** and it is recreated empty the next time Obsidian starts, or from **Settings → Repair folders**. **The pages that were inside it are not restored** — the plugin maintains this scaffolding, it does not back it up. Run **Reconcile wiki** afterwards to clear the index entries they left behind.\n`,
+      `> Delete a **folder** and it is recreated empty the next time Obsidian starts, or from **Settings → Repair folders**. **The pages that were inside it are not restored** — the plugin maintains this scaffolding, it does not back it up. Run **Tidy the wiki** afterwards to clear the index entries they left behind.\n`,
   ],
   [
     () => `${wikiSourcesDir()}/README.md`,
@@ -645,7 +640,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | \`confidence\` | \`high\`, \`med\` or \`low\`, written by the model about its own extraction. Anything below \`high\` lands on the review board. |\n` +
       `> | \`tags\` | One to three topics, drawn from the vocabulary in \`schema.md\`. |\n\n` +
       `> [!info] Deleting\n` +
-      `> **Deleting a card breaks nothing:** its entry in \`index.md\` is dropped automatically, and **Reconcile wiki** clears links pointing at it from other pages.\n`,
+      `> **Deleting a card breaks nothing:** its entry in \`index.md\` is dropped automatically, and **Tidy the wiki** clears links pointing at it from other pages.\n`,
 
   ],
   [
@@ -814,7 +809,7 @@ export function buildSchemaFile(
 ): string {
   const tagLines = tags.length
     ? tags.map((t) => `- ${slugify(t)}`).join('\n')
-    : '_No tags yet. Ingest a few notes, then run "Organize tags" to build the vocabulary from them._';
+    : '_No tags yet. Ingest a few notes, then run "Tidy the wiki" to build the vocabulary from them._';
   const namingLines = Object.entries(naming)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
@@ -841,10 +836,10 @@ export function buildSchemaFile(
     `> [!info]- How this file works\n` +
     `> The wiki's tag rules — plain markdown, read before every ingest. **The lists are yours; the explanations are the plugin's.** Edit tags freely and they are never overwritten; the callouts (this one included) are rewritten on every start, so deleting or editing them does not stick. Anything else you write in this file will not survive a restart either — your own notes belong in your own notes.\n` +
     `>\n` +
-    `> Three ways it changes, all yours: edit by hand (read before every ingest) · **Organize tags** rebuilds the vocabulary from the tags in use · **Retag wiki pages** brings existing pages in line afterwards. Nothing changes without an approval of yours.\n\n` +
+    `> Three ways it changes, all yours: edit by hand (read before every ingest) · **Tidy the wiki** rebuilds the vocabulary from the tags in use, and brings existing pages in line afterwards. Nothing changes without an approval of yours.\n\n` +
     `## Tags\n\n` +
     `> [!info]- What goes here\n` +
-    `> Your vocabulary — **one \`- tag\` per line, right below this box.** Ingest reuses these instead of coining near-synonyms (\`llm-eval\` vs \`evals\`), which is what lets pages cluster into concept pages. Build the list with **Organize tags**; edit by hand when precision matters.\n\n` +
+    `> Your vocabulary — **one \`- tag\` per line, right below this box.** Ingest reuses these instead of coining near-synonyms (\`llm-eval\` vs \`evals\`), which is what lets pages cluster into concept pages. Build the list with **Tidy the wiki**; edit by hand when precision matters.\n\n` +
     `${tagLines}\n\n` +
     `## Naming\n\n` +
     `> [!info]- What this does\n` +
@@ -856,7 +851,7 @@ export function buildSchemaFile(
     `${conceptThreshold}\n\n` +
     `## Pending\n\n` +
     `> [!info]- How to clear these\n` +
-    `> New tags ingest coined, waiting on you. Move a line up into \`## Tags\` to keep it · delete it to reject it · move it down into \`## Rejected\` to ban it. **Organize tags** clears the queue wholesale, behind a preview. A tag waiting here already helps later ingests reuse it.\n\n` +
+    `> New tags ingest coined, waiting on you. Move a line up into \`## Tags\` to keep it · delete it to reject it · move it down into \`## Rejected\` to ban it. **Tidy the wiki** clears the queue wholesale, behind a preview. A tag waiting here already helps later ingests reuse it.\n\n` +
     `${pendingLines}\n\n` +
     `## Rejected\n\n` +
     `> [!info]- What this is\n` +

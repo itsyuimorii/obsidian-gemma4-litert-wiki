@@ -634,7 +634,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               'The folder comes back when Obsidian restarts, or from Settings → Repair folders — ' +
               (lost
                 ? 'the pages do not. Undo now with Cmd/Ctrl+Z, or restore them from Obsidian\'s ' +
-                  'trash, then run "Reconcile wiki" if you decide to let them go.'
+                  'trash, then run "Tidy the wiki" if you decide to let them go.'
                 : 'nothing was lost.')
           );
         });
@@ -757,7 +757,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             'warn',
             `Restored ${gone.length} missing item${gone.length === 1 ? '' : 's'} in ${wikiDir()}/:\n` +
               gone.join('\n') +
-              '\n\nPages that were deleted are not restored — run "Reconcile wiki" to drop their index entries.'
+              '\n\nPages that were deleted are not restored — run "Tidy the wiki" to drop their index entries.'
           );
         }
 
@@ -1432,7 +1432,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       notify(
         'warn',
         'No tags yet — the vocabulary is built from the tags your ingested notes already produced. ' +
-          'Ingest a few notes first, then run "Organize tags".'
+          'Ingest a few notes first, then run "Tidy the wiki".'
       );
       return false;
     }
@@ -1537,7 +1537,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       notifyAndLog(
         this.app.vault,
         'warn',
-        `${after} tags are waiting in schema.md's Pending list. Run "Organize tags" to fold them ` +
+        `${after} tags are waiting in schema.md's Pending list. Run "Tidy the wiki" to fold them ` +
           'into the vocabulary — until then, similar notes keep coining near-duplicate tags.'
       );
     }
@@ -1804,7 +1804,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Never map INTO a banned tag, even if a stale hand-edit left it in both lists.
     const vocab = [...new Set(schema.tags.map((t) => slugify(t)).filter((t) => t && !rejected.has(t)))];
     if (!vocab.length) {
-      notify('warn', 'No vocabulary in schema.md yet — run "Organize tags" first.');
+      notify('warn', 'No vocabulary in schema.md yet — rebuild it first: run "Tidy the wiki" and tick the vocabulary repair, or add tags to schema.md by hand.');
       return;
     }
     const STRUCTURAL = new Set(['concept', 'answer', 'chat']);
