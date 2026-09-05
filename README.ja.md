@@ -1,13 +1,13 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <img src="assets/logo.svg" alt="Gemma Wiki logo" width="96" height="96">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="Gemma Wiki logo" width="96" height="96">
   </picture>
 </p>
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><em>Gemma 4 E4B を LiteRT-LM + WebGPU で Obsidian の中だけで動かす、Karpathy パターンの LLM ウィキ。</em></p>
+<p align="center"><b>Gemma 4 が Obsidian 自身のプロセスの中で LiteRT-LM と WebGPU により動く — 無料のローカル AI を、あなたの vault へ直接。</b></p>
 
 <p align="center"><a href="README.md">English</a> · <b>日本語</b></p>
 
