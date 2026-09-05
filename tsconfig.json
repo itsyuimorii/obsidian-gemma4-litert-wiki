@@ -3,7 +3,15 @@
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["DOM", "ES2020"],
+    // ES2022 rather than ES2020 for one method: Array.prototype.at, which
+    // chat-view uses to read the last turn. It resolved before only because a
+    // dependency's own lib reference happened to pull the declaration in — so
+    // a checker without that dependency installed, which is what the
+    // community directory's scanner is, saw `.at()` as an unresolved call and
+    // reported every use of it. Declaring the library level we actually run on
+    // is the honest fix. `target` stays ES2020: esbuild does the emit, and the
+    // released bundle has to stay byte-identical for the store's rebuild check.
+    "lib": ["DOM", "ES2022"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,

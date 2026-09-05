@@ -1,5 +1,4 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { bytes, fs, path, type Bytes } from './node-api';
 
 // Resumable, on-disk model store. The 2.97 GB first download is the single
 // biggest activation risk (see the commercialization notes), and a plain
@@ -63,8 +62,8 @@ async function fileToBlob(filePath: string): Promise<Blob> {
   const parts: BlobPart[] = [];
   await new Promise<void>((resolve, reject) => {
     const rs = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 * 1024 });
-    rs.on('data', (chunk: string | Buffer) => {
-      const b = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    rs.on('data', (chunk: string | Bytes) => {
+      const b = typeof chunk === 'string' ? bytes.from(chunk) : chunk;
       // Slice out a standalone ArrayBuffer so the part is a plain
       // ArrayBuffer, not ArrayBufferLike (BlobPart typing).
       parts.push(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
@@ -138,7 +137,7 @@ async function downloadResumable(
           // when the platform types say so; wrapping makes the rejection
           // reason an Error in every environment, which is what the caller's
           // `err instanceof Error` checks and the status toast both assume.
-          out.write(Buffer.from(value), (err) =>
+          out.write(bytes.from(value), (err) =>
             err ? reject(err instanceof Error ? err : new Error(String(err))) : resolve()
           )
         );
@@ -191,7 +190,7 @@ export async function migrateFromLegacyCache(
           // when the platform types say so; wrapping makes the rejection
           // reason an Error in every environment, which is what the caller's
           // `err instanceof Error` checks and the status toast both assume.
-          out.write(Buffer.from(value), (err) =>
+          out.write(bytes.from(value), (err) =>
             err ? reject(err instanceof Error ? err : new Error(String(err))) : resolve()
           )
         );
