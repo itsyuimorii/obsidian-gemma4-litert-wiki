@@ -25,7 +25,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 24, not 20, because `npm test` runs tests/*.test.ts straight from
+          # source using Node's own type stripping. That is what keeps the
+          # suite dependency-free and build-step-free, and it needs a Node
+          # that can do it: stripping is on by default from 23.6.
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -40,6 +44,11 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      # A release is the last place to find out the manifest is malformed or
+      # the README documents a command that was removed.
+      - name: Tests
+        run: npm test
 
       # RELEASE_TAG makes check:release additionally assert tag == manifest
       # version. A mismatch is the one release mistake Obsidian cannot recover

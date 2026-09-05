@@ -13,13 +13,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 24, not 20, because `npm test` runs tests/*.test.ts straight from
+          # source using Node's own type stripping. That is what keeps the
+          # suite dependency-free and build-step-free, and it needs a Node
+          # that can do it: stripping is on by default from 23.6.
+          node-version: 24
           cache: npm
       - run: npm ci
       - name: Build (esbuild bundle)
         run: npm run build
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
+      # The suite exists to catch the class of thing that fails no build: a
+      # corrupted manifest, a slug that drops a vowel sign, a README naming a
+      # command that no longer exists. None of that is worth anything if it
+      # only runs when someone remembers to type it.
+      - name: Tests (node:test)
+        run: npm test
       # The community store's own rule set (eslint-plugin-obsidianmd), run
       # before a release instead of read in a report after one. The warning
       # budget is exactly the five that point at issue #106; a sixth fails.
