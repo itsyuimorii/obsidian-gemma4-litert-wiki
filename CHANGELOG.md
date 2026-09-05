@@ -4,6 +4,40 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.7 — 2026-09-05
+
+The release that makes the plugin installable from inside Obsidian.
+
+### Fixed
+
+- **No `<script>` element is created any more.** The vendor's WASM loader
+  injected one to load the Emscripten glue, and the community directory
+  reports that as an Error — which blocks installation, not just the badge.
+  The glue is a UMD bundle, and this plugin runs in a Node-integrated
+  renderer, so it is now `require()`d off disk instead: a pinned local path,
+  nothing injected into the page, nothing that can be redirected. Strictly
+  more auditable than the script tag it replaces.
+- A model-file write that fails now rejects with an `Error` whatever the
+  platform types resolve to.
+
+### Changed
+
+- **Renamed to Gemma 4 E4B LLM Wiki.** "LiteRT" is the runtime — our detail,
+  not the reader's vocabulary — and it was carrying a third of the name.
+  Checked against all 7,313 listed plugins: no other name contains "gemma".
+  The id is unchanged, so existing installs are unaffected.
+- The description leads with what runs it, what it builds, and what you do
+  with it: Gemma 4 E4B, Karpathy's LLM wiki, chat.
+
+### Internal
+
+- **101 tests** over a module that imports nothing, run by `node:test` with
+  zero new dependencies. Every incident of the last week — a manifest patched
+  into invalid JSON twice, a tagline committed cut off mid-sentence, vault
+  docs naming commands that had been merged away — is a class these cover.
+- `check:release` now asserts the bundle contains no script injection, so a
+  build that loses the substitution fails here rather than in a review.
+
 ## 1.0.6 — 2026-09-05
 
 ### Added
