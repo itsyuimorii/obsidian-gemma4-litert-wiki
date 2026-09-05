@@ -7,17 +7,18 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Karpathy-pattern LLM wiki</b> for Obsidian, powered by <b>Gemma 4</b> — <em>running entirely inside Obsidian via LiteRT-LM + WebGPU.</em></p>
+<p align="center"><b>Karpathy-pattern LLM wiki for Obsidian, powered by Gemma 4 E4B</b> — <em>running entirely inside Obsidian via LiteRT-LM + WebGPU.</em></p>
+
+
+**Free local AI with Gemma 4 E4B — right inside Obsidian.** Chat with your notes or entire vault, then turn them into a living wiki following *[Andrej Karpathy's LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)* — with **indexes, concepts, tags, links, and schema**. Generate quizzes and flashcards from your notes, all running *locally* with **no ongoing cost** after the one-time model download — powered by **Gemma 4 E4B** running inside Obsidian's own process through LiteRT-LM and WebGPU.
+
+Not Ollama, not LM Studio, not a localhost server — the model is *in* the app, via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both listed under [Privacy](#-privacy) — it never touches the network again.
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
 <p align="center"><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install.</p>
 
 <p align="center"><img src="assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900"></p>
-
-**Gemma 4 runs inside Obsidian's own process**, bringing **free local AI** directly to your vault. Chat with your notes or whole vault, then build a living wiki inspired by *[Andrej Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)* — index, concepts, tags, links, and schema. Turn your notes into **quizzes and flashcards** — all running *locally*, with **no ongoing cost** after the one-time download.
-
-Not Ollama, not LM Studio, not a localhost server — the model is *in* the app, via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both listed under [Privacy](#-privacy) — it never touches the network again.
 
 <p align="center"><img src="assets/poster/poster-p03.png" alt="Three layers: your notes (yours, immutable), gemma-wiki (the model maintains it), schema.md (yours, the rules)." width="900"></p>
 
@@ -31,6 +32,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 
 ## 📑 Contents
 
+- [📑 Contents](#-contents)
 - [✨ Features at a glance](#-features-at-a-glance)
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)
@@ -39,6 +41,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - [🔁 What to run when](#-what-to-run-when)
 - [⌨️ Current commands](#️-current-commands)
 - [🔧 How it works](#-how-it-works)
+  - [Manual test protocols](#manual-test-protocols)
 - [📊 Benchmarks](#-benchmarks)
 - [🗺️ Roadmap](#️-roadmap)
 - [🔒 Privacy](#-privacy)

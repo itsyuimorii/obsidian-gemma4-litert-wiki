@@ -7,7 +7,7 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><em>Gemma 4 を LiteRT-LM + WebGPU で Obsidian の中だけで動かす、Karpathy パターンの LLM ウィキ。</em></p>
+<p align="center"><em>Gemma 4 E4B を LiteRT-LM + WebGPU で Obsidian の中だけで動かす、Karpathy パターンの LLM ウィキ。</em></p>
 
 <p align="center"><a href="README.md">English</a> · <b>日本語</b></p>
 
