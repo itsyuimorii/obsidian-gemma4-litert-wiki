@@ -370,7 +370,6 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         sl
           .setLimits(7, 120, 1)
           .setValue(this.plugin.settings.staleDays)
-          .setDynamicTooltip()
           .onChange(async (v) => {
             this.plugin.settings.staleDays = v;
             await this.plugin.saveSettings();
@@ -468,7 +467,6 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           sl
             .setLimits(0, 24, 1)
             .setValue(this.plugin.settings.scanQuietHours)
-            .setDynamicTooltip()
             .onChange(async (v) => {
               this.plugin.settings.scanQuietHours = v;
               await this.plugin.saveSettings();
@@ -482,7 +480,6 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           sl
             .setLimits(1, 24, 1)
             .setValue(this.plugin.settings.autoScanIntervalHours)
-            .setDynamicTooltip()
             .onChange(async (v) => {
               this.plugin.settings.autoScanIntervalHours = v;
               await this.plugin.saveSettings();

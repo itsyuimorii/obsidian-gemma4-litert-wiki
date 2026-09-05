@@ -7,6 +7,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,
+    // The store's review reports every unused symbol, so catch them here
+    // instead of in a report after a release has already gone out.
+    "noUnusedLocals": true,
     "noImplicitAny": false,
     "allowJs": true,
     "resolveJsonModule": true

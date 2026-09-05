@@ -22,8 +22,6 @@ import {
   wikiSourcesDir,
   clampToTokens,
   estimateTokens,
-  contentHash,
-  ensureWikiScaffold,
   expandByLinks,
   getIngestedSourcePaths,
   indexPath,
@@ -32,7 +30,6 @@ import {
   readLogTail,
   readSkills,
   scoreEntries,
-  writeWikiPage,
   type ChatTurnRecord,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
@@ -600,9 +597,13 @@ export class ChatView extends ItemView {
   private autoGrowInput() {
     if (this.inputExpanded) return;
     const el = this.inputEl;
-    el.style.height = 'auto';
+    // Measured, not chosen: the box has to be laid out at its natural height
+    // before scrollHeight means anything. Through setCssStyles rather than
+    // el.style, which the store's linter rejects — a plugin assigning styles
+    // directly is a plugin a theme cannot override.
+    el.setCssStyles({ height: 'auto' });
     const max = Math.floor(this.containerEl.clientHeight * 0.35);
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+    el.setCssStyles({ height: `${Math.min(el.scrollHeight, max)}px` });
   }
 
   private toggleInputExpand() {
@@ -611,7 +612,8 @@ export class ChatView extends ItemView {
     setIcon(this.expandButton, this.inputExpanded ? 'minimize-2' : 'maximize-2');
     setTooltip(this.expandButton, this.inputExpanded ? 'Shrink input' : 'Expand input');
     if (this.inputExpanded) {
-      this.inputEl.style.height = '';
+      // Hand the height back to the stylesheet; the expanded class owns it.
+      this.inputEl.setCssStyles({ height: '' });
     } else {
       this.autoGrowInput();
     }

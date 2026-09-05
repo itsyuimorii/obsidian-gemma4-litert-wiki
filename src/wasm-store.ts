@@ -101,24 +101,27 @@ async function download(
   // arriving bytes rather than set once, so a slow but live 31 MB download
   // is never cut off; only a genuinely silent one is.
   const controller = new AbortController();
-  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  let stallTimer: number | undefined;
   const armStall = () => {
-    clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => controller.abort(), STALL_MS);
+    window.clearTimeout(stallTimer);
+    stallTimer = window.setTimeout(() => controller.abort(), STALL_MS);
   };
 
   armStall();
   let response: Response;
   try {
+    // Same reason as the model download: requestUrl buffers the whole body,
+    // and streaming is what makes the progress line and the stall timeout
+    // possible. 20-31 MB would survive buffering; the timeout would not.
     response = await fetch(url, { signal: controller.signal });
   } catch (err) {
-    clearTimeout(stallTimer);
+    window.clearTimeout(stallTimer);
     throw controller.signal.aborted
       ? new Error(`${fileName} stopped responding after ${STALL_MS / 1000}s — check your network and try again.`)
       : err;
   }
   if (!response.ok || !response.body) {
-    clearTimeout(stallTimer);
+    window.clearTimeout(stallTimer);
     throw new Error(`Could not fetch ${fileName} (HTTP ${response.status}) from ${url}`);
   }
 
@@ -178,7 +181,7 @@ async function download(
         )
       : err;
   } finally {
-    clearTimeout(stallTimer);
+    window.clearTimeout(stallTimer);
   }
 
   fs.renameSync(partial, final);

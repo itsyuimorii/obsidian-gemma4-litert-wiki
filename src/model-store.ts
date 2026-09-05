@@ -92,6 +92,12 @@ async function downloadResumable(
   const headers: Record<string, string> = {};
   if (startByte > 0) headers['Range'] = `bytes=${startByte}-`;
 
+  // fetch, not Obsidian's requestUrl, and the store's linter flags it. The
+  // reason is the size: requestUrl resolves once with the whole body in
+  // memory, and this body is ~3 GB. Streaming is not a preference here — it is
+  // the difference between a progress bar and an out-of-memory crash, and it
+  // is what lets a cancelled or dropped download resume from a byte offset
+  // (the Range header above) instead of starting over.
   const response = await fetch(modelUrl, { headers, signal });
 
   // 206 = server honored the range and we resume; 200 = it ignored the

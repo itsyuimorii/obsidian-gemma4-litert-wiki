@@ -32,6 +32,10 @@ ok('name has no "Plugin"', !/plugin/i.test(m.name));
 ok(`description <= 250 (is ${m.description.length})`, m.description.length <= 250);
 ok('description is one line', !/[\r\n]/.test(m.description));
 ok('description does not open with "A plugin"/"This plugin"', !/^(a |this )?plugin/i.test(m.description.trim()));
+// The directory rejects it outright: the word is implied by the context of a
+// plugin directory, and the automated review fails the release over it.
+ok('description does not say "Obsidian"', !/obsidian/i.test(m.description));
+ok('name does not say "Obsidian"', !/obsidian/i.test(m.name));
 ok('isDesktopOnly true (uses node fs + local server)', m.isDesktopOnly === true);
 
 console.log('\n== versions.json ==');

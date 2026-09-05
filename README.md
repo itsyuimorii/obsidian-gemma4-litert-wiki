@@ -287,6 +287,19 @@ The runtime is fetched rather than bundled because it ships in four variants tot
 
 The plugin also runs a **loopback HTTP server** (`127.0.0.1`, ephemeral port, alive only while the plugin is loaded). It exists because the WebGPU runtime can only be handed the model over HTTP; it serves files from your own disk to your own machine, has no inference endpoint, and is not reachable from outside it.
 
+<details>
+<summary><b>Why the automated review flags a dynamic <code>&lt;script&gt;</code>, and what it actually is</b></summary>
+
+The store's scanner reports one dynamic `<script>` element creation. It is real, it is not ours, and it loads nothing from the internet.
+
+It lives in `@litertjs/wasm-utils`, LiteRT-LM's own loader: outside a worker, where `importScripts` does not exist, it creates a `<script>` tag to load the Emscripten glue that instantiates the WebAssembly module. There is no other entry point into the runtime — the glue defines the globals the module binds to.
+
+What it loads is a file **on your disk**, served by the plugin's own loopback server: `litertlm_wasm_*internal.js`, downloaded once from the pinned `@litert-lm/core` version this build was compiled against, name-checked against a fixed allowlist before it is ever written. The URL in that tag is always `http://127.0.0.1:<ephemeral>/`. Nothing user-supplied, nothing remote, and nothing the plugin can be pointed at after it ships — the version is fixed at build time and the plugin has no update mechanism of its own.
+
+The loopback server exists for the same reason: Electron refuses to load a `file://` script from a page that is not itself `file://`, so the bytes have to arrive over HTTP even though they never leave the machine.
+
+</details>
+
 **Nothing else leaves your machine.** Your notes, your questions and every generated answer stay on-device: inference, caching and generation all happen inside Obsidian's own process. There is no server to upload them to.
 
 ## 💖 Credits

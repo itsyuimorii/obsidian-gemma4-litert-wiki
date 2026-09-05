@@ -190,10 +190,6 @@ export class TidyModal extends Modal {
 
   private syncApply: () => void = () => {};
 
-  private ok(text: string) {
-    this.contentEl.createDiv({ cls: 'gemma4-lint-ok', text });
-  }
-
   private info(title: string, hint: string, items: string[]) {
     const sec = this.contentEl.createDiv({ cls: 'gemma4-lint-section' });
     sec.createDiv({ cls: 'gemma4-lint-section-title', text: title });
