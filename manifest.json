@@ -1,7 +1,7 @@
 {
   "id": "gemma-litert-wiki",
   "name": "Gemma 4 LiteRT Wiki",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "minAppVersion": "1.11.4",
   "description": "Gemma 4 E4B runs in-process, right inside your vault. Build Andrej Karpathy's living LLM wiki with Gemma 4 E4B: indexes, concepts, tags, links, schema — plus grounded chat, quizzes and flashcards, all local after one download.",
   "author": "itsyuimorii",

@@ -1,6 +1,6 @@
 {
   "name": "litert-spike",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -8,7 +8,7 @@
     "build": "node build.js",
     "typecheck": "tsc --noEmit",
     "check:release": "node scripts/check-release.mjs",
-    "lint": "eslint src --max-warnings 5"
+    "lint": "eslint src --max-warnings 4"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
