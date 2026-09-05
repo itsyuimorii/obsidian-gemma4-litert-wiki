@@ -87,6 +87,19 @@ async function download(
 ): Promise<string> {
   fs.mkdirSync(wasmDir, { recursive: true });
 
+  // The glue is a UMD file, and it is loaded with require(). Node decides
+  // whether a .js file is CommonJS or ESM from the nearest package.json, and
+  // in a development install the plugin folder IS the source repo — whose
+  // package.json says "type": "module", because build.js is ESM. That makes
+  // Node read the glue as a module, skip the UMD tail that assigns
+  // module.exports, and hand back an empty namespace.
+  //
+  // A real install has no package.json above this folder and needs nothing.
+  // Writing one here costs 26 bytes and makes both cases behave the same,
+  // which is worth more than being right only in the one we do not test in.
+  const marker = path.join(wasmDir, 'package.json');
+  if (!fs.existsSync(marker)) fs.writeFileSync(marker, '{"type":"commonjs"}\n');
+
   // Written under a .partial name and renamed only once the body is complete:
   // a download interrupted halfway must not leave a truncated file that
   // existsSync() would then treat as cached forever.
@@ -187,6 +200,25 @@ async function download(
   fs.renameSync(partial, final);
   onProgress?.({ fileName, receivedBytes, totalBytes: totalBytes || receivedBytes });
   return final;
+}
+
+/**
+ * Make an existing runtime folder loadable, not just a freshly made one.
+ *
+ * The marker is written when the folder is created, but a folder downloaded by
+ * an earlier version has none — and in a development install that folder is
+ * unloadable until it does. Cheap enough to check on every load.
+ */
+export function ensureCommonJsMarker(wasmDir: string): void {
+  try {
+    const marker = path.join(wasmDir, 'package.json');
+    if (fs.existsSync(wasmDir) && !fs.existsSync(marker)) {
+      fs.writeFileSync(marker, '{"type":"commonjs"}\n');
+    }
+  } catch {
+    // Best effort: a real install does not need it, and the loader's error
+    // message names this exact cause if it turns out to matter.
+  }
 }
 
 /** Bytes of runtime already on disk — used by the settings pane. */

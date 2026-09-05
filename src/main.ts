@@ -8,7 +8,8 @@ import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
-import { ensureRuntimeFile, isRuntimeFile } from './wasm-store';
+import { ensureCommonJsMarker, ensureRuntimeFile, isRuntimeFile } from './wasm-store';
+import { setWasmScriptResolver } from './wasm-loader';
 import {
   appendLog,
   buildConceptPage,
@@ -154,6 +155,8 @@ class ConceptTagModal extends FuzzySuggestModal<TagCluster> {
 export default class LiteRtSpikePlugin extends Plugin {
   private server: Server | null = null;
   private serverBaseUrl: string | null = null;
+  /** The directory the loopback server serves — also where the glue is required from. */
+  private wasmDir: string | null = null;
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
   // What the engine actually granted, read back from LiteRT-LM after
@@ -1035,6 +1038,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.server?.close();
     this.server = null;
     this.serverBaseUrl = null;
+    this.wasmDir = null;
 
     // The engine owns the loaded model and its WebGPU allocations — gigabytes
     // that Obsidian will not reclaim on its own, and a disable/enable cycle to
@@ -1084,6 +1088,15 @@ export default class LiteRtSpikePlugin extends Plugin {
           ...(globalWithModule.Module ?? {}),
           locateFile: (p: string) => baseUrl + p,
         };
+
+        // The runtime asks for its glue by URL. Our replacement for the
+        // vendor's loader requires that file off disk instead of injecting a
+        // <script> tag, so it needs to know where the URL points: same
+        // filename, in the folder the loopback server is already serving.
+        const served = this.wasmDir;
+        if (!served) throw new Error('The local runtime server did not report its directory.');
+        ensureCommonJsMarker(served);
+        setWasmScriptResolver((url) => path.join(served, path.basename(new URL(url).pathname)));
 
         const { loadLiteRtLm } = await import('@litert-lm/core');
         await loadLiteRtLm(baseUrl);
@@ -3480,6 +3493,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       throw new Error('Not running on desktop FileSystemAdapter — cannot resolve a local wasm path.');
     }
     const wasmDir = path.join(adapter.getBasePath(), this.manifest.dir ?? '', 'wasm');
+    this.wasmDir = wasmDir;
     log('Serving wasm dir:', wasmDir);
 
     this.server = http.createServer((req, res) => {

@@ -141,6 +141,17 @@ console.log('\n== plugin guidelines ==');
 
   ok('registered resources are released on unload',
      /onunload\s*\(/.test(fs.readFileSync('src/main.ts', 'utf8')));
+
+  // An Error in the store's review blocks installation, and this is the one
+  // that stood: the check is static, so it fires on the string being present
+  // in the bundle whether or not the branch can ever run. The vendor loader
+  // is replaced at build time (build.js alias → src/wasm-loader.ts); this
+  // asserts the replacement actually took.
+  const bundle = fs.readFileSync('main.js', 'utf8');
+  ok('bundle creates no <script> element', !/createElement\(\s*["']script["']\s*\)/.test(bundle));
+  ok('bundle assigns no script.src', !/script\.src\s*=/.test(bundle));
+  ok('the script-free WASM loader is the one that shipped',
+     bundle.includes('The WASM script resolver was not installed'));
 }
 
 // The command table in the README is the first thing a reviewer compares
