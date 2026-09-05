@@ -351,6 +351,17 @@ export class ScaffoldCreatedModal extends Modal {
       ' in the ribbon down the left edge of the window. It is opening now so you can see where it is.'
     );
 
+    // The walkthrough, for the person who would rather see it than read it.
+    // A plain link, not a button: the two buttons below are actions in this
+    // vault, and this one leaves the app.
+    const demo = contentEl.createEl('p', { cls: 'gemma4-scaffold-foot' });
+    demo.appendText('Prefer to see it first? Every feature is shown at ');
+    demo.createEl('a', {
+      text: 'gemma-wiki-demo.vercel.app',
+      href: 'https://gemma-wiki-demo.vercel.app',
+    });
+    demo.appendText(' — 23 short scenes, arrow keys to step through.');
+
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
     const index = buttons.createEl('button', { text: 'Open index.md' });
     index.addEventListener('click', () => {

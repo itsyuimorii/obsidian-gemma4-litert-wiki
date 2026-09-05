@@ -11,6 +11,8 @@
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
+<p align="center"><a href="https://gemma-wiki-demo.vercel.app"><b>▶ Watch it work</b></a> — 23 interactive scenes, every feature from first run to a full wiki. Nothing to install; arrow keys to step through.</p>
+
 **Free, private, offline AI for your notes** — no API key, no subscription, no tokens ever billed, no account to make.
 
 Gemma 4 E4B runs inside Obsidian's own process via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. Not Ollama, not LM Studio, not a localhost server — the model is *in* the app. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy here is a property of the architecture, not a promise in a policy. After its one-time downloads — the ~3 GB model and the WebAssembly runtime, both listed under [Privacy](#-privacy) — the plugin never touches the network again.

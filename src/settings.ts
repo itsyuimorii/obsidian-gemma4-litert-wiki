@@ -122,6 +122,16 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     this.watchers = [];
     this.watchScaffold();
 
+    // A settings page is where people land when they are lost, so the way to
+    // see every feature working comes first — one line, then out of the way.
+    const demo = containerEl.createEl('p', { cls: 'gemma4-settings-demo' });
+    demo.appendText('New here? Every feature is demonstrated at ');
+    demo.createEl('a', {
+      text: 'gemma-wiki-demo.vercel.app',
+      href: 'https://gemma-wiki-demo.vercel.app',
+    });
+    demo.appendText(' — 23 short scenes, nothing to install.');
+
     // ---------- Model ----------
     new Setting(containerEl).setName('Model').setHeading();
 

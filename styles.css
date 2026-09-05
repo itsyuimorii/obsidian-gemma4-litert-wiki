@@ -1351,3 +1351,12 @@
   flex-shrink: 0;
   margin: 0;
 }
+
+/* The one line above the settings sections pointing at the walkthrough site.
+   Muted like the scaffold card's footnotes: present when you look for help,
+   invisible when you came to change a slider. */
+.gemma4-settings .gemma4-settings-demo {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
