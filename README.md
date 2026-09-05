@@ -13,9 +13,11 @@
 
 <p align="center"><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install.</p>
 
-Chat with your notes or your entire vault, then build a living wiki inspired by **[Andrej Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: indexes, concepts, tags, links, and schema. Turn your notes into quizzes and flashcards — **all processed locally**, with no ongoing cost after the one-time model download.
+**Free local AI, with nothing to configure.** Gemma 4 E4B runs inside Obsidian's own process through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU — **no API key, no Ollama, no LM Studio, no localhost server, no account, no subscription**. There is no provider to pick, because the model is already here.
 
-Not Ollama, not LM Studio, not a localhost server — the model is *in* the app, via [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both listed under [Privacy](#-privacy) — it never touches the network again.
+**That model then builds [Andrej Karpathy's LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) from your notes** — a cross-linked layer of cards, concepts, tags, links and a schema you can edit by hand — and every page is shown to you in full before a single byte is written.
+
+**Chat with a note or your whole vault**, grounded in what you actually wrote and with sources listed by the plugin rather than cited by the model. Turn any note into quizzes and flashcards. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both under [Privacy](#-privacy) — it never touches the network again.
 
 <p align="center"><img src="assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900"></p>
 
@@ -62,7 +64,7 @@ From there: chat grounded in one note or in the whole wiki, quiz yourself on eit
 
 Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
 
-> **Status: 1.0.5, in the community plugin store.** The core loop of [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) is implemented and running: review-gated ingest into a `gemma-wiki/` layer with cross-links, a `gemma-wiki/index.md` catalog and append-only `gemma-wiki/log.md`, index-first grounded chat with deterministic source attribution, answers saved beside the material that produced them (kept to re-read, never retrieved), a model-free check-then-repair pass, and canned single-task skills. Benchmarks below are from real use.
+> **Status: 1.0.7, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
@@ -240,7 +242,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 
 Getting a local model to run inside Obsidian's renderer — instead of a Chrome extension's offscreen document, which is where every existing LiteRT-LM web example runs — surfaced two Electron-specific problems that don't show up in a normal browser tab:
 
-1. **`file://` script tags are blocked.** LiteRT-LM's WASM loader injects a `<script src="...">` tag to load its Emscripten glue code. Obsidian's own page isn't served from a `file://` origin, and Electron's local-resource guard refuses to load a `file://` script from a non-`file://` page. **Fix:** serve the `wasm/` directory over a `127.0.0.1` loopback HTTP server started from the plugin itself, with permissive CORS headers.
+1. **The runtime's loader wants a `<script>` tag.** LiteRT-LM's WASM loader creates a `<script src="...">` element to load its Emscripten glue — and `file://` scripts are blocked from a non-`file://` page by Electron's local-resource guard, so that path could not work here anyway. **Fix (v1.0.7):** the glue is a UMD bundle and this is a Node-integrated renderer, so the vendor loader is replaced at build time with one that `require()`s the file off disk. No element is created, nothing is injected into the page, and the path is local and pinned rather than a URL. The `127.0.0.1` loopback server remains, because the `.wasm` binary itself still has to reach the runtime over HTTP.
 
 2. **The WASM glue misdetects its own script directory.** `litertlm_wasm_internal.js` checks `typeof __filename` to decide whether it's running under Node.js. Obsidian's desktop app is a Node-integrated Electron renderer, so `__filename` *is* defined — but it points at Obsidian's own internal file, not the dynamically-injected WASM script. This hijacks the correct `document.currentScript`-based path resolution, and the model binary fetch silently falls back to resolving against Obsidian's own page origin instead of the plugin's server. **Fix:** pre-seed `self.Module.locateFile` before calling `loadLiteRtLm()` — the loader checks for this override before running its own (broken, in this environment) auto-detection.
 
@@ -298,15 +300,13 @@ The runtime is fetched rather than bundled because it ships in four variants tot
 The plugin also runs a **loopback HTTP server** (`127.0.0.1`, ephemeral port, alive only while the plugin is loaded). It exists because the WebGPU runtime can only be handed the model over HTTP; it serves files from your own disk to your own machine, has no inference endpoint, and is not reachable from outside it.
 
 <details>
-<summary><b>Why the automated review flags a dynamic <code>&lt;script&gt;</code>, and what it actually is</b></summary>
+<summary><b>Why a plugin needs a loopback server at all</b></summary>
 
-The store's scanner reports one dynamic `<script>` element creation. It is real, it is not ours, and it loads nothing from the internet.
+The WebGPU runtime can only be handed multi-gigabyte weights over HTTP — there is no API that takes a file path. So the plugin serves the model and the `.wasm` binary to itself on `127.0.0.1` at an ephemeral port, from files on your own disk, for as long as the plugin is loaded.
 
-It lives in `@litertjs/wasm-utils`, LiteRT-LM's own loader: outside a worker, where `importScripts` does not exist, it creates a `<script>` tag to load the Emscripten glue that instantiates the WebAssembly module. There is no other entry point into the runtime — the glue defines the globals the module binds to.
+It carries no inference endpoint and nothing user-supplied ever reaches it: only filenames matching `litertlm_wasm_*internal.{js,wasm}` are accepted, from the `@litert-lm/core` version this build was compiled against, fixed at build time. The plugin has no update mechanism of its own.
 
-What it loads is a file **on your disk**, served by the plugin's own loopback server: `litertlm_wasm_*internal.js`, downloaded once from the pinned `@litert-lm/core` version this build was compiled against, name-checked against a fixed allowlist before it is ever written. The URL in that tag is always `http://127.0.0.1:<ephemeral>/`. Nothing user-supplied, nothing remote, and nothing the plugin can be pointed at after it ships — the version is fixed at build time and the plugin has no update mechanism of its own.
-
-The loopback server exists for the same reason: Electron refuses to load a `file://` script from a page that is not itself `file://`, so the bytes have to arrive over HTTP even though they never leave the machine.
+The runtime's own JavaScript is **not** loaded over that server. Since v1.0.7 it is `require()`d directly off disk — a local path, nothing injected into the page — which is both more auditable and what cleared the community directory's automated review.
 
 </details>
 
