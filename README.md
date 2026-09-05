@@ -283,4 +283,4 @@ The plugin also runs a **loopback HTTP server** (`127.0.0.1`, ephemeral port, al
 
 - [Andrej Karpathy — LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) for the three-layer (raw / wiki / schema) pattern this project is working toward.
 - [litert-community](https://huggingface.co/litert-community) for the web-packaged Gemma 4 E4B checkpoint this plugin loads.
-- [Jason Mayes and Google's Web AI team](https://jasonmayes.com) for LiteRT-LM and for pushing on-device inference into the browser — the runtime this plugin is built on.
+- [Jason Mayes, Google's Web AI Lead](https://www.linkedin.com/in/webai/) for LiteRT-LM and for pushing on-device inference into the browser — the runtime this plugin is built on.
