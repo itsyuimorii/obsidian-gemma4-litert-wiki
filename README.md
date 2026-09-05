@@ -289,7 +289,7 @@ Implemented — the Karpathy core loop, scoped deliberately to what a small on-d
 - **Query** via index-first retrieval with stopword filtering, catalog + activity log always in context, deterministic source attribution, and save-answer-into-your-own-notes — kept to re-read, deliberately not fed back as grounding.
 - **Tidy**, model-free where it can be: orphans and index health are checked without the model; the four repairs run only on what you tick.
 
-Everything once listed as next has since landed: user-defined skills (drop a file in `skills/`), model-assisted contradiction candidates (flagged for human judgment, never auto-fixed), a content-hash dedup gate in scan, and the review board. What actually remains is the community-store submission itself — under review.
+Everything once listed as next has since landed: user-defined skills (drop a file in `skills/`), model-assisted contradiction candidates (flagged for human judgment, never auto-fixed), a content-hash dedup gate in scan, the review board, and the community-store listing itself — published, and re-scanned on every release since.
 
 Deliberately out of scope: a multi-provider abstraction layer, image input (the LiteRT-LM web runtime does not support it yet), PDF OCR, and any retrieval scheme more complex than "read the index, then read the pages it points to" — field reports put the flat-index breaking point around ~77 pages, far above this wiki's current size; that decision gets revisited there, not before.
 
