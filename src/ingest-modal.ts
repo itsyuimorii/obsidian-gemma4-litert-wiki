@@ -199,11 +199,11 @@ export class SuggestTagsLinksModal extends Modal {
     });
 
     if (this.tags.length) {
-      contentEl.createEl('div', { cls: 'gemma4-relink-page', text: 'Tags to add' });
+      contentEl.createDiv({ cls: 'gemma4-relink-page', text: 'Tags to add' });
       contentEl.createDiv({ text: this.tags.map((t) => `#${t}`).join('  ') });
     }
     if (this.links.length) {
-      contentEl.createEl('div', { cls: 'gemma4-relink-page', text: 'Links to add' });
+      contentEl.createDiv({ cls: 'gemma4-relink-page', text: 'Links to add' });
       contentEl.createDiv({ text: this.links.map((l) => `[[${l.title}]]`).join('  ') });
     }
     if (!this.tags.length && !this.links.length) {

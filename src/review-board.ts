@@ -1,5 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
-import { contentHash, isWikiPage, wikiDir } from './wiki-store';
+import { contentHash, isWikiPage } from './wiki-store';
 
 // Review board: turns "you should periodically review the wiki" from a
 // vague chore into a concrete list. Model-free signals from page frontmatter
@@ -115,7 +115,7 @@ export class ReviewBoardModal extends Modal {
       return;
     }
 
-    const list = contentEl.createEl('div', { cls: 'gemma4-review-list' });
+    const list = contentEl.createDiv({ cls: 'gemma4-review-list' });
     for (const item of this.board.items) {
       const row = list.createDiv({ cls: 'gemma4-review-row' });
       const link = row.createEl('a', { cls: 'gemma4-review-title', text: item.title });

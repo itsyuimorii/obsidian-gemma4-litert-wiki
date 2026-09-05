@@ -1,4 +1,4 @@
-import { App, Modal, TFile } from 'obsidian';
+import { App, Modal } from 'obsidian';
 import { wikiDir } from './wiki-store';
 
 // Lint v2b (issue #21): provenance spot-check. Ingest can hallucinate a key

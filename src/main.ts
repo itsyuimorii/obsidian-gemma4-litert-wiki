@@ -1,4 +1,4 @@
-import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, normalizePath, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import * as http from 'node:http';
 import type { Server } from 'node:http';
 import * as fs from 'node:fs';
@@ -124,7 +124,7 @@ async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
 // tokens per character, everything else ~4 characters per token. Deliberately
 // pessimistic — overshooting the context window truncates the rewrite
 // silently, which is the worst failure mode we have.
-const CJK_RE = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
+const CJK_RE = /[\u3000-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
 function estimateTokens(text: string): number {
   const cjk = (text.match(CJK_RE) ?? []).length;
   return Math.ceil(cjk * 1.5 + (text.length - cjk) / 4);
@@ -446,7 +446,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       // Obsidian removes a dismissed Notice from the DOM. Writing to it after
       // that is shouting into a void, and re-opening it would be overriding a
       // decision the user just made.
-      if (this.statusNotice.noticeEl?.isConnected) {
+      if (this.statusNotice.messageEl?.isConnected) {
         this.statusNotice.setMessage(body);
       } else {
         // Stop writing to it, but KEEP the reference. Dropping it here left
@@ -1208,13 +1208,13 @@ export default class LiteRtSpikePlugin extends Plugin {
     const { workspace } = this.app;
     const existing = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
     if (existing) {
-      workspace.revealLeaf(existing);
+      await workspace.revealLeaf(existing);
       return;
     }
     const leaf: WorkspaceLeaf | null = workspace.getRightLeaf(false);
     if (!leaf) return;
     await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-    workspace.revealLeaf(leaf);
+    await workspace.revealLeaf(leaf);
   }
 
   private ensureWasmLoaded(): Promise<void> {

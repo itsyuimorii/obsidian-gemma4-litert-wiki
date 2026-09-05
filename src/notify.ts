@@ -169,6 +169,6 @@ export class Progress {
 
   private finish(kind: NoticeKind, text: string, durationMs: number) {
     this.notice.setMessage(mark(kind, text));
-    setTimeout(() => this.notice.hide(), durationMs);
+    window.setTimeout(() => this.notice.hide(), durationMs);
   }
 }

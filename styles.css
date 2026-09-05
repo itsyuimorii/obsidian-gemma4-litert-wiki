@@ -84,7 +84,6 @@
   height: 26px;
   box-sizing: border-box;
   margin: 0;
-  line-height: 1;
   vertical-align: middle;
   background: transparent;
   border: 1px solid var(--background-modifier-border);
@@ -125,7 +124,6 @@
   line-height: 1;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1058,7 +1056,7 @@
 }
 
 .gemma4-settings input[type='range'] {
-  accent-color: var(--text-normal) !important;
+  accent-color: var(--text-normal);
 }
 
 /* Multi-line confirm bodies (e.g. the retag change list): keep line breaks,
@@ -1309,7 +1307,6 @@
   background: transparent;
   color: var(--text-muted);
 }
-||||||| parent of 9bdaaab (A first move, a warning while undo still works, and a card that comes back)
 
 /* The one-line nudge under the empty state, shown until the first message is
    sent. Styled as a quiet aside, not a banner — it is a pointer at the chips

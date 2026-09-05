@@ -4,6 +4,52 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.3 — 2026-09-05
+
+Everything the community directory's automated review found, fixed or answered.
+
+### The two errors that were ours
+
+- The description no longer says "Obsidian" — the directory rejects the word
+  as redundant, and now our own release check does too.
+- The chat input's auto-grow sets its height through `setCssStyles` instead of
+  assigning `el.style` directly.
+
+### The error that is not ours, explained where reviewers read
+
+The one dynamic `<script>` creation lives in `@litertjs/wasm-utils` — it is
+how LiteRT-LM loads its Emscripten glue outside a worker, and it loads a file
+from your own disk over the plugin's loopback server, never from the network.
+The Privacy section now documents exactly this, with the allowlist and the
+build-time version pin.
+
+### Build verification
+
+- `npm run build` now produces the byte-identical `main.js` the release
+  carries: the build stamp defaults to the manifest version instead of the
+  wall clock, which is what made the store's rebuild-and-diff check fail for a
+  reason unrelated to the code.
+- Release assets carry GitHub artifact attestations
+  (`gh attestation verify main.js -R itsyuimorii/obsidian-gemma4-litert-wiki`).
+
+### Cleanups from the same report
+
+- A stray merge-conflict marker line in `styles.css` — shipped in 1.0.2,
+  harmless to rendering, embarrassing anyway. Gone, along with duplicate
+  properties and the one `!important`.
+- `window.setTimeout`/`clearTimeout` for popout-window compatibility;
+  `createDiv` where `createEl('div')` was; `messageEl` for the deprecated
+  `noticeEl`; `revealLeaf` awaited; deprecated `setDynamicTooltip` dropped;
+  every unused import removed and `noUnusedLocals` turned on so the next one
+  cannot land.
+
+### Left as-is, with reasons in the code
+
+`fetch` stays for the model and runtime downloads — `requestUrl` buffers the
+whole body, and one of these bodies is ~3 GB; streaming is what makes the
+progress bar, the resume-from-byte-offset, and the stall timeout possible. The
+control-character class in `safeFileName` is deliberate filename hygiene.
+
 ## 1.0.2 — 2026-09-05
 
 - **Plugin ID is now `gemma-litert-wiki`** (was `gemma4-litert-wiki`). The

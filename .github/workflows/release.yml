@@ -12,6 +12,9 @@ on:
 
 permissions:
   contents: write
+  # Required by actions/attest-build-provenance.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -27,12 +30,13 @@ jobs:
 
       - run: npm ci
 
-      # BUILD_STAMP replaces build.js's wall-clock default, so this build is
-      # reproducible: anyone can rerun it on this commit and get the same file.
+      # No BUILD_STAMP: build.js defaults to the manifest version, which makes
+      # `npm run build` on this commit produce the byte-identical file. The
+      # store's automated review rebuilds from source and diffs against the
+      # released asset, and an injected SHA would fail that check for a reason
+      # that has nothing to do with the code.
       - name: Build
         run: npm run build
-        env:
-          BUILD_STAMP: ${{ github.ref_name }} (${{ github.sha }})
 
       - name: Typecheck
         run: npm run typecheck
@@ -48,6 +52,17 @@ jobs:
 
       - name: Checksums
         run: sha256sum main.js manifest.json styles.css | tee checksums.txt
+
+      # Signed provenance for the two built assets, so anyone can verify with
+      # `gh attestation verify main.js -R itsyuimorii/obsidian-gemma4-litert-wiki`
+      # that this exact file came out of this repository's workflow. The store
+      # asks for it, and it is the other half of a reproducible build: the
+      # rebuild proves the bytes match the source, the attestation proves who
+      # built them.
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'main.js, styles.css'
 
       - name: Publish release
         env:
