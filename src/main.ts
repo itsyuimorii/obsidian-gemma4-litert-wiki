@@ -42,7 +42,8 @@ import {
   type IndexEntry,
   type NoteExtraction,
 } from './wiki-store';
-import { runLint, TidyModal, type TagHealth } from './lint';
+import { findSameSubject, runLint, TidyModal, type TagHealth } from './lint';
+import type { DuplicatePair } from './pure';
 import {
   collectWikiPages,
   ContradictionReportModal,
@@ -1346,7 +1347,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       notify('noop', 'Every proposed tag is on the Rejected list — nothing to write.');
       return false;
     }
-    const content = buildSchemaFile(vocab, existing.naming, existing.conceptThreshold, [], existing.rejected);
+    const content = buildSchemaFile({ ...existing, tags: vocab, pending: [] });
     const path = schemaPath();
     const overwriting = !!this.app.vault.getAbstractFileByPath(path);
     // Resolves when the dialog is answered, not when it opens. Tidy runs
@@ -1779,11 +1780,44 @@ export default class LiteRtSpikePlugin extends Plugin {
               fm.tags = c.to;
             });
           }
+          // Keep the mapping instead of discarding it. Deciding that
+          // `llm-eval` means `evals` is the whole of an alias, the user has
+          // just approved exactly that judgment on the screen above, and it
+          // costs no model call to write down. Without it the knowledge lives
+          // only in the rewritten pages, so a page that was not retagged —
+          // one added later, one the user reverted — reads as unrelated to
+          // its own subject forever.
+          await this.rememberTagAliases(mapping);
           await appendLog(this.app.vault, 'retag', `${changes.length} pages to vocabulary`);
           notify('done', `Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`);
         });
       },
     }).open();
+  }
+
+  /**
+   * Write an approved retag mapping into schema.md's `## Aliases`.
+   *
+   * Additive and never destructive: an alias the user edited or deleted by
+   * hand is theirs, so an existing entry is left alone rather than rewritten.
+   * A mapping onto a tag the user has since banned is dropped, because
+   * `## Rejected` outranks everything.
+   */
+  private async rememberTagAliases(mapping: Map<string, string>) {
+    const schema = await readSchema(this.app.vault);
+    const rejected = new Set(schema.rejected.map((t) => slugify(t)));
+    const aliases = { ...schema.aliases };
+    let added = 0;
+    for (const [from, to] of mapping) {
+      const a = slugify(from);
+      const b = slugify(to);
+      if (!a || !b || a === b || rejected.has(b)) continue;
+      if (aliases[a]) continue;
+      aliases[a] = b;
+      added++;
+    }
+    if (!added) return;
+    await writeWikiPage(this.app.vault, schemaPath(), buildSchemaFile({ ...schema, aliases }));
   }
 
   // One strict-JSON call: old tag -> closest vocabulary tag. Flat object in,
@@ -1862,12 +1896,18 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.status('Checking the wiki…');
     const report = await runLint(this.app);
     const tags = await this.tagHealth();
+    // Capped for the same reason the contradiction sweep caps: a list longer
+    // than a dialog can show is a list nobody reads, and the count says how
+    // many were left out.
+    const schemaNow = await readSchema(this.app.vault);
+    const sameSubject = await findSameSubject(this.app, schemaNow.aliases, 12);
     this.statusEnd();
-    new TidyModal(this.app, report, tags, async (chosen) => {
+    new TidyModal(this.app, report, tags, sameSubject, async (chosen) => {
       // Free repairs first: they change the link graph the model would
       // otherwise be asked about, so running them first is fewer calls.
       if (chosen.has('reconcile')) await this.reconcileWiki();
       if (chosen.has('relink')) await this.relinkWikiPages();
+      if (chosen.has('dedupe')) await this.linkSameSubjectPairs(sameSubject.pairs);
       // Two independent boxes: rebuild, apply, or both. Chaining them was the
       // merge quietly deleting the "I edited schema.md by hand" path.
       //
@@ -1998,25 +2038,94 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
       new RelinkPreviewModal(this.app, proposals, () => {
         this.runApproved('Relink', async () => {
-          for (const prop of proposals) {
-            const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
-            if (!(file instanceof TFile)) continue;
-            const content = await this.app.vault.read(file);
-            const section =
-              `\n## Related\n\n` +
-              prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
-              `\n`;
-            // Replace rather than append: Related is the last section a
-            // generated page carries, so truncating at it is safe, and a
-            // plain append would leave two headings.
-            const cut = content.indexOf('\n## Related');
-            const head = cut === -1 ? content : content.slice(0, cut);
-            await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
-            await appendLog(this.app.vault, 'relink', prop.title);
-          }
+          await this.writeRelatedSections(proposals, 'relink');
           notify('done', `Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`);
         });
       }).open();
+  }
+
+  /**
+   * Record the relationship between pages that look like one subject.
+   *
+   * Deliberately the smallest possible repair. It adds each page of a flagged
+   * pair to the other's Related section and stops there: nothing is merged,
+   * nothing is deleted, and no page is rewritten beyond that one section. Two
+   * notes about a subject are two pieces of writing and which of them to keep
+   * — if either — is not a decision a tag-similarity check has any standing to
+   * make. The plugin's job here is to stop the pair being invisible.
+   *
+   * Free: the pairs were found without a model and linking them needs none.
+   */
+  private async linkSameSubjectPairs(pairs: DuplicatePair[]) {
+    if (!pairs.length) {
+      notify('noop', 'No same-subject pairs to link.');
+      return;
+    }
+    const entries = await this.liveIndexEntries();
+    const titleOf = new Map(entries.map((e) => [e.linkPath, e.title]));
+
+    // Accumulate per page: one page can be in several pairs, and writing its
+    // Related section twice would drop the first edit.
+    const wanted = new Map<string, Set<string>>();
+    const add = (from: string, to: string) => {
+      if (!wanted.has(from)) wanted.set(from, new Set());
+      wanted.get(from)!.add(to);
+    };
+    for (const p of pairs) {
+      add(p.a.linkPath, p.b.linkPath);
+      add(p.b.linkPath, p.a.linkPath);
+    }
+
+    const proposals: RelinkProposal[] = [];
+    for (const [linkPath, targets] of wanted) {
+      const file = this.app.vault.getAbstractFileByPath(`${linkPath}.md`);
+      if (!(file instanceof TFile)) continue;
+      const existing = this.readRelatedLinksOn(await this.app.vault.read(file));
+      // Keep what the page already says, drop links to pages that are gone,
+      // and add the partner. A repair that quietly removed a link the user
+      // had would not be the smallest possible repair.
+      const now = [...new Set([...existing.filter((lp) => titleOf.has(lp)), ...targets])].sort();
+      if (now.length === existing.length && now.every((lp, i) => existing[i] === lp)) continue;
+      proposals.push({
+        pagePath: `${linkPath}.md`,
+        title: titleOf.get(linkPath) ?? file.basename,
+        related: now.map((lp) => ({ linkPath: lp, title: titleOf.get(lp) ?? lp })),
+      });
+    }
+
+    if (!proposals.length) {
+      notify('noop', 'Those pages already link to each other.');
+      return;
+    }
+    new RelinkPreviewModal(this.app, proposals, () => {
+      this.runApproved('Link same-subject pages', async () => {
+        await this.writeRelatedSections(proposals, 'dedupe');
+        notify(
+          'done',
+          `Linked ${pairs.length} pair${pairs.length === 1 ? '' : 's'} across ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`
+        );
+      });
+    }).open();
+  }
+
+  /** Replace the Related section on each proposed page. Shared by relink and dedupe. */
+  private async writeRelatedSections(proposals: RelinkProposal[], action: string) {
+    for (const prop of proposals) {
+      const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
+      if (!(file instanceof TFile)) continue;
+      const content = await this.app.vault.read(file);
+      const section =
+        `\n## Related\n\n` +
+        prop.related.map((r) => `- [[${r.linkPath}|${r.title}]]`).join('\n') +
+        `\n`;
+      // Replace rather than append: Related is the last section a generated
+      // page carries, so truncating at it is safe, and a plain append would
+      // leave two headings.
+      const cut = content.indexOf('\n## Related');
+      const head = cut === -1 ? content : content.slice(0, cut);
+      await this.app.vault.modify(file, head.trimEnd() + '\n' + section);
+      await appendLog(this.app.vault, action, prop.title);
+    }
   }
 
   private async reconcileWiki() {

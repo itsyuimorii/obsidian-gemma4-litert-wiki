@@ -12,56 +12,57 @@ import { buildSchemaFile, parseSchema, type WikiSchema } from '../src/pure.ts';
 
 const NAMING = { concept: 'kebab-case singular noun', source: "follows the source note's filename" };
 
-function roundTrip(s: {
-  tags: string[];
-  naming?: Record<string, string>;
-  conceptThreshold?: number;
-  pending?: string[];
-  rejected?: string[];
-}): WikiSchema {
-  return parseSchema(
-    buildSchemaFile(s.tags, s.naming ?? NAMING, s.conceptThreshold ?? 4, s.pending ?? [], s.rejected ?? [])
-  );
+function roundTrip(s: Partial<WikiSchema>): WikiSchema {
+  return parseSchema(buildSchemaFile({ naming: NAMING, conceptThreshold: 4, ...s }));
 }
 
 test('all five data slots survive a rebuild', () => {
-  const before = {
+  const before: WikiSchema = {
     tags: ['llm-eval', 'retrieval', 'obsidian-plugin'],
     naming: NAMING,
     conceptThreshold: 7,
     pending: ['prompt-injection', 'quantisation'],
     rejected: ['misc', 'todo'],
+    aliases: { evals: 'llm-eval', rag: 'retrieval' },
   };
   assert.deepEqual(roundTrip(before), before);
 });
 
 test('a hand-edited list survives every subsequent rebuild', () => {
   // The user's actual workflow: edit schema.md by hand, restart, edit again.
-  let schema = roundTrip({ tags: ['alpha'], pending: ['beta'], rejected: ['gamma'] });
-  for (let i = 0; i < 5; i++) {
-    schema = parseSchema(
-      buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, schema.pending, schema.rejected)
-    );
-  }
+  let schema = roundTrip({
+    tags: ['alpha'],
+    pending: ['beta'],
+    rejected: ['gamma'],
+    aliases: { delta: 'alpha' },
+  });
+  for (let i = 0; i < 5; i++) schema = parseSchema(buildSchemaFile(schema));
   assert.deepEqual(schema.tags, ['alpha']);
   assert.deepEqual(schema.pending, ['beta']);
   assert.deepEqual(schema.rejected, ['gamma']);
+  assert.deepEqual(schema.aliases, { delta: 'alpha' });
 });
 
 test('the rebuilt file is byte-identical when the data has not changed', () => {
-  const first = buildSchemaFile(['a', 'b'], NAMING, 4, ['c'], ['d']);
-  const second = buildSchemaFile(
-    parseSchema(first).tags,
-    parseSchema(first).naming,
-    parseSchema(first).conceptThreshold,
-    parseSchema(first).pending,
-    parseSchema(first).rejected
-  );
-  assert.equal(second, first);
+  const first = buildSchemaFile({
+    tags: ['a', 'b'],
+    naming: NAMING,
+    pending: ['c'],
+    rejected: ['d'],
+    aliases: { e: 'a' },
+  });
+  assert.equal(buildSchemaFile(parseSchema(first)), first);
 });
 
 test('deleting a callout does not take the data with it', () => {
-  const built = buildSchemaFile(['kept-tag'], NAMING, 9, ['waiting'], ['banned']);
+  const built = buildSchemaFile({
+    tags: ['kept-tag'],
+    naming: NAMING,
+    conceptThreshold: 9,
+    pending: ['waiting'],
+    rejected: ['banned'],
+    aliases: { old: 'kept-tag' },
+  });
   const vandalised = built
     .split('\n')
     .filter((l) => !l.startsWith('> '))
@@ -71,13 +72,14 @@ test('deleting a callout does not take the data with it', () => {
   assert.equal(parsed.conceptThreshold, 9);
   assert.deepEqual(parsed.pending, ['waiting']);
   assert.deepEqual(parsed.rejected, ['banned']);
+  assert.deepEqual(parsed.aliases, { old: 'kept-tag' });
 });
 
 test('a digit inside a callout is not mistaken for the threshold', () => {
   // The parser drops every "> " line for exactly this reason: it takes the
   // FIRST number in the section, and the explanation above the value has
   // digits in it the moment anyone edits the prose.
-  const built = buildSchemaFile(['a'], NAMING, 6);
+  const built = buildSchemaFile({ tags: ['a'], naming: NAMING, conceptThreshold: 6 });
   const withDigits = built.replace(
     '## Concept threshold\n',
     '## Concept threshold\n\n> A note to self: I tried 2 and then 3, both too low.\n'
@@ -86,7 +88,7 @@ test('a digit inside a callout is not mistaken for the threshold', () => {
 });
 
 test('empty sections read as empty, not as their placeholder text', () => {
-  const parsed = parseSchema(buildSchemaFile([], NAMING, 4, [], []));
+  const parsed = parseSchema(buildSchemaFile({ naming: NAMING }));
   assert.deepEqual(parsed.tags, []);
   assert.deepEqual(parsed.pending, []);
   assert.deepEqual(parsed.rejected, []);
@@ -104,6 +106,7 @@ test('a missing section falls back instead of throwing', () => {
   assert.deepEqual(parsed.tags, []);
   assert.deepEqual(parsed.pending, []);
   assert.deepEqual(parsed.rejected, []);
+  assert.deepEqual(parsed.aliases, {});
   assert.equal(typeof parsed.conceptThreshold, 'number');
   assert.ok(Object.keys(parsed.naming).length > 0, 'naming falls back to the default');
 });
@@ -119,4 +122,48 @@ test('a section stops at the next heading', () => {
 test('non-Latin tags survive the round trip', () => {
   const parsed = roundTrip({ tags: ['設計', 'डिज़ाइन', 'дизайн'] });
   assert.deepEqual(parsed.tags, ['設計', 'डिज़ाइन', 'дизайн']);
+});
+
+// --- Aliases, the sixth slot -----------------------------------------------
+
+test('aliases survive a rebuild like every other slot', () => {
+  const parsed = roundTrip({ tags: ['evals'], aliases: { 'llm-eval': 'evals' } });
+  assert.deepEqual(parsed.aliases, { 'llm-eval': 'evals' });
+});
+
+test('an alias is written and read as a slug', () => {
+  assert.deepEqual(roundTrip({ aliases: { 'LLM  Eval': 'Evals' } }).aliases, { 'llm-eval': 'evals' });
+});
+
+test('a tag is never recorded as an alias of itself', () => {
+  assert.deepEqual(roundTrip({ aliases: { evals: 'evals' } }).aliases, {});
+});
+
+test('the "(none)" placeholder is not an alias', () => {
+  assert.deepEqual(parseSchema(buildSchemaFile({})).aliases, {});
+});
+
+test('the callout above the aliases is not parsed as one', () => {
+  // The section's own explanation contains a colon, which is the separator.
+  const built = buildSchemaFile({ aliases: { old: 'new' } });
+  assert.deepEqual(parseSchema(built).aliases, { old: 'new' });
+});
+
+test('hand-written aliases are read', () => {
+  const parsed = parseSchema('## Aliases\n\nllm-eval: evals\nrag: retrieval\n');
+  assert.deepEqual(parsed.aliases, { 'llm-eval': 'evals', rag: 'retrieval' });
+});
+
+test('buildSchemaFile(parseSchema(x)) is the regeneration path and drops nothing', () => {
+  // The signature takes one argument shaped like a parsed schema precisely so
+  // that this cannot be written wrong at a call site.
+  const full = buildSchemaFile({
+    tags: ['a'],
+    naming: NAMING,
+    conceptThreshold: 5,
+    pending: ['b'],
+    rejected: ['c'],
+    aliases: { d: 'a' },
+  });
+  assert.equal(buildSchemaFile(parseSchema(full)), full);
 });

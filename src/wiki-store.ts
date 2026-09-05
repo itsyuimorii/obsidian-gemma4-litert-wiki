@@ -664,12 +664,14 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   // itself is the definition of what is yours.
   const schemaFile = vault.getAbstractFileByPath(schemaPath());
   if (!schemaFile) {
-    await vault.create(schemaPath(), buildSchemaFile([])).catch(() => {});
+    await vault.create(schemaPath(), buildSchemaFile()).catch(() => {});
   } else if (schemaFile instanceof TFile) {
     const current = await vault.read(schemaFile).catch(() => null);
     if (current !== null) {
       const d = parseSchema(current);
-      const rebuilt = buildSchemaFile(d.tags, d.naming, d.conceptThreshold, d.pending, d.rejected);
+      // One argument, so a slot cannot be forgotten here — which is the call
+      // that would erase the user's own lists if it were.
+      const rebuilt = buildSchemaFile(d);
       if (rebuilt !== current) await vault.modify(schemaFile, rebuilt).catch(() => {});
     }
   }
@@ -809,7 +811,15 @@ export async function readIndexEntries(vault: Vault): Promise<IndexEntry[]> {
 
 export async function readSchema(vault: Vault): Promise<WikiSchema> {
   const content = await readIfExists(vault, schemaPath());
-  if (!content) return { tags: [], naming: DEFAULT_NAMING, conceptThreshold: DEFAULT_CONCEPT_THRESHOLD, pending: [], rejected: [] };
+  if (!content)
+    return {
+      tags: [],
+      naming: DEFAULT_NAMING,
+      conceptThreshold: DEFAULT_CONCEPT_THRESHOLD,
+      pending: [],
+      rejected: [],
+      aliases: {},
+    };
   return parseSchema(content);
 }
 
@@ -835,7 +845,7 @@ export async function queuePendingTags(
   const fresh = tags.filter(isUsableTag).map((t) => slugify(t)).filter((t) => !known.has(t));
   if (!fresh.length) return { before, after: before };
   const pending = [...schema.pending, ...fresh];
-  const next = buildSchemaFile(schema.tags, schema.naming, schema.conceptThreshold, pending, schema.rejected);
+  const next = buildSchemaFile({ ...schema, pending });
   await writeFile(vault, schemaPath(), next);
   return { before, after: pending.length };
 }
