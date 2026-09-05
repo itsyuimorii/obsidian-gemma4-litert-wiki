@@ -161,6 +161,29 @@ console.log('\n== plugin guidelines ==');
 // missing from the README is a gap a reviewer asks about; a README row naming
 // a command that no longer exists is an instruction that does not work, and
 // that is the one that shipped.
+console.log('\n== README renders as written ==');
+{
+  // GitHub's GFM strikes through text between single tildes, not just double
+  // ones. So a paragraph using `~` twice for "approximately" — `~28 s` in one
+  // clause and `~29 tok/s` in the next — silently renders with everything
+  // between them crossed out. This happened to the Benchmarks takeaway, and
+  // it is invisible in the source: the raw markdown reads perfectly.
+  for (const file of ['README.md', 'README.ja.md', 'CHANGELOG.md']) {
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const bad = [];
+    let fence = false;
+    lines.forEach((line, i) => {
+      if (line.trimStart().startsWith('```')) { fence = !fence; return; }
+      if (fence) return;
+      // Deliberate ~~strikethrough~~ is fine; what is left is the accidents.
+      if (line.split('~~').join('').split('~').length - 1 >= 2) {
+        bad.push(`${file}:${i + 1}`);
+      }
+    });
+    ok(`${file}: no accidental strikethrough from paired ~`, bad.length === 0, bad.join(' '));
+  }
+}
+
 console.log('\n== README matches the code ==');
 {
   const mainTs = fs.readFileSync('src/main.ts', 'utf8');
