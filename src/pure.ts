@@ -575,6 +575,25 @@ function splitOversizedBlock(block: string, budget: number): string[] {
 // Pack a note into chunks that each fit the per-pass input budget. Chunk
 // boundaries land on headings or blank lines wherever possible, so rejoining
 // the rewritten pieces is a plain concatenation.
+/**
+ * How many output tokens one Improve pass is allowed.
+ *
+ * Improve rewrites a chunk into a piece of roughly its own size, so the output
+ * cap has to follow the input rather than sit at a constant. This used to read
+ * `Math.min(2048, estimate + 300)` — a flat ceiling under a comment saying it
+ * was not one. With the default 64,000-token context `maxInputTokens` is
+ * 24,000, so a chunk could be twelve times longer than the room its rewrite
+ * was given, and every note past ~2,048 tokens came back truncated.
+ *
+ * The invariant that matters, and the one the test asserts: **the budget is
+ * never below what the input itself estimates at.** A cap under that number
+ * asks the model for a same-sized rewrite and then stops it partway through.
+ */
+export function improveOutputBudget(text: string, maxInputTokens: number): number {
+  const HEADROOM = 300;
+  return Math.min(maxInputTokens + HEADROOM, estimateImproveTokens(text) + HEADROOM);
+}
+
 export function chunkForImprove(content: string, budget: number): ImproveChunk[] {
   if (estimateImproveTokens(content) <= budget) return [{ raw: content, verbatim: false }];
   const chunks: ImproveChunk[] = [];
