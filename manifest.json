@@ -3,7 +3,7 @@
   "name": "Gemma 4 LiteRT Wiki",
   "version": "1.0.5",
   "minAppVersion": "1.11.4",
-  "description": "Gemma 4 E4B runs in-process via LiteRT-LM and WebGPU — free local AI in your vault. Chat with a note or the whole vault, then build a living wiki inspired by Karpathy’s LLM-wiki: indexes, concepts, tags, links, schema. Quizzes and flashcards too.",
+  "description": "Gemma 4 E4B runs in-process, right inside your vault. Build Andrej Karpathy's living LLM wiki with Gemma 4 E4B: indexes, concepts, tags, links, schema — plus grounded chat, quizzes and flashcards, all local after one download.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
