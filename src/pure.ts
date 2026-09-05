@@ -285,6 +285,13 @@ export interface WikiSchema {
   // a plain deletion from Tags only lasts until the next rebuild, because
   // rebuilds read the tags still in use on pages. This list is permanent.
   rejected: string[];
+  // Old tag -> the vocabulary tag it means. Written by Retag, which already
+  // computes exactly this mapping to rewrite pages with and then throws it
+  // away. Keeping it is what lets a page still carrying `llm-eval` be
+  // recognised as being about `evals` — which is the whole of duplicate
+  // detection here. Never authoritative over Rejected: an alias pointing at
+  // a banned tag is ignored.
+  aliases: Record<string, string>;
 }
 
 export const DEFAULT_NAMING: Record<string, string> = {
@@ -293,15 +300,26 @@ export const DEFAULT_NAMING: Record<string, string> = {
 };
 export const DEFAULT_CONCEPT_THRESHOLD = 4;
 
-// The self-documenting schema file. The prose header explains what this file
-// is and how to use it, so opening it is enough to understand the config.
-export function buildSchemaFile(
-  tags: string[],
-  naming: Record<string, string> = DEFAULT_NAMING,
-  conceptThreshold = DEFAULT_CONCEPT_THRESHOLD,
-  pending: string[] = [],
-  rejected: string[] = []
-): string {
+/**
+ * The self-documenting schema file. The prose header explains what the file is
+ * and how to use it, so opening it is enough to understand the config.
+ *
+ * Takes one argument, shaped exactly like what parseSchema returns, so that
+ * `buildSchemaFile(parseSchema(content))` is the regeneration path and cannot
+ * silently drop a slot. It used to take five positional parameters with
+ * defaults, which meant every caller had to remember to thread all five
+ * through — and the one that regenerates the file on every start had to
+ * remember hardest, because forgetting there erases the user's own lists.
+ */
+export function buildSchemaFile(schema: Partial<WikiSchema> = {}): string {
+  const {
+    tags = [],
+    naming = DEFAULT_NAMING,
+    conceptThreshold = DEFAULT_CONCEPT_THRESHOLD,
+    pending = [],
+    rejected = [],
+    aliases = {},
+  } = schema;
   const tagLines = tags.length
     ? tags.map((t) => `- ${slugify(t)}`).join('\n')
     : '_No tags yet. Ingest a few notes, then run "Tidy the wiki" to build the vocabulary from them._';
@@ -313,6 +331,13 @@ export function buildSchemaFile(
     : '(none)';
   const rejectedLines = rejected.length
     ? rejected.map((t) => `- ${slugify(t)}`).join('\n')
+    : '(none)';
+  // Same `key: value` shape as Naming, which the parser already reads.
+  const aliasLines = Object.keys(aliases).length
+    ? Object.entries(aliases)
+        .map(([from, to]) => `${slugify(from)}: ${slugify(to)}`)
+        .sort()
+        .join('\n')
     : '(none)';
   // Docs as collapsed callouts, data in the open. In live preview — where
   // people actually edit — a "[!info]-" renders as a one-line pill until
@@ -351,7 +376,11 @@ export function buildSchemaFile(
     `## Rejected\n\n` +
     `> [!info]- What this is\n` +
     `> Your veto, and it outranks everything: never re-proposed, never applied, never queued. Deleting a tag from \`## Tags\` alone lasts only until the next Organize — a page still carrying it brings it back. A line here is permanent.\n\n` +
-    `${rejectedLines}\n`
+    `${rejectedLines}\n\n` +
+    `## Aliases\n\n` +
+    `> [!info]- What this is\n` +
+    `> \`old-tag: vocabulary-tag\` — one per line. **Tidy the wiki** writes these when you approve a retag, because deciding that \`llm-eval\` means \`evals\` is the same decision. They are what lets a page still carrying the old tag be recognised as being about the same thing as one carrying the new one. Edit or delete them freely; an alias pointing at a tag in \`## Rejected\` is ignored.\n\n` +
+    `${aliasLines}\n`
   );
 }
 
@@ -398,12 +427,24 @@ export function parseSchema(content: string): WikiSchema {
     .filter((l) => l.startsWith('- '))
     .map((l) => l.slice(2).trim())
     .filter((t) => t && t.toLowerCase() !== '(none)');
+  const aliases: Record<string, string> = {};
+  for (const l of schemaSection(content, 'Aliases').split('\n')) {
+    if (l.trim().startsWith('>')) continue;
+    const m = l.match(/^\s*([^:>\s][^:]*?)\s*:\s*(.+?)\s*$/);
+    if (!m) continue;
+    const from = slugify(m[1]);
+    const to = slugify(m[2]);
+    // A tag is never an alias of itself, and `(none)` is the placeholder.
+    if (!from || !to || from === to || from === 'untitled' || to === 'untitled') continue;
+    aliases[from] = to;
+  }
   return {
     tags,
     naming: Object.keys(naming).length ? naming : DEFAULT_NAMING,
     conceptThreshold: tm ? parseInt(tm[0], 10) : DEFAULT_CONCEPT_THRESHOLD,
     pending,
     rejected,
+    aliases,
   };
 }
 
@@ -565,4 +606,140 @@ export function chunkForImprove(content: string, budget: number): ImproveChunk[]
   }
   flush();
   return chunks;
+}
+
+// ---------------------------------------------------------------------------
+// Pages that are about the same thing
+// ---------------------------------------------------------------------------
+
+// Two notes about one subject produce two cards, and until now nothing ever
+// noticed. That is not by itself a bug — a card summarises ITS note, and two
+// notes about the same subject are two different pieces of writing, both worth
+// keeping. What was missing is the observation: nothing said "these two are
+// about the same thing", so the pair never got linked and never grew a concept
+// page above it.
+//
+// So this finds pairs and says why. It does not merge them, and there is no
+// mode in which it does — the same rule the contradiction sweep follows.
+//
+// Everything here is model-free. The three inputs already exist: `mentions:`
+// on every card (the salient entities ingest already extracts), the tag
+// vocabulary, and the alias table Retag now leaves behind. A name that used to
+// read as unrelated — `llm-eval` beside `evals` — resolves through the aliases
+// to the same canonical form, which is the entire mechanism.
+
+/**
+ * A name in its canonical form: slugified, then followed through the alias
+ * table.
+ *
+ * The walk is depth-limited rather than cycle-detected because the table is
+ * hand-editable, and `a: b` beside `b: a` is a thing a person will write. A
+ * cycle resolves to whichever end the walk stops on — stable for a given
+ * table, which is all this needs to be.
+ */
+export function canonicalTag(name: string, aliases: Record<string, string> = {}): string {
+  let out = slugify(name);
+  for (let hops = 0; hops < 8; hops++) {
+    const next = aliases[out];
+    if (!next || next === out) break;
+    out = slugify(next);
+  }
+  return out;
+}
+
+export interface DuplicateCandidate {
+  linkPath: string;
+  title: string;
+  /** Salient entities from the card's `mentions:` frontmatter. */
+  mentions: string[];
+  /** Page file mtime, so the newest pairs are reported first. */
+  mtime: number;
+}
+
+export interface DuplicatePair {
+  a: DuplicateCandidate;
+  b: DuplicateCandidate;
+  /** What made them look like one subject, in words the report can print. */
+  because: string;
+}
+
+/**
+ * A mention carried by this share of the wiki is a topic, not an identity.
+ *
+ * Without this every page mentioning "AI" pairs with every other one, and the
+ * finding becomes noise that gets ignored — which is worse than not having it,
+ * because a checkbox nobody trusts still gets ticked.
+ */
+const TOPIC_SHARE = 0.25;
+const TOPIC_FLOOR = 3;
+
+export function findDuplicatePairs(opts: {
+  pages: DuplicateCandidate[];
+  aliases?: Record<string, string>;
+  /** Whether these two already link to each other, in either direction. */
+  linked?: (a: string, b: string) => boolean;
+  cap: number;
+}): { pairs: DuplicatePair[]; total: number } {
+  const { pages, aliases = {}, linked = () => false, cap } = opts;
+  if (pages.length < 2 || cap <= 0) return { pairs: [], total: 0 };
+
+  const canon = (s: string) => canonicalTag(s, aliases);
+
+  // How many pages carry each mention, so the common ones can be set aside.
+  const carriers = new Map<string, number>();
+  for (const p of pages) {
+    for (const m of new Set(p.mentions.map(canon))) {
+      if (m && m !== 'untitled') carriers.set(m, (carriers.get(m) ?? 0) + 1);
+    }
+  }
+  const topicAt = Math.max(TOPIC_FLOOR, Math.ceil(pages.length * TOPIC_SHARE));
+  const identifying = (m: string) => !!m && m !== 'untitled' && (carriers.get(m) ?? 0) < topicAt;
+
+  const titleOf = new Map(pages.map((p) => [p.linkPath, canon(p.title)]));
+  const mentionsOf = new Map(
+    pages.map((p) => [p.linkPath, new Set([...new Set(p.mentions.map(canon))].filter(identifying))])
+  );
+
+  const found: DuplicatePair[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    for (let j = i + 1; j < pages.length; j++) {
+      const a = pages[i];
+      const b = pages[j];
+      if (a.linkPath === b.linkPath) continue;
+      if (linked(a.linkPath, b.linkPath)) continue;
+
+      // A title that slugifies to `untitled` names nothing, so two of them
+      // are not two pages with the same name.
+      const ta = titleOf.get(a.linkPath)!;
+      const tb = titleOf.get(b.linkPath)!;
+      const namedA = ta && ta !== 'untitled' ? ta : '';
+      const namedB = tb && tb !== 'untitled' ? tb : '';
+      const ma = mentionsOf.get(a.linkPath)!;
+      const mb = mentionsOf.get(b.linkPath)!;
+
+      // Strongest first, and the first match is the one reported: a reason
+      // that names the weakest evidence would read as a worse finding than it
+      // is.
+      let because = '';
+      if (namedA && namedA === namedB) {
+        because = `both pages are called “${a.title}”`;
+      } else if (namedA && mb.has(namedA)) {
+        because = `“${a.title}” is named on the other page`;
+      } else if (namedB && ma.has(namedB)) {
+        because = `“${b.title}” is named on the other page`;
+      } else {
+        const shared = [...ma].filter((m) => mb.has(m));
+        if (shared.length >= 2) {
+          because = `both name ${shared.slice(0, 3).map((m) => `“${m}”`).join(' and ')}`;
+        }
+      }
+      if (because) found.push({ a, b, because });
+    }
+  }
+
+  // Newest pair first, for the same reason the contradiction sweep does it:
+  // a fixed order re-reports the same oldest pairs on every run, and the pair
+  // you just created never reaches the top.
+  found.sort((x, y) => Math.max(y.a.mtime, y.b.mtime) - Math.max(x.a.mtime, x.b.mtime));
+  return { pairs: found.slice(0, cap), total: found.length };
 }
