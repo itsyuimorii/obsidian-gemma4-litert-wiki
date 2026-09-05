@@ -11,7 +11,7 @@
 
 <p align="center"><a href="README.md">English</a> · <b>日本語</b></p>
 
-<p align="center"><a href="https://gemma-wiki-demo.vercel.app"><b>▶ 動くところを見る</b></a> — 初回起動からウィキ完成まで全機能を 23 シーンで。インストール不要、矢印キーで進みます。</p>
+<p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ コミュニティストアから入れる</b></a><br><a href="https://gemma-wiki-demo.vercel.app"><b>▶ 動くところを見る</b></a> — 初回起動からウィキ完成まで全機能を 23 シーンで。インストール不要、矢印キーで進みます。</p>
 
 **設定するものが何もない、無料のローカル AI。** Gemma 4 E4B が [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) と WebGPU を通じて Obsidian 自身のプロセスの中で動きます — **API キーも、Ollama も、LM Studio も、localhost のサーバーも、アカウントも、サブスクリプションも不要**。プロバイダーを選ぶ必要すらありません。モデルはもうここにあるからです。
 
