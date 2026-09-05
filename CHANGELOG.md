@@ -4,6 +4,28 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.4 — 2026-09-05
+
+### Fixed
+
+- The clickable paths in the settings folder map are underlined with a border
+  instead of `text-decoration-color` + `text-underline-offset`, which Obsidian
+  only partially supports at the 1.11.4 floor this plugin declares. On an older
+  Electron the rule degraded to a full-colour underline at the default offset,
+  and the hover state had nothing left to change.
+
+### Docs
+
+- The README makes its case once. The opening pitch, two full-width images and
+  then a second longer telling of the same pitch had pushed the table of
+  contents below the fold; every claim in the repeated paragraphs is made with
+  more detail in the section directly beneath them. The three-layer diagram
+  moved down to where the three layers are explained.
+- Every mention that makes a claim about the model now says **Gemma 4 E4B** —
+  the variant that actually ships — rather than "Gemma 4", the family. The
+  plugin's registered name is unchanged.
+- The status note was still announcing 1.0.0.
+
 ## 1.0.3 — 2026-09-05
 
 Everything the community directory's automated review found, fixed or answered.
