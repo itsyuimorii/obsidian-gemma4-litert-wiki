@@ -629,6 +629,7 @@ const FOLDER_READMES: Array<[() => string, () => string]> = [
       `> | \`cards/\` | **One summary card per note you ingest.** Your note is the source; the card is derived from it. |` + `\n` +
       `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
       `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
+      `> | \`chats/\` | Conversations you pressed save on, plus an \`index.md\` listing them. **Nothing here is retrieved or scanned** — an answer is output, never input. |` + `\n` +
       `>` + `\n` +
       `> Every folder has a README of its own describing what belongs in it.` + `\n\n` +
       `> [!info] The three files\n` +
