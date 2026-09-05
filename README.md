@@ -64,7 +64,7 @@ From there: chat grounded in one note or in the whole wiki, quiz yourself on eit
 
 Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
 
-> **Status: 1.0.7, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
+> **Status: 1.0.8, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
@@ -92,7 +92,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 
 **Config as notes** — the rules live as plain markdown you can read, edit and version:
 
-- **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. **Tidy the wiki** rebuilds the vocabulary from the tags your pages actually use — having local Gemma fold near-synonyms together — and applies it to existing pages. Two separate ticks, each behind its own preview. The rebuild is also a button in Settings.
+- **`schema.md`** — your tag vocabulary, naming rules, and a **rejected list**: a tag you deleted by hand does not come back. **Tidy the wiki** rebuilds the vocabulary from the tags your pages actually use — having local Gemma fold near-synonyms together — and applies it to existing pages. Two separate ticks, each behind its own preview. The rebuild is also a button in Settings. Approving a retag also writes an **aliases** list — `old-tag: vocabulary-tag` — so a page still carrying the old name is still recognised as being about the same subject; edit or delete those lines freely, and an alias pointing at a rejected tag is ignored.
 - **`skills/`** — one file per entry in the ⚡ menu. Frontmatter for name/icon/mode, the body is the prompt; a `> [!info]` callout in the body is documentation and is stripped before the model sees it. `fill: true` puts the prompt in the input box and waits rather than sending, for a skill that has to be aimed at something. Ships with a README and two examples, which carry a `stamp:` hash so a later release can improve them **unless you have edited the file**, in which case it is yours forever.
 - **`chats/`** — a conversation you pressed save on, one file per thread, with its own `index.md` listing them newest first. **Nothing in it is retrieved, indexed, linted or scanned** — an answer is output, never input, and a chat sitting in the wiki index would be indistinguishable from a page. It is also the only thing under the wiki folder the plugin cannot rebuild from your notes, so move it out before clearing that folder.
 - **Every folder has a README** explaining what belongs in it, and the layout is shown in Settings with per-row state, generated from the same list the scaffold builds from.
