@@ -34,7 +34,6 @@ import {
   slugify,
   setWikiDir,
   wikiAnswersDir,
-  wikiChatsDir,
   wikiDir,
   cardPathFor,
   writeWikiPage,
@@ -1347,7 +1346,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   private async noteRetiredFolders(): Promise<void> {
     if (this.settings.retiredFoldersNoticed) return;
     const counts: string[] = [];
-    for (const dir of [wikiAnswersDir(), wikiChatsDir()]) {
+    // chats/ is written to again — the folder was never the problem, the
+    // indexing was, and it is excluded structurally now. Only answers/ is
+    // retired.
+    for (const dir of [wikiAnswersDir()]) {
       const folder = this.app.vault.getAbstractFileByPath(dir);
       if (!(folder instanceof TFolder)) continue;
       const n = folder.children.filter((c) => c instanceof TFile && c.name !== 'README.md').length;
@@ -1360,7 +1362,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.app.vault,
       'info',
       'Saved answers now go into your own notes, beside the note they came from.\n\n' +
-        `These two folders are no longer written to and nothing was moved:\n${counts.join('\n')}\n\n` +
+        `This folder is no longer written to and nothing was moved:\n${counts.join('\n')}\n\n` +
         'Anything worth keeping can go wherever you keep notes — and once it is there, ' +
         'a scan can turn it into a wiki card like any other note.',
       DURATION.LONG
