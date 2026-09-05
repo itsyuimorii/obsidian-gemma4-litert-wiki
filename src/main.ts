@@ -2841,7 +2841,19 @@ export default class LiteRtSpikePlugin extends Plugin {
       await this.pruneDeadRelatedLinks();
       this.refreshIngestBadges();
       void this.refreshScanBadge();
-      notify('done', `Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.`);
+      // Say what comes next, but only when this batch is why it is needed:
+      // ingest coins tags page by page, so a batch that queued new ones has
+      // just fragmented the vocabulary a little, and Tidy is the tool for
+      // that. A batch that reused the vocabulary throughout gets the short
+      // sentence — advice that fires every time is furniture.
+      const coined = pendingBefore !== null && pendingAfter > pendingBefore;
+      notify(
+        'done',
+        `Wrote ${approved.length} page${approved.length === 1 ? '' : 's'} to the wiki.` +
+          (coined
+            ? ' Their tags were coined page by page — "Tidy the wiki" folds near-duplicates into one vocabulary.'
+            : '')
+      );
     });
     // Drafting a batch takes minutes, and this dialog opens wherever you are
     // when it finishes. It used to park on the status bar if you had switched
