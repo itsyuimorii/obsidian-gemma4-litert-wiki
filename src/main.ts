@@ -17,6 +17,7 @@ import {
   conceptPagePath,
   ensureSkillsScaffold,
   ensureWikiScaffold,
+  fmOf,
   isWikiPage,
   wikiScaffoldPaths,
   indexPath,
@@ -1098,14 +1099,15 @@ export default class LiteRtSpikePlugin extends Plugin {
                   .trim();
 
                 try {
-                  const parsed = JSON.parse(cleaned);
+                  const parsed: unknown = JSON.parse(cleaned);
+                  const rec = (parsed ?? {}) as Record<string, unknown>;
                   const valid =
                     typeof parsed === 'object' &&
                     parsed !== null &&
-                    typeof parsed.summary === 'string' &&
-                    Array.isArray(parsed.tags) &&
-                    parsed.tags.length === 3 &&
-                    parsed.tags.every((t: unknown) => typeof t === 'string');
+                    typeof rec.summary === 'string' &&
+                    Array.isArray(rec.tags) &&
+                    rec.tags.length === 3 &&
+                    rec.tags.every((t: unknown) => typeof t === 'string');
                   if (valid) {
                     successCount++;
                     log(`Run ${i}: OK`, parsed);
@@ -1274,7 +1276,7 @@ export default class LiteRtSpikePlugin extends Plugin {
 
       // Dedupe suggested tags against whatever the note already has.
       const existing = new Set<string>();
-      const rawTags = this.app.metadataCache.getFileCache(file)?.frontmatter?.tags;
+      const rawTags = fmOf(this.app, file)?.tags;
       if (Array.isArray(rawTags)) rawTags.forEach((t) => existing.add(slugify(String(t))));
       else if (typeof rawTags === 'string') rawTags.split(/[,\s]+/).forEach((t) => t && existing.add(slugify(t)));
       const newTags = extraction.tags.map((t) => slugify(t)).filter((t) => t && !existing.has(t));
@@ -1287,7 +1289,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       new SuggestTagsLinksModal(this.app, file.path, newTags, related, () => {
         this.runApproved('Suggest', async () => {
           if (newTags.length) {
-            await this.app.fileManager.processFrontMatter(file, (fm) => {
+            await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
               const cur = Array.isArray(fm.tags)
                 ? fm.tags.map(String)
                 : typeof fm.tags === 'string' && fm.tags
@@ -1413,7 +1415,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const counts = new Map<string, number>();
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!isWikiPage(f)) continue;
-      const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+      const raw = fmOf(this.app, f)?.tags;
       const tags = Array.isArray(raw)
         ? raw.map((t) => String(t))
         : typeof raw === 'string'
@@ -1564,7 +1566,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const newTitle = newLink.split('/').pop() ?? newLink;
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!f.path.startsWith(`${wikiDir()}/`)) continue;
-      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      const fm = fmOf(this.app, f);
       if (fm?.kind !== 'concept') continue;
       const raw = fm?.tags;
       const conceptTags = Array.isArray(raw) ? raw.map((t) => slugify(String(t))) : [];
@@ -1581,7 +1583,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       for (let i = 0; i < lines.length; i++) if (lines[i].startsWith('- [[')) last = i;
       lines.splice(last + 1, 0, `- [[${newLink}|${newTitle}]]`);
       await this.app.vault.modify(f, head + lines.join('\n'));
-      await this.app.fileManager.processFrontMatter(f, (cfm) => {
+      await this.app.fileManager.processFrontMatter(f, (cfm: Record<string, unknown>) => {
         cfm.stale = true;
       });
       await appendLog(this.app.vault, 'ripple', `${newTitle} -> ${f.basename} (concept)`);
@@ -1642,8 +1644,8 @@ export default class LiteRtSpikePlugin extends Plugin {
       await this.app.vault.modify(f, updated);
       // A concept page that lost a member has an overview describing pages
       // that are gone — flag it for a rebuild, same as when one is added.
-      if (touchedConceptMembers && this.app.metadataCache.getFileCache(f)?.frontmatter?.kind === 'concept') {
-        await this.app.fileManager.processFrontMatter(f, (cfm) => {
+      if (touchedConceptMembers && fmOf(this.app, f)?.kind === 'concept') {
+        await this.app.fileManager.processFrontMatter(f, (cfm: Record<string, unknown>) => {
           cfm.stale = true;
         });
       }
@@ -1816,7 +1818,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const offVocab = new Set<string>();
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!isWikiPage(f)) continue;
-      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      const fm = fmOf(this.app, f);
       if (fm?.kind === 'concept') continue; // concept pages are named BY their tag
       const raw = fm?.tags;
       const tags = Array.isArray(raw)
@@ -1881,7 +1883,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         if (!ok) return;
         this.runApproved('Retag', async () => {
           for (const c of changes) {
-            await this.app.fileManager.processFrontMatter(c.file, (fm) => {
+            await this.app.fileManager.processFrontMatter(c.file, (fm: Record<string, unknown>) => {
               fm.tags = c.to;
             });
           }
@@ -1998,7 +2000,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     const inUse = new Map<string, number>();
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!isWikiPage(f)) continue;
-      const raw = this.app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+      const raw = fmOf(this.app, f)?.tags;
       if (!Array.isArray(raw)) continue;
       for (const t of raw) {
         const s = slugify(String(t));
@@ -2163,7 +2165,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       if (!isWikiPage(f)) continue;
       const entry = byLinkPath.get(f.path.replace(/\.md$/, ''));
       if (!entry) continue;
-      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      const fm = fmOf(this.app, f);
       // A concept page is never a MEMBER of a cluster — it carries its own
       // subject as a tag ([concept, coffee]), so on every rebuild the coffee
       // concept landed in the coffee cluster and listed itself under
@@ -3390,7 +3392,10 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...((await this.loadData()) as Partial<GemmaWikiSettings> | null),
+    };
     setDebugLogging(this.settings.devCommands);
   }
 

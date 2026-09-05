@@ -1,5 +1,5 @@
 import { App, Modal } from 'obsidian';
-import { wikiDir } from './wiki-store';
+import { fmOf, wikiDir } from './wiki-store';
 
 // Lint v2b (issue #21): provenance spot-check. Ingest can hallucinate a key
 // point the source note never made. This samples a few pages and asks the
@@ -42,7 +42,7 @@ export async function sampleWikiPages(app: App, limit: number): Promise<Provenan
   const out: ProvenanceSample[] = [];
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith(`${wikiDir()}/`)) continue;
-    const src = app.metadataCache.getFileCache(f)?.frontmatter?.source;
+    const src = fmOf(app, f)?.source;
     if (typeof src !== 'string' || !src) continue;
     const keyPoints = parseKeyPoints(await app.vault.read(f));
     if (!keyPoints.length) continue;

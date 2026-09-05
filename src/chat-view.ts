@@ -22,6 +22,7 @@ import {
   wikiSourcesDir,
   clampToTokens,
   estimateTokens,
+  fmOf,
   expandByLinks,
   getIngestedSourcePaths,
   indexPath,
@@ -1078,7 +1079,7 @@ export class ChatView extends ItemView {
         // — a citation, which is what most people use that word for — ends up
         // filed in a folder called `https:`.
         if (target.path.startsWith(`${wikiSourcesDir()}/`)) {
-          const src = this.app.metadataCache.getFileCache(target)?.frontmatter?.source;
+          const src = fmOf(this.app, target)?.source;
           if (typeof src === 'string' && src.endsWith('.md')) return parentOf(src);
         } else {
           return target.parent?.path && target.parent.path !== '/' ? target.parent.path : '';

@@ -1379,6 +1379,7 @@ export function expandByLinks(
 export function safeFileName(text: string, fallback: string): string {
   const cleaned = text
     .replace(/[\\/:*?"<>|#^[\]]/g, ' ')
+    // eslint-disable-next-line no-control-regex -- the control characters are the point: they are being stripped out of a filename before they can enter the vault
     .replace(/[\u0000-\u001f]/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^[.\s]+|[.\s]+$/g, '')
@@ -1506,6 +1507,25 @@ export function buildChatTranscript(
   );
 }
 
+/**
+ * A file's frontmatter, typed as what it actually is: unknowns.
+ *
+ * Obsidian types FrontMatterCache as any, and `any` switches off the narrowing
+ * every reader here already performs — the Array.isArray and typeof checks
+ * were all present and all silently meaningless to the checker. Returning
+ * Record<string, unknown> makes the same checks load-bearing, and is why the
+ * store's automated review stops reporting unsafe access on every one of
+ * these sites.
+ */
+export function fmOf(
+  app: App,
+  file: TFile
+): Record<string, unknown> | undefined {
+  const fm: Record<string, unknown> | undefined =
+    app.metadataCache.getFileCache(file)?.frontmatter;
+  return fm;
+}
+
 // Which raw notes already have a wiki page: read the source frontmatter of
 // every page under wiki/. Used for the file-explorer badge and the chat
 // chip checkmark — the raw note itself is never marked or modified.
@@ -1513,7 +1533,7 @@ export function getIngestedSourcePaths(app: App): Set<string> {
   const ingested = new Set<string>();
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith(`${wikiDir()}/`)) continue;
-    const src = app.metadataCache.getFileCache(f)?.frontmatter?.source;
+    const src = fmOf(app, f)?.source;
     if (typeof src === 'string' && src.length) ingested.add(src);
   }
   return ingested;
@@ -1577,7 +1597,7 @@ export function getIngestedSourceHashes(app: App): Map<string, string> {
   const map = new Map<string, string>();
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith(`${wikiDir()}/`)) continue;
-    const fm = app.metadataCache.getFileCache(f)?.frontmatter;
+    const fm = fmOf(app, f);
     const src = fm?.source;
     const hash = fm?.source_hash;
     if (typeof src === 'string' && src.length && typeof hash === 'string') map.set(src, hash);

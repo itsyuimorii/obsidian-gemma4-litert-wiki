@@ -7,13 +7,17 @@
   "scripts": {
     "build": "node build.js",
     "typecheck": "tsc --noEmit",
-    "check:release": "node scripts/check-release.mjs"
+    "check:release": "node scripts/check-release.mjs",
+    "lint": "eslint src --max-warnings 5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "esbuild": "^0.28.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "latest",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.69.0"
   },
   "dependencies": {
     "@litert-lm/core": "^0.15.0"
