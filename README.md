@@ -30,6 +30,7 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 - [🤔 Why this exists](#-why-this-exists)
 - [🔌 How this differs from Ollama / LM Studio plugins](#-how-this-differs-from-ollama--lm-studio-plugins)
 - [📋 Requirements](#-requirements)
+- [🔁 What to run when](#-what-to-run-when)
 - [⌨️ Current commands](#️-current-commands)
 - [🔧 How it works](#-how-it-works)
 - [📊 Benchmarks](#-benchmarks)
@@ -150,6 +151,21 @@ This isn't a claim that local-in-renderer is strictly *better* — it's a differ
 > rename the folder on one machine, the other will not know — it now notices a folder that looks
 > like a wiki and asks before creating a second one, but the cleanest fix is to rename it the same
 > way on both.
+
+## 🔁 What to run when
+
+Sixteen commands, four habits. Everything else is occasional.
+
+| When | Run | Why |
+|---|---|---|
+| You wrote or clipped some notes | **Scan a folder into the wiki** | Drafts a card per new or changed note, review-gated, lowest confidence first. |
+| Right after a scan | **Tidy the wiki** | Ingest coins tags page by page, so a batch fragments the vocabulary and links only point one way. Tidy folds near-duplicate tags into one list and makes links mutual — the completion notice says so when the batch made it necessary. |
+| A theme keeps showing up | **Build a concept page** | Once two or more pages share a tag or mention, this writes the page above them. |
+| Every few weeks | **Review board**, then **Provenance spot-check**, then **Find contradictions** | The three ways a wiki quietly goes bad: pages whose notes changed, key points the note never said, and pages that disagree. All three flag; none edits. |
+
+Chat needs no schedule — it reads whatever the wiki holds. And the two
+commands that write into your own notes, **Improve** and **Suggest tags &
+links**, are run on one note when you want them, never as routine.
 
 ## ⌨️ Current commands
 
