@@ -243,4 +243,4 @@ Gemma 4 E4B は [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) と Web
 
 - [Andrej Karpathy — LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — このプロジェクトが目指している 3 層（raw / wiki / schema）のパターン。
 - [litert-community](https://huggingface.co/litert-community) — このプラグインが読み込む、Web 向けにパッケージされた Gemma 4 E4B チェックポイント。
-- [Jason Mayes and Google's Web AI team](https://jasonmayes.com) — LiteRT-LM、そして推論をブラウザとオンデバイスへ持ち込むという方向性。このプラグインが乗っているのはその土台です。
+- [Jason Mayes, Google's Web AI Lead](https://www.linkedin.com/in/webai/) — LiteRT-LM、そして推論をブラウザとオンデバイスへ持ち込むという方向性。このプラグインが乗っているのはその土台です。
