@@ -8,7 +8,7 @@ import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
-import { ensureRuntimeFile, isRuntimeFile } from './wasm-store';
+import { ensureCommonJsMarker, ensureRuntimeFile, isRuntimeFile } from './wasm-store';
 import { setWasmScriptResolver } from './wasm-loader';
 import {
   appendLog,
@@ -1095,6 +1095,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // filename, in the folder the loopback server is already serving.
         const served = this.wasmDir;
         if (!served) throw new Error('The local runtime server did not report its directory.');
+        ensureCommonJsMarker(served);
         setWasmScriptResolver((url) => path.join(served, path.basename(new URL(url).pathname)));
 
         const { loadLiteRtLm } = await import('@litert-lm/core');
