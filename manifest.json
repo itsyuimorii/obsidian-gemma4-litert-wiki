@@ -3,7 +3,7 @@
   "name": "Gemma 4 LiteRT Wiki",
   "version": "1.0.3",
   "minAppVersion": "1.11.4",
-  "description": "Gemma 4 runs in-process via LiteRT-LM and WebGPU — no server, no API key, no account: chat, improve and relink your notes, quiz and flashcards. Follows Karpathy's LLM-wiki — ingest into a wiki it maintains (index, tags, links). One-time download.",
+  "description": "Free local AI with Gemma 4 E4B in Obsidian. Chat with notes or your vault, then build a living wiki inspired by Andrej Karpathy’s LLM-wiki pattern—with concepts, tags, links, and schema. Generate quizzes and flashcards locally.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
