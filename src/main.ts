@@ -531,8 +531,20 @@ export default class LiteRtSpikePlugin extends Plugin {
 
 
 
-  /** Begin watching whether the user's attention leaves during a run. */
-  private beginRun() {
+  /**
+   * Run an approved write, and say so when it fails.
+   *
+   * Every "Approve and write" callback was a fire-and-forget async IIFE, so a
+   * failure after approval had nowhere to go: the promise rejected into the
+   * void, and the `notify('done', …)` that sat after the await never ran. The
+   * user saw the modal close and then nothing at all — which reads exactly
+   * like success. Deleting the note while its preview is open is enough to
+   * reach it. A write the user authorised is the last place to fail quietly.
+   */
+  private runApproved(what: string, job: () => Promise<void>): void {
+    void job().catch((err) => {
+      this.statusFail(what, err);
+    });
   }
 
   /** Report a thrown error through the status toast, in the house style. */
@@ -597,7 +609,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               n + (c instanceof TFolder ? countPages(c) : c.path.endsWith('.md') && !/README\.md$/i.test(c.path) ? 1 : 0),
             0
           );
-        void (async () => {
+        this.runApproved('Wiki folder', async () => {
           let lost = 0;
           try {
             lost = countPages(file);
@@ -625,7 +637,7 @@ export default class LiteRtSpikePlugin extends Plugin {
                   'trash, then run "Reconcile wiki" if you decide to let them go.'
                 : 'nothing was lost.')
           );
-        })();
+        });
       })
     );
 
@@ -636,13 +648,13 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on('rename', (file, oldPath) => {
         if (!(file instanceof TFolder) || oldPath !== wikiDir()) return;
-        void (async () => {
+        this.runApproved('Rename', async () => {
           this.settings.wikiDir = file.path;
           await this.saveSettings();
           setWikiDir(file.path);
           this.refreshIngestBadges();
           notify('info', `Knowledge folder is now "${file.path}" — Gemma Wiki followed the rename.`);
-        })();
+        });
       })
     );
 
@@ -671,7 +683,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     // user does need is to be told it happened, once, in a form they cannot
     // miss and can act on. Both calls are no-ops once the files exist.
     this.app.workspace.onLayoutReady(() => {
-      void (async () => {
+      this.runApproved('Startup', async () => {
         // Cross-machine safety. wikiDir lives in data.json, which many sync
         // setups do not carry, so machine B can be looking for "gemma-wiki"
         // while the vault it just synced holds "wiki" — and would happily
@@ -756,7 +768,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         // Empty folders are left too — deleting a directory in someone's vault
         // to tidy up our own scaffold is not proportionate.
         await this.noteRetiredFolders();
-      })();
+      });
     });
     this.app.workspace.onLayoutReady(() => this.rescheduleAutoScan());
 
@@ -902,7 +914,6 @@ export default class LiteRtSpikePlugin extends Plugin {
       id: 'litert-download-model',
       name: 'Download model (one-time, ~3GB)',
       callback: async () => {
-        this.beginRun();
         this.status('Preparing model download…');
         try {
           const blob = await this.ensureModelBlob((text) => {
@@ -1135,10 +1146,10 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on('delete', (f) => {
         if (!f.path.startsWith(`${wikiDir()}/`)) return;
-        void (async () => {
+        this.runApproved('Prune', async () => {
           await this.pruneIndex();
           await this.pruneDeadRelatedLinks();
-        })();
+        });
       })
     );
   }
@@ -1177,6 +1188,21 @@ export default class LiteRtSpikePlugin extends Plugin {
     this.server?.close();
     this.server = null;
     this.serverBaseUrl = null;
+
+    // The engine owns the loaded model and its WebGPU allocations — gigabytes
+    // that Obsidian will not reclaim on its own, and a disable/enable cycle to
+    // pick up a new build would otherwise load a second engine beside the
+    // first. onunload cannot await, so this is fire-and-forget: take the
+    // promise away first so nothing can hand out the engine mid-teardown, and
+    // swallow the error, since there is no UI left to report it to.
+    const engine = this.enginePromise;
+    this.enginePromise = null;
+    this.wasmLoadPromise = null;
+    if (engine) {
+      void engine
+        .then((e) => e.delete())
+        .catch((err) => console.error('[gemma4-litert-wiki] engine teardown failed', err));
+    }
   }
 
   private async activateChatView() {
@@ -1260,7 +1286,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusEnd();
 
       new SuggestTagsLinksModal(this.app, file.path, newTags, related, () => {
-        void (async () => {
+        this.runApproved('Suggest', async () => {
           if (newTags.length) {
             await this.app.fileManager.processFrontMatter(file, (fm) => {
               const cur = Array.isArray(fm.tags)
@@ -1280,24 +1306,13 @@ export default class LiteRtSpikePlugin extends Plugin {
           }
           notify('done', `Updated "${file.basename}" — tags & links added.`);
           this.refreshIngestBadges();
-        })();
+        });
       }).open();
     } catch (err) {
       this.statusFail('Suggest', err);
     }
   }
 
-  // Schema layer (issue #3): generate the controlled tag vocabulary instead
-  // of making the user hand-write it. Tally the tags already on wiki pages,
-  // ask the model to merge near-synonyms into a clean canonical list, and
-  // write it into schema.md (config-as-note) behind the preview gate. The
-  // Naming and Concept-threshold sections are preserved if the file exists.
-  // Open schema.md so the user can read/edit the config-as-a-note directly.
-  // Seeds a default (empty-vocab) schema first if the file does not exist yet,
-  // so the button always lands on a real, self-documenting file.
-
-  // Seed <wiki>/skills/ with a README and two example skills, then open the
-  // README. Shared by the command and the settings button.
   // A folder counts as a knowledge base if it holds both an index and a
   // cards/ subfolder — specific enough not to match someone's own notes.
   // Returns nothing if there is more than one candidate: guessing between two
@@ -1462,13 +1477,13 @@ export default class LiteRtSpikePlugin extends Plugin {
         content,
         overwriting,
         () => {
-          void (async () => {
+          this.runApproved('Organize tags', async () => {
             await ensureWikiScaffold(this.app.vault);
             await writeWikiPage(this.app.vault, path, content);
             await appendLog(this.app.vault, 'schema', `tag vocabulary (${vocab.length} tags)`);
             this.statusEnd(`Schema written: ${path}`);
             resolve(true);
-          })();
+          });
         },
         undefined,
         {
@@ -1862,7 +1877,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       confirmText: 'Retag pages',
       onResult: (ok) => {
         if (!ok) return;
-        void (async () => {
+        this.runApproved('Retag', async () => {
           for (const c of changes) {
             await this.app.fileManager.processFrontMatter(c.file, (fm) => {
               fm.tags = c.to;
@@ -1870,7 +1885,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           }
           await appendLog(this.app.vault, 'retag', `${changes.length} pages to vocabulary`);
           notify('done', `Retagged ${changes.length} page${changes.length === 1 ? '' : 's'}.`);
-        })();
+        });
       },
     }).open();
   }
@@ -2079,7 +2094,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         return;
       }
       new RelinkPreviewModal(this.app, proposals, () => {
-        void (async () => {
+        this.runApproved('Relink', async () => {
           for (const prop of proposals) {
             const file = this.app.vault.getAbstractFileByPath(prop.pagePath);
             if (!(file instanceof TFile)) continue;
@@ -2097,7 +2112,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             await appendLog(this.app.vault, 'relink', prop.title);
           }
           notify('done', `Related sections updated on ${proposals.length} page${proposals.length === 1 ? '' : 's'}.`);
-        })();
+        });
       }).open();
   }
 
@@ -2188,7 +2203,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
 
     new ConceptTagModal(this.app, candidates, (cluster) => {
-      void (async () => {
+      this.runApproved('Concept page', async () => {
         this.status(`Writing a concept overview for "${cluster.tag}"…`);
         let overview: string;
         try {
@@ -2204,14 +2219,14 @@ export default class LiteRtSpikePlugin extends Plugin {
         const pageContent = buildConceptPage(cluster.tag, overview, members);
         const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
         new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
-          void (async () => {
+          this.runApproved('Concept page', async () => {
             await ensureWikiScaffold(this.app.vault);
             await writeWikiPage(this.app.vault, pagePath, pageContent);
             await upsertIndexEntry(this.app.vault, pagePath, `${cluster.tag} (concept)`, overview.slice(0, 140));
             await appendLog(this.app.vault, 'concept', cluster.tag);
             this.statusEnd(`Concept page written: ${pagePath}`);
             this.refreshIngestBadges();
-          })();
+          });
           },
         undefined,
         {
@@ -2220,7 +2235,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             'from their source each time — to keep a correction, put it in the note instead.',
         }
         ).open();
-      })();
+      });
     }).open();
   }
 
@@ -2535,8 +2550,6 @@ export default class LiteRtSpikePlugin extends Plugin {
             'read — the page below is based on that much. Raise Context window in settings to read more.'
         );
       }
-
-      this.beginRun();
       this.status(`Ingesting "${file.basename}"…`);
       try {
         const extraction = await this.extractNoteMetadata(clamped.text, (t) =>
@@ -2560,7 +2573,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         const overwriting = !!this.app.vault.getAbstractFileByPath(pagePath);
 
         const previewModal = new IngestPreviewModal(this.app, pagePath, pageContent, overwriting, () => {
-          void (async () => {
+          this.runApproved('Ingest', async () => {
             await ensureWikiScaffold(this.app.vault);
             await writeWikiPage(this.app.vault, pagePath, pageContent);
             await upsertIndexEntry(this.app.vault, pagePath, file.basename, extraction.summary);
@@ -2571,7 +2584,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             await appendLog(this.app.vault, 'ingest', file.basename);
             this.statusEnd(`Wiki page written: ${pagePath}`);
             this.refreshIngestBadges();
-          })();
+          });
           },
         undefined,
         {
@@ -2608,7 +2621,6 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (!includePrefixes.length) return;
     this.setScanRunning(true);
     this.scanCancelled = false;
-    this.beginRun();
     try {
       await this.runScanAndReview(includePrefixes);
     } finally {
@@ -2657,7 +2669,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         preselected: configured.filter((c) => counts.has(c)),
         onCancel: () => resolve(null),
         onConfirm: (chosen) => {
-          void (async () => {
+          this.runApproved('Scan', async () => {
             // Remembered automatically, not behind a tick. You expect a dialog
             // to open where you left it, and the background count should watch
             // the folders you actually care about — which is the ones you last
@@ -2665,7 +2677,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             this.settings.scanInclude = chosen.join(', ');
             await this.saveSettings();
             resolve(chosen);
-          })();
+          });
         },
       }).open();
     });
@@ -2941,8 +2953,6 @@ export default class LiteRtSpikePlugin extends Plugin {
           'that text appears to be missing. Do not renumber headings.\n\n'
         : '') +
       'Return ONLY the markdown, no explanation.';
-
-    this.beginRun();
     this.status(`Improving "${file.basename}"…`);
     const pieces: string[] = [];
     let failed = 0;
@@ -3024,7 +3034,33 @@ export default class LiteRtSpikePlugin extends Plugin {
         );
       }
       const previewModal = new IngestPreviewModal(this.app, source, improved, true, () => {
-        void (async () => {
+        this.runApproved('Improve', async () => {
+          // The note is read before the run and written after approval, and a
+          // multi-pass run is minutes of GPU time with the preview then open
+          // for as long as the user likes. Anything typed in that window is
+          // not in `improved`, so writing it back would silently delete their
+          // edit — in the one feature that rewrites a note they wrote.
+          //
+          // Same test the review board uses for drift, against the same hash.
+          // Refuse rather than merge: the two versions are a stitched rewrite
+          // and a hand edit, and picking between them is the author's call.
+          // For a selection the range was pinned before the run, so the test
+          // has to be positional, not "is that text still somewhere in the
+          // note": typing ABOVE the selection leaves the text present and the
+          // coordinates stale, and replaceRange would then splice the rewrite
+          // over whatever now sits at those lines.
+          const changed =
+            usingSelection && editor && selFrom && selTo
+              ? editor.getRange(selFrom, selTo) !== selection
+              : (await this.app.vault.read(file)) !== content;
+          if (changed) {
+            notify(
+              'warn',
+              `"${file.basename}" changed while Improve was running, so nothing was written — ` +
+                'your edit is intact. Run Improve again to work from the current text.'
+            );
+            return;
+          }
           if (usingSelection && editor && selFrom && selTo) {
             editor.replaceRange(improved, selFrom, selTo);
           } else {
@@ -3032,7 +3068,7 @@ export default class LiteRtSpikePlugin extends Plugin {
           }
           await appendLog(this.app.vault, 'improve', file.basename);
           notify('done', `Note updated: ${file.basename}`);
-        })();
+        });
       }, 'Review your note before it is rewritten');
       // A multi-pass rewrite is minutes of GPU time. Same rule as scan: if you
       // walked away, the preview waits on the status bar instead of taking the
@@ -3443,7 +3479,6 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Trigger the (resumable) download from the settings page — same gated
   // path used on first use, so re-download and resume both work here.
   async downloadModelFromSettings() {
-    this.beginRun();
     this.status('Preparing model download…');
     try {
       const blob = await this.ensureModelBlob((t) => this.status(t));
