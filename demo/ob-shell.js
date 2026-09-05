@@ -52,9 +52,10 @@ const VAULT = {
                 { name: 'browser-apis', kind: 'file', indent: 2, id: 'c-browserapi' },
             );
         }
-        // No answers/ and no chats/. An answer you keep is written into your own
-        // notes now, where it is an ordinary file — so there is nothing here
-        // the plugin writes and never reads.
+        // chats/ collects saved conversations — written by the plugin and
+        // excluded from every path that could read one back. No answers/: an
+        // answer you keep is written into your own notes, an ordinary file.
+        rows.push({ name: 'chats', kind: 'folder', indent: 1, id: 'gw-chats' });
         rows.push({ name: 'concepts', kind: 'folder', indent: 1, id: 'gw-concepts' });
         if (stage === 'full') {
             rows.push({ name: 'on-device', kind: 'file', indent: 2, id: 'k-ondevice' });

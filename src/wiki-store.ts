@@ -399,6 +399,7 @@ export function wikiScaffoldPaths(): { path: string; what: string }[] {
     { path: `${wikiSourcesDir()}/`, what: 'One summary card per ingested note' },
     { path: `${wikiConceptsDir()}/`, what: 'Pages built across a shared tag' },
     { path: `${wikiSkillsDir()}/`, what: 'One file per ⚡ menu entry' },
+    { path: `${wikiChatsDir()}/`, what: 'Conversations you chose to keep' },
     { path: indexPath(), what: 'Catalog — wiki chat reads this first' },
     { path: logPath(), what: 'Append-only record of what ran' },
     { path: schemaPath(), what: 'Tag vocabulary, naming rules, rejected tags' },
@@ -473,10 +474,29 @@ const README_PREAMBLE =
   `> [!info] Generated file — your edits are replaced when Obsidian starts\n` +
   `> The plugin owns every \`README\` in this folder and rewrites them on startup, so they always describe the version you are running. Nothing here is a setting. **Anything you want to keep belongs in a note of your own.**\n\n`;
 
-const FOLDER_READMES: Array<[() => string, string]> = [
-  [() => `${wikiSkillsDir()}/README.md`, SKILLS_README],
+const CHATS_README =
+  `# chats\n\n` +
+  `**A conversation you pressed save on.** The chat panel keeps your last thread on its own, so this folder is not a log of everything you asked — it holds the threads you decided were worth keeping, one file each, named after the question that started them.\n\n` +
+  `> [!info] These are not material\n` +
+  `> Nothing here is retrieved, indexed, linted, relinked, retagged, or swept for contradictions. **Wiki chat cannot see this folder**, and neither can a scan.\n` +
+  `>\n` +
+  `> That is deliberate, and it is what makes keeping them safe. A model's answer that re-entered the wiki would come back months later cited to your own notes and indistinguishable from something you wrote — so an answer is output, never input. If a conversation contains something that should become material, **put it in a note of your own and scan that**; it becomes a card like any other note, because everything the wiki retrieves derives from a note you wrote.\n\n` +
+  `> [!info] The one thing here that is yours\n` +
+  `> Everything else under this folder is rebuilt from your notes if you delete it. **These files are not.** They are the only irreplaceable thing in the plugin's own directory, so if you clear out \`${'$'}{_wikiDir}\` to start over, move this folder out first.\n\n` +
+  `> [!info] Finding one again\n` +
+  `> \`index.md\` in this folder lists everything you saved, newest first, with the date and how many exchanges it holds. It is rebuilt on every save. **It is not the wiki index** — that one is what wiki chat reads before answering, and nothing here ever goes into it.\n\n` +
+  `> [!info] Reading one back\n` +
+  `> Each question is a heading, so the outline pane gives you the thread at a glance. Every answer keeps the **Sources** it stood on at the time, and an answer given from general knowledge rather than your notes says so on its own line — the same distinction the panel makes on screen.\n`;
+
+// Both halves are thunks. The body used to be a plain string built at import
+// time, which froze `${_wikiDir}` at the default: rename the folder to `brain`
+// and its regenerated README still opened with `# gemma-wiki`.
+const FOLDER_READMES: Array<[() => string, () => string]> = [
+  [() => `${wikiSkillsDir()}/README.md`, () => SKILLS_README],
+  [() => `${wikiChatsDir()}/README.md`, () => CHATS_README],
   [
     () => `${_wikiDir}/README.md`,
+    () =>
     `# ${_wikiDir}\n\n` +
       `**This folder is the only thing the plugin writes.** Your own notes are never moved or modified *by the plugin* — they stay wherever you keep them, and **editing them yourself is normal**: fix the note, and the wiki notices (the card shows as *drifted* on the review board) and offers to catch up. **Fixing the original note is the real fix; editing a card is a temporary patch that the next re-ingest overwrites.** *Improve formatting* is the single command that edits a note, and it always shows you the result first.\n\n` +
       `> [!info] Where the plugin lives` + `\n` +
@@ -609,6 +629,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> | \`cards/\` | **One summary card per note you ingest.** Your note is the source; the card is derived from it. |` + `\n` +
       `> | \`concepts/\` | Pages built *across* everything sharing a tag or mention. |` + `\n` +
       `> | \`skills/\` | One file per entry in the ${ICON_ZAP} skills menu. **Add a file, get a menu item.** |` + `\n` +
+      `> | \`chats/\` | Conversations you pressed save on, plus an \`index.md\` listing them. **Nothing here is retrieved or scanned** — an answer is output, never input. |` + `\n` +
       `>` + `\n` +
       `> Every folder has a README of its own describing what belongs in it.` + `\n\n` +
       `> [!info] The three files\n` +
@@ -620,10 +641,13 @@ const FOLDER_READMES: Array<[() => string, string]> = [
       `> [!info] Deleting things\n` +
       `> Delete any page freely — its index entry is dropped automatically.\n` +
       `>\n` +
-      `> Delete a **folder** and it is recreated empty the next time Obsidian starts, or from **Settings → Repair folders**. **The pages that were inside it are not restored** — the plugin maintains this scaffolding, it does not back it up. Run **Tidy the wiki** afterwards to clear the index entries they left behind.\n`,
+      `> Delete a **folder** and it is recreated empty the next time Obsidian starts, or from **Settings → Repair folders**. **The pages that were inside it are not restored** — the plugin maintains this scaffolding, it does not back it up. Run **Tidy the wiki** afterwards to clear the index entries they left behind.\n` +
+      `>\n` +
+      `> **One exception: \`chats/\`.** Every other page here is rebuilt from your notes if you lose it — a card by re-ingesting, a concept page by rebuilding it. A saved conversation has no source to rebuild from. If you are clearing this folder out to start over, move that one somewhere else first.\n`,
   ],
   [
     () => `${wikiSourcesDir()}/README.md`,
+    () =>
     `# cards\n\n` +
       `**One card here for each note you have ingested** — a model-written summary: key points, tags, and how confident the model was about its own extraction.\n\n` +
       `> [!info] A card is not your note\n` +
@@ -645,6 +669,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
   ],
   [
     () => `${wikiConceptsDir()}/README.md`,
+    () =>
     `# concepts\n\n` +
       `**Pages built *across* other pages.** Everything in \`cards/\` is about one note. A concept page is about a *theme*: pick a tag or a mention that two or more pages share, and the plugin writes a page above them that links down into each one.\n\n` +
       `> [!info] Why this folder exists\n` +
@@ -666,7 +691,7 @@ const FOLDER_READMES: Array<[() => string, string]> = [
 // intends to do with your vault until it has already done it. Every call is
 // a no-op once the folders exist.
 export async function ensureWikiScaffold(vault: Vault): Promise<void> {
-  for (const dir of [wikiDir(), wikiSourcesDir(), wikiConceptsDir(), wikiSkillsDir()]) {
+  for (const dir of [wikiDir(), wikiSourcesDir(), wikiConceptsDir(), wikiSkillsDir(), wikiChatsDir()]) {
     if (!vault.getAbstractFileByPath(normalizePath(dir))) {
       await vault.createFolder(normalizePath(dir)).catch(() => {});
     }
@@ -703,9 +728,9 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   // that froze a README forever the moment it was edited; that left stale
   // documentation in the vault with nothing marking it stale, and it made a
   // second rule where the card already set one: build output gets rebuilt.
-  for (const [pathOf, body] of FOLDER_READMES) {
+  for (const [pathOf, bodyOf] of FOLDER_READMES) {
     const path = normalizePath(pathOf());
-    const text = README_PREAMBLE + body;
+    const text = README_PREAMBLE + bodyOf();
     const existing = vault.getAbstractFileByPath(path);
     if (!existing) {
       await vault.create(path, text).catch(() => {});
@@ -749,6 +774,69 @@ export async function upsertIndexEntry(
     lines.push(line);
   }
   await writeFile(vault, indexPath(), lines.join('\n').replace(/\n{3,}/g, '\n\n'));
+}
+
+export function chatsIndexPath(): string {
+  return normalizePath(`${wikiChatsDir()}/index.md`);
+}
+
+// A function, not a const: the bodies of these are built when they are needed,
+// because _wikiDir is set from settings after this module is imported.
+function chatsIndexHeader(): string {
+  return (
+    `# Saved conversations\n\n` +
+    `One line per conversation you kept: a link, the date, and how many exchanges it holds.\n\n` +
+    `> [!info]- What this file is, and is not\n` +
+    `> A table of contents for this folder, so a conversation you saved months ago is findable without opening files one by one. **Nothing here is retrieved.**\n` +
+    `>\n` +
+    `> This is not [[${_wikiDir}/index|${_wikiDir}/index]] — that one is what wiki-mode chat reads before deciding which pages to open, and a conversation must never appear in it. A model's own answer read back as material comes back months later cited to your own notes and indistinguishable from something you wrote.\n` +
+    `>\n` +
+    `> Rebuilt whenever a conversation is saved, so deleting a file here leaves a stale line until the next save. Edit it freely: it is regenerated, never parsed.\n\n` +
+    `## Conversations\n\n`
+  );
+}
+
+/**
+ * Rebuild the conversation index from what is actually in the folder.
+ *
+ * Rebuilt rather than appended to, unlike the wiki index. That one is
+ * authoritative — retrieval reads it, so an entry going missing costs an
+ * answer, and it is repaired by Tidy. This one is a convenience listing over
+ * files that are their own source of truth, so the cheapest correct thing is
+ * to look at the folder.
+ */
+export async function rebuildChatsIndex(vault: Vault, app: App): Promise<void> {
+  const dir = vault.getAbstractFileByPath(normalizePath(wikiChatsDir()));
+  const files: TFile[] = [];
+  if (dir && 'children' in dir) {
+    for (const child of (dir as unknown as { children: unknown[] }).children) {
+      if (child instanceof TFile && child.extension === 'md' && child.basename !== 'index' &&
+          child.basename.toLowerCase() !== 'readme') {
+        files.push(child);
+      }
+    }
+  }
+  const rows = files
+    .map((f) => {
+      const fm = app.metadataCache.getFileCache(f)?.frontmatter;
+      const created = typeof fm?.created === 'string' ? fm.created : '';
+      const turns = typeof fm?.turns === 'number' ? fm.turns : 0;
+      const title = typeof fm?.title === 'string' && fm.title ? fm.title : f.basename;
+      return { path: f.path.replace(/\.md$/, ''), title, created, turns };
+    })
+    // Newest first: the one you want back is almost always the last one you had.
+    .sort((a, b) => (b.created || '').localeCompare(a.created || '') || a.title.localeCompare(b.title));
+
+  const body = rows.length
+    ? rows
+        .map(
+          (r) =>
+            `- [[${r.path}|${r.title}]]${r.created ? ` — ${r.created}` : ''}` +
+            (r.turns ? `, ${r.turns} exchange${r.turns === 1 ? '' : 's'}` : '')
+        )
+        .join('\n')
+    : '_Nothing saved yet. Press the save icon in the chat panel to keep a conversation._';
+  await writeFile(vault, chatsIndexPath(), `${chatsIndexHeader()}${body}\n`);
 }
 
 export async function appendLog(vault: Vault, action: string, title: string): Promise<void> {
@@ -1344,6 +1432,83 @@ export function buildAnswerNote(
 }
 
 
+/**
+ * A whole conversation as one note.
+ *
+ * The counterpart to buildAnswerNote, and it exists for the same reason a
+ * per-answer save does: an exchange you want to keep should end up somewhere
+ * you can read it later without this plugin installed. What is different is
+ * where it lands. The first version of this wrote into `gemma-wiki/chats/` —
+ * a folder the plugin tells you is safe to delete, and one auto-ingest is
+ * hard-coded to walk past, so the transcript could never become material
+ * however good it was. It goes in your own folders now, like a saved answer.
+ *
+ * Every question gets a heading, so the file explorer's outline and the
+ * document outline both give you the thread at a glance. Sources are recorded
+ * per answer rather than pooled at the end: in a thread that switched notes,
+ * one list at the bottom would attribute all of it to whatever came last.
+ */
+export function buildChatTranscript(
+  turns: ChatTurnRecord[],
+  opts: { model: string; titleLabel: string }
+): string {
+  const date = new Date().toISOString().slice(0, 10);
+  // Union of everything cited, for frontmatter — the per-answer lists below
+  // stay authoritative about which answer stood on what.
+  const seen = new Map<string, string>();
+  for (const t of turns) for (const s of t.sources ?? []) seen.set(s.linkPath, s.title);
+  const sourcesYaml = seen.size
+    ? `sources:\n${[...seen.values()].map((t) => `  - "[[${t}]]"`).join('\n')}\n`
+    : '';
+
+  const body: string[] = [];
+  let first = true;
+  for (const turn of turns) {
+    if (turn.role === 'user') {
+      const q = turn.content.trim();
+      // The H1 is this question, so heading it again puts the same line twice
+      // at the top of the note. It still appears in the outline — as the H1 —
+      // with the follow-ups nested under it, which is the shape the thread
+      // actually has. A long first question is truncated in the title, so the
+      // two differ and the heading is kept.
+      if (first) {
+        first = false;
+        if (q === opts.titleLabel) continue;
+      }
+      // A heading has to be one line. A pasted paragraph as a question keeps
+      // its first line as the heading and the rest as a quote under it.
+      const [head, ...rest] = q.split('\n');
+      body.push(`## ${head.trim()}`);
+      if (rest.join('\n').trim()) body.push(rest.map((l) => `> ${l}`).join('\n'));
+      continue;
+    }
+    body.push(turn.content.trim());
+    if (turn.grounding === 'direct') {
+      body.push('*Answered from general knowledge, not from your notes.*');
+    } else if (turn.sources?.length) {
+      body.push(
+        `**Sources:** ${turn.sources.map((s) => `[[${s.linkPath}|${s.title}]]`).join(' · ')}`
+      );
+    }
+  }
+
+  return (
+    `---\n` +
+    `written_by: ${opts.model}\n` +
+    `created: ${date}\n` +
+    `kind: conversation\n` +
+    // Read by the folder's index so it can list a conversation without
+    // opening it. `title` because the filename is sanitised and the real
+    // question is not, and `turns` because "how long was that one" is the
+    // thing you scan an index for.
+    `title: "${opts.titleLabel.replace(/"/g, "'")}"\n` +
+    `turns: ${turns.filter((t) => t.role === 'user').length}\n` +
+    sourcesYaml +
+    `---\n\n` +
+    `# ${opts.titleLabel}\n\n` +
+    `${body.join('\n\n')}\n`
+  );
+}
 
 // Which raw notes already have a wiki page: read the source frontmatter of
 // every page under wiki/. Used for the file-explorer badge and the chat
