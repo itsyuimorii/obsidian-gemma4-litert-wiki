@@ -56,7 +56,7 @@ import {
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
-import { chunkForImprove, estimateImproveTokens } from './pure';
+import { chunkForImprove, estimateImproveTokens, improveOutputBudget } from './pure';
 import {
   looksCutOff,
   looksRepetitive,
@@ -3010,10 +3010,23 @@ export default class LiteRtSpikePlugin extends Plugin {
         this.status(`Improving "${file.basename}"${label}…`);
         // A fresh conversation per pass: the previous section must not sit in
         // context, or the budget the chunking just enforced means nothing.
-        // Output is a same-sized rewrite of the input; cap it just above the
-        // input estimate instead of a flat 2048 so short passes can't run away
-        // and long CJK passes aren't silently truncated.
-        const budget = Math.min(2048, estimateImproveTokens(text) + 300);
+        // Output is a same-sized rewrite of the input, so the cap has to be
+        // the input estimate plus headroom — not a flat ceiling. It used to
+        // read `Math.min(2048, estimate + 300)`, which is the flat ceiling the
+        // line above it says it avoids: with the default 64,000-token context
+        // MAX_INPUT_TOKENS is 24,000, so a chunk was allowed to be twelve
+        // times longer than the rewrite it was given room for. Anything past
+        // ~2,048 tokens — roughly 8 KB of English, an ordinary long note, and
+        // one chunk rather than several, so not even the multi-pass warning
+        // fired — came back cut off at the budget and went into the preview
+        // looking like the finished rewrite.
+        //
+        // budget('improve') already divides the context by 2.2 precisely so
+        // the input AND a same-sized rewrite both fit, so estimate + 300 is
+        // guaranteed to have room. MAX_INPUT_TOKENS + 300 is the ceiling for
+        // the same reason, and it binds only if a chunk overshoots its own
+        // budget.
+        const budget = improveOutputBudget(text, MAX_INPUT_TOKENS);
         let conversation: import('@litert-lm/core').Conversation | undefined;
         try {
           conversation = await engine.createConversation({
