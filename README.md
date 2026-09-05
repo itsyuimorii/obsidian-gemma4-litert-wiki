@@ -7,7 +7,7 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Gemma 4 runs inside Obsidian's own process through LiteRT-LM and WebGPU,<br>bringing free local AI directly to your vault.</b></p>
+<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process through LiteRT-LM and WebGPU,<br>bringing free local AI directly to your vault.</b></p>
 
 Chat with your notes or your entire vault, then build a living wiki inspired by **[Andrej Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)**: indexes, concepts, tags, links, and schema. Turn your notes into quizzes and flashcards — **all processed locally**, with no ongoing cost after the one-time model download.
 
