@@ -7,7 +7,7 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Gemma 4 E4B が Obsidian 自身のプロセスの中で動く。</b><br>Gemma 4 E4B で、<b>Andrej Karpathy の生きた LLM ウィキ</b>を育てる。</p>
+<p align="center"><b>Gemma 4 E4B が Obsidian 自身のプロセスの中で動き、</b><br>あなたのノートから<b>Andrej Karpathy の生きた LLM ウィキ</b>を育てる。</p>
 
 <p align="center"><a href="README.md">English</a> · <b>日本語</b></p>
 

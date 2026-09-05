@@ -7,7 +7,7 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process.</b><br>Build <b>Andrej Karpathy's living LLM wiki</b> with Gemma 4 E4B.</p>
+<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b><br>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
