@@ -3,7 +3,7 @@
   "name": "Gemma 4 E4B LLM Wiki",
   "version": "1.0.6",
   "minAppVersion": "1.11.4",
-  "description": "Chat with a note or your whole vault, with the model already inside — no provider, no API key, no Ollama. Gemma 4 E4B runs in-process, building Karpathy's LLM wiki as you go: index, concepts, tags, links. Quizzes and flashcards too.",
+  "description": "Gemma 4 E4B runs in-process: no provider, no API key, no Ollama. Build Andrej Karpathy's LLM wiki — index, concepts, tags, links, schema — and chat with a note or your whole vault, grounded in what you wrote. Quizzes and flashcards too.",
   "author": "itsyuimorii",
   "authorUrl": "https://github.com/itsyuimorii",
   "isDesktopOnly": true
