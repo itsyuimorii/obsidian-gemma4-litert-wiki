@@ -1,4 +1,12 @@
-import { App, ButtonComponent, EventRef, PluginSettingTab, Setting, TFolder } from 'obsidian';
+import {
+  App,
+  ButtonComponent,
+  EventRef,
+  PluginSettingTab,
+  Setting,
+  TFolder,
+  type SettingDefinitionItem,
+} from 'obsidian';
 import { ConfirmModal } from './ingest-modal';
 import type LiteRtSpikePlugin from './main';
 import { DEFAULT_WIKI_DIR, wikiScaffoldPaths, type ChatTurnRecord } from './wiki-store';
@@ -78,6 +86,172 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: LiteRtSpikePlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  /**
+   * The declarative half of this tab (Obsidian 1.13+).
+   *
+   * Obsidian 1.13 indexes settings so a user can find one by typing its name,
+   * and only definitions returned here are indexed — an imperatively built row
+   * is invisible to that search. `display()` below stays for the 1.11.4 floor
+   * this plugin declares, so the two coexist: everything a search would
+   * plausibly be aimed at is declared here, and the parts that are not really
+   * "a setting" — the model download with its live progress, the folder-state
+   * table, the buttons that open a file — keep their imperative rendering
+   * through `render`, which exists for exactly that.
+   *
+   * Values are read from and written to `plugin.settings` by key. Side
+   * effects that used to live in each `onChange` move to `setControlValue`,
+   * which is the one place a write passes through.
+   */
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        type: 'group',
+        heading: 'Model',
+        items: [
+          {
+            name: 'Context window (tokens)',
+            desc:
+              'How much the model can hold at once — longer notes fit whole, and answers can ground on ' +
+              'more material. Costs GPU memory and first-token latency. Takes effect after the plugin ' +
+              'reloads. If the model fails to load or answers degrade after raising this, set it lower.',
+            aliases: ['tokens', 'maxNumTokens', 'memory'],
+            control: {
+              type: 'dropdown',
+              key: 'contextTokens',
+              options: {
+                '4096': '4,096 (small / safest)',
+                '8192': '8,192',
+                '16384': '16,384',
+                '32768': '32,768',
+                '64000': '64,000 (max)',
+              },
+            },
+          },
+          {
+            name: 'Developer commands',
+            desc:
+              'Adds four [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
+              'the model, fix grammar of a selection with timings, and a JSON-reliability run. They ' +
+              'are for diagnosing a broken setup, not for working with notes. Off by default.',
+            aliases: ['debug', 'diagnostics', 'test commands'],
+            control: { type: 'toggle', key: 'devCommands' },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Chat',
+        items: [
+          {
+            name: 'Default mode',
+            desc: 'Which mode a freshly opened chat panel starts in.',
+            aliases: ['this note', 'wiki mode'],
+            control: {
+              type: 'dropdown',
+              key: 'defaultMode',
+              options: { note: 'This note', wiki: 'Wiki' },
+            },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Review',
+        items: [
+          {
+            name: 'Stale after (days)',
+            desc: 'How old a page has to be before the review board calls it stale.',
+            aliases: ['staleness', 'review board'],
+            control: { type: 'slider', key: 'staleDays', min: 7, max: 120, step: 1 },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Scan for new notes',
+        items: [
+          {
+            name: 'Never scan these',
+            desc:
+              'Folders that are not notes — templates, attachments, an archive. Skipped by every scan and by ' +
+              'the background count, whatever you tick in the dialog (comma-separated). The wiki folder is ' +
+              'always excluded.',
+            aliases: ['exclude', 'ignore', 'skip folders'],
+            control: { type: 'textarea', key: 'scanExclude', rows: 2, placeholder: 'Templates, Attachments' },
+          },
+          {
+            name: 'Show a background "to review" count',
+            desc:
+              'Periodically COUNT new/changed notes and show them in the status bar. Counting is instant and ' +
+              'never runs the model — drafting only happens when you click the chip. Default off.',
+            aliases: ['status bar', 'badge', 'background'],
+            control: { type: 'toggle', key: 'autoScanEnabled' },
+          },
+          {
+            name: 'Quiet period (hours)',
+            desc:
+              'Background auto-scan skips notes edited within this many hours — you may still be writing them. ' +
+              'Manual "Scan now" always includes them.',
+            aliases: ['quiet', 'recent edits'],
+            visible: () => this.plugin.settings.autoScanEnabled,
+            control: { type: 'slider', key: 'scanQuietHours', min: 0, max: 24, step: 1 },
+          },
+          {
+            name: 'Re-count every (hours)',
+            desc: 'How often the background count refreshes while Obsidian is open.',
+            aliases: ['interval', 'refresh'],
+            visible: () => this.plugin.settings.autoScanEnabled,
+            control: { type: 'slider', key: 'autoScanIntervalHours', min: 1, max: 24, step: 1 },
+          },
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Read side of the same binding.
+   *
+   * A dropdown's options are keyed by string, and this one stores a number —
+   * so the default read would hand the control `64000` where it is looking
+   * for `"64000"`, and the pane would open with nothing selected. Everything
+   * else round-trips as itself.
+   */
+  getControlValue(key: string): unknown {
+    const value = (this.plugin.settings as unknown as Record<string, unknown>)[key];
+    return key === 'contextTokens' ? String(value) : value;
+  }
+
+  /**
+   * Every write passes through here, so this is where the effects live that
+   * used to sit in each control's `onChange`: a changed context window or
+   * developer-command toggle needs a plugin reload to take, a changed wiki
+   * folder has to be pushed into the module that resolves paths, and the
+   * background counter has to be rescheduled when its cadence changes.
+   */
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const s = this.plugin.settings as unknown as Record<string, unknown>;
+    s[key] = key === 'contextTokens' ? parseInt(String(value), 10) || 64000 : value;
+    await this.plugin.saveSettings();
+
+    if (key === 'contextTokens') {
+      notify('done', 'Context window saved — reload the plugin (toggle it off/on) to apply.', DURATION.NORMAL);
+    } else if (key === 'devCommands') {
+      notify('info', 'Reload the plugin (toggle it off and on) for this to take effect.');
+    } else if (key === 'autoScanEnabled' || key === 'autoScanIntervalHours') {
+      this.plugin.rescheduleAutoScan();
+      // The two sliders below this toggle appear and disappear with it, and
+      // `visible` is only re-evaluated when the tab is told to re-render.
+      // update() arrived in 1.13 alongside this whole API, while the declared
+      // floor is 1.11.4 — but nothing on 1.11.4 reaches this method at all,
+      // since it only runs when Obsidian is driving the declarative tab. The
+      // check is for the type system and for anyone reading it later.
+      if (key === 'autoScanEnabled') {
+        const tab = this as { update?: () => void };
+        tab.update?.();
+      }
+    }
   }
 
   // Vault listeners for the folder-state table, torn down with the pane.
