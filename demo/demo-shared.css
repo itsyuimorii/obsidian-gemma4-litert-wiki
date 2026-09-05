@@ -766,7 +766,8 @@ body, html {
     opacity: 0; transition: opacity 0.35s ease;
 }
 .beat.on { opacity: 1; }
-.beat.hidden { opacity: 0 !important; }
+/* Beats specificity so a hidden beat stays hidden while .on is set. */
+.beat.hidden, .beat.on.hidden { opacity: 0; }
 .beat b { font-weight: 600; color: #fff; }
 .beat i { color: var(--violet); font-style: normal; }
 .beat code { font-family: var(--font-mono); font-size: 11.5px; color: var(--violet); background: var(--violet-soft); border-radius: 4px; padding: 1px 5px; }
@@ -957,9 +958,7 @@ body, html {
 
 /* The .md paths in the map open the file they name. */
 .fm-path.is-link {
-    text-decoration: underline;
-    text-decoration-color: var(--background-modifier-border);
-    text-underline-offset: 3px;
+    border-bottom: 1px solid var(--background-modifier-border);
 }
 
 /* A tidy finding you can act on. Mirrors the plugin's own .gemma4-tidy-head:
