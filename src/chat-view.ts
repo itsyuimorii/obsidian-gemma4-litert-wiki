@@ -18,6 +18,7 @@ import {
   safeFileName,
   wikiSourcesDir,
   clampToTokens,
+  estimateTokens,
   contentHash,
   ensureWikiScaffold,
   expandByLinks,
@@ -830,6 +831,8 @@ export class ChatView extends ItemView {
     regenBtn.addEventListener('click', () => {
       if (this.busy || !this.lastQuestion) return;
       row.remove();
+      if (this.turns.at(-1)?.role === 'assistant') this.turns.pop();
+      if (this.turns.at(-1)?.role === 'user') this.turns.pop();
       void this.runGeneration(this.lastQuestion);
     });
 
@@ -964,7 +967,6 @@ export class ChatView extends ItemView {
       this.plugin.settings.hasChatted = true;
       void this.plugin.saveSettings();
     }
-    this.turns.push({ role: 'user', content: question });
     this.appendUserMessage(question);
     await this.runGeneration(question, false, opts.wholeWiki ?? false, opts.promptLabel);
   }
@@ -976,13 +978,16 @@ export class ChatView extends ItemView {
   private async buildContext(
     question: string,
     ungrounded = false,
-    wholeWiki = false
+    wholeWiki = false,
+    historyTokens = 0
   ): Promise<{
     systemPrompt: string;
     sourcePath: string;
     sources: { title: string; linkPath: string }[];
     ungrounded?: boolean;
     noPageMatch?: boolean;
+    /** Which body of material this answer stands on — see ChatTurnRecord. */
+    grounding: string;
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
     // and let Gemma answer from its own knowledge. No retrieval, no sources,
@@ -996,6 +1001,7 @@ export class ChatView extends ItemView {
         sourcePath: indexPath(),
         sources: [],
         ungrounded: true,
+        grounding: 'direct',
       };
     }
     if (this.mode === 'wiki') {
@@ -1038,11 +1044,11 @@ export class ChatView extends ItemView {
       // being. Everything here derives from a note the user wrote.
       const clampedWiki = clampToTokens(
         (loaded ? `## Relevant pages\n${loaded}\n\n` : '') + attachments.blocks,
-        this.plugin.budget('chat')
+        Math.max(1200, this.plugin.budget('chat') - historyTokens)
       );
       if (clampedWiki.truncated) {
         this.appendInfoMessage(
-          `Only the first ~${Math.round(this.plugin.budget('chat') / 1000)}k tokens of the retrieved ` +
+          `Only the first ~${Math.round(Math.max(1200, this.plugin.budget('chat') - historyTokens) / 1000)}k tokens of the retrieved ` +
             'material were sent — the rest was cut to keep one answer fast.'
         );
       }
@@ -1100,6 +1106,10 @@ export class ChatView extends ItemView {
         // Only meaningful for a retrieval question. A whole-wiki question that
         // came back thin was not a miss — it had everything there was.
         noPageMatch: !wholeWiki && selected.length === 0,
+        // The wiki is one body of material, so wiki turns follow each other —
+        // but a whole-wiki sweep and a retrieval question read different
+        // subsets, and only the retrieval thread is about a specific subject.
+        grounding: wholeWiki ? 'wiki:all' : 'wiki',
       };
     }
 
@@ -1119,13 +1129,14 @@ export class ChatView extends ItemView {
       sources.push({ title: file.basename, linkPath: file.path.replace(/\.md$/, '') });
     }
     sources.push(...attachments.sources);
-    const clamped = clampToTokens(noteBlock + attachments.blocks, this.plugin.budget('chat'));
+    const materialBudget = Math.max(1200, this.plugin.budget('chat') - historyTokens);
+    const clamped = clampToTokens(noteBlock + attachments.blocks, materialBudget);
     if (clamped.truncated) {
       // Say whose limit this is. "Longer than the model can hold" blamed the
       // model for a cap the plugin sets, and left the reader with nothing to
       // do about it.
       this.appendInfoMessage(
-        `Only the first ~${Math.round(this.plugin.budget('chat') / 1000)}k tokens of this note were ` +
+        `Only the first ~${Math.round(materialBudget / 1000)}k tokens of this note were ` +
           'sent — the rest was cut to keep one answer fast. Raise Context window in settings to ' +
           'send more, or select a section and ask about that.'
       );
@@ -1181,12 +1192,84 @@ export class ChatView extends ItemView {
         clamped.text,
       sourcePath: file?.path ?? 'wiki/index.md',
       sources,
+      // The note IS the thread here. Attachments deliberately do not enter the
+      // key: adding one extends the same conversation, and dropping history
+      // because a pill appeared would surprise nobody in a good way.
+      grounding: `note:${file?.path ?? ''}`,
     };
   }
 
+  /**
+   * The turns that a follow-up is allowed to see.
+   *
+   * `turns` used to be written and never read: every question built a fresh
+   * Conversation holding a system prompt and that one question, so the panel
+   * looked like a conversation and was not one. Asking "why?" after an answer
+   * sent the model the word "why?" and nothing else.
+   *
+   * Two limits, both deliberate:
+   *
+   * Only turns sharing the current grounding key. The transcript is one
+   * scroll, but the material under it changes when you switch note or mode,
+   * and history from another note is worse than no history — the model
+   * answers confidently about the wrong thing and the Sources row says
+   * otherwise.
+   *
+   * And a token ceiling of its own, taken from the most recent turns
+   * backwards. History competes with the retrieved material for the same
+   * window, and material is what the answer has to be true to, so history
+   * yields first. An answer is capped at 1024 output tokens, so a handful of
+   * exchanges fits comfortably inside this.
+   */
+  private groundingKey(ungrounded: boolean, wholeWiki: boolean): string {
+    if (ungrounded) return 'direct';
+    if (this.mode === 'wiki') return wholeWiki ? 'wiki:all' : 'wiki';
+    return `note:${this.app.workspace.getActiveFile()?.path ?? ''}`;
+  }
+
+  private historyFor(grounding: string): { role: 'user' | 'assistant'; content: string }[] {
+    // A share of the chat budget, not an addition to it. Adding on top
+    // overflowed the smallest window: at a 4,096-token context the material
+    // clamp is already 2,400, and 2,400 + history + instructions + 1,024
+    // output does not fit — the kind of overrun that fails deep inside
+    // generation with nothing the user can act on. What history takes here,
+    // buildContext gives up in material.
+    const ceiling = Math.max(600, Math.floor(this.plugin.budget('chat') * 0.15));
+    const picked: { role: 'user' | 'assistant'; content: string }[] = [];
+    let spent = 0;
+    for (let i = this.turns.length - 1; i >= 0; i--) {
+      const t = this.turns[i];
+      if (t.grounding !== grounding) continue;
+      const cost = estimateTokens(t.content);
+      if (spent + cost > ceiling) break;
+      spent += cost;
+      picked.unshift({ role: t.role, content: t.content });
+    }
+    // Never open on an assistant turn: a leading answer with no question in
+    // front of it reads as something the user said.
+    while (picked.length && picked[0].role === 'assistant') picked.shift();
+    // Nor end on a user turn. One can only be there if its generation failed
+    // — the assistant turn is recorded on success — and a question with no
+    // answer under it invites the model to answer that one instead of this.
+    while (picked.length && picked.at(-1)!.role === 'user') picked.pop();
+    return picked;
+  }
+
   private async runGeneration(question: string, ungrounded = false, wholeWiki = false, promptLabel?: string) {
-    const context = await this.buildContext(question, ungrounded, wholeWiki);
+    // History is chosen before the material is, because the material is
+    // clamped against what history leaves behind rather than the other way
+    // round: a follow-up whose "that" has fallen out of context is a wrong
+    // answer, while a note truncated a few hundred tokens earlier is a
+    // shorter one.
+    const history = this.historyFor(this.groundingKey(ungrounded, wholeWiki));
+    const historyTokens = history.reduce((n, t) => n + estimateTokens(t.content), 0);
+    const context = await this.buildContext(question, ungrounded, wholeWiki, historyTokens);
     if (!context) return;
+
+    // Recorded here, not at the input box: this is the first point at which
+    // the question's grounding is known, and every entry point — typing, a
+    // chip, a skill, the ungrounded hatch — passes through it.
+    this.turns.push({ role: 'user', content: question, grounding: context.grounding });
 
     this.busy = true;
     // Also tell the plugin: one engine, one operation, and a streaming answer
@@ -1206,9 +1289,16 @@ export class ChatView extends ItemView {
       status.remove();
 
       const { SamplerType } = await import('@litert-lm/core');
+      // System prompt, then the exchanges this question is a follow-up to.
+      // The material lives in the system prompt and is rebuilt every turn, so
+      // history carries only what was said — the pronouns and the "that" a
+      // follow-up depends on — never a second copy of the note.
       conversation = await engine.createConversation({
         preface: {
-          messages: [{ role: 'system', content: context.systemPrompt }],
+          messages: [
+            { role: 'system', content: context.systemPrompt },
+            ...history.map((t) => ({ role: t.role, content: t.content })),
+          ],
         },
         sessionConfig: {
           samplerParams: { type: SamplerType.GREEDY },
@@ -1273,7 +1363,12 @@ export class ChatView extends ItemView {
         }
       }
 
-      this.turns.push({ role: 'assistant', content: answer, sources: context.ungrounded ? [] : context.sources });
+      this.turns.push({
+        role: 'assistant',
+        content: answer,
+        sources: context.ungrounded ? [] : context.sources,
+        grounding: context.grounding,
+      });
       // Ungrounded answers can't be saved to the wiki — filing model guesses
       // as sourced pages is exactly the pollution the grounding model avoids.
       this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded, promptLabel);
