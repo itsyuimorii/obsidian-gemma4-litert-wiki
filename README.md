@@ -7,7 +7,7 @@
 
 <h1 align="center">Gemma Wiki</h1>
 
-<p align="center"><b>Run Gemma 4 locally  — right inside Obsidian via LiteRT-LM and WebGPU for a private.</b><br><em>A Karpathy-pattern LLM wiki, </em></p>
+<p align="center"><b>Run Gemma 4 locally — right inside Obsidian via LiteRT-LM and WebGPU.</b><br><em>A private, Karpathy-pattern LLM wiki for your notes.</em></p>
 
 Chat with your notes or entire vault, then turn them into a living wiki following *[Andrej Karpathy's LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)* — with **indexes, concepts, tags, links, and schema**. Generate quizzes and flashcards from your notes, all running *locally* with **no ongoing cost** after the one-time model download — powered by **Gemma 4 E4B** running inside Obsidian's own process through LiteRT-LM and WebGPU.
 
@@ -19,11 +19,10 @@ Not Ollama, not LM Studio, not a localhost server — the model is *in* the app,
 
 <p align="center"><img src="assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900"></p>
 
-> **Status: 1.0.3, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
+> **Status: 1.0.4, in the community plugin store.** The full Karpathy loop is implemented and running; benchmarks below are from real use.
 
 ## 📑 Contents
 
-- [📑 Contents](#-contents)
 - [✨ Features at a glance](#-features-at-a-glance)
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)
