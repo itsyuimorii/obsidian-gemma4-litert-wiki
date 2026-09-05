@@ -4,6 +4,18 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.5 — 2026-09-05
+
+One sentence, everywhere. The store description, the README opening and the
+demo tour now carry the same finalized pitch — "Gemma 4 runs inside Obsidian's
+own process through LiteRT-LM and WebGPU, bringing free local AI directly to
+your vault" — with the store copy adapted to the directory's rules
+("in-process", no product name, 246 characters). The logo now renders on the
+store page too: the Overview renderer rewrites relative `<img src>` but not
+`srcset` inside `<source>`, so the dark-mode logo 404'd exactly where dark
+mode is the default. This release exists to hand the directory the new
+description, which it only reads from a release.
+
 ## 1.0.4 — 2026-09-05
 
 ### Fixed
