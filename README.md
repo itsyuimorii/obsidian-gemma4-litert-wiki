@@ -150,7 +150,7 @@ The first row is the only one this project can claim and the others cannot. Most
 | **What it costs to run** | ~3 GB of disk, once. | Free against a local daemon; per-token against a cloud provider. |
 | **The one moving part** | No inference API and nothing to configure — but the WebGPU runtime can only be handed multi-gigabyte weights over HTTP, so the plugin runs a loopback server on an ephemeral port to feed itself the model and runtime bytes off your own disk. It binds `127.0.0.1`, carries no inference endpoint, and lives only while the plugin is loaded. | `localhost:11434`, or a vendor's HTTPS endpoint — an address you configure, and on the cloud side a place your notes are sent. |
 
-None of this says local-in-renderer is *better*. A 4B model inside Obsidian is weaker than a frontier model behind an API, reads fewer kinds of file, speaks fewer languages, and will never run on your phone. What it buys is that there is nothing else to install, nothing to keep alive, and nothing leaving the machine after the first download — and that only matters if the output holds up. Establishing that honestly, including where the approach is weaker, is what the benchmarks below are for.
+None of this says local-in-renderer is *better*. Gemma 4 E4B inside Obsidian is weaker than a frontier model behind an API, reads fewer kinds of file, speaks fewer languages, and will never run on your phone. What it buys is that there is nothing else to install, nothing to keep alive, and nothing leaving the machine after the first download — and that only matters if the output holds up. Establishing that honestly, including where the approach is weaker, is what the benchmarks below are for.
 
 ## 📋 Requirements
 
