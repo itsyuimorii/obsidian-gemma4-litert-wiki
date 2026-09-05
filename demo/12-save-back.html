@@ -135,8 +135,12 @@ sources:
         beat('Carded like anything else — retrieved, indexed, on the review board, drift-tracked. <b>Through the front door</b>, which is the only one that leads there.');
     }},
 
-    { do: () => {
+    { lock: 2200, do: () => {
         beat('A saved answer in <code>answers/</code> could not do that: scanning skips the whole of <code>gemma-wiki/</code>, so it sat in the one place the ingest pipeline is hard-coded to walk past.');
+    }},
+
+    { do: () => {
+        beat('One counterpart, up in the header: the save button keeps the <b>whole conversation</b> — questions included, the half you cannot reconstruct from answers. Those collect in <code>chats/</code>, a working record nothing can ever read back. An answer is <i>about</i> a note and lives beside it; a conversation is about an afternoon.');
     }},
 ]);
 
