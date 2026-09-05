@@ -20,5 +20,10 @@ jobs:
         run: npm run build
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
+      # The community store's own rule set (eslint-plugin-obsidianmd), run
+      # before a release instead of read in a report after one. The warning
+      # budget is exactly the five that point at issue #106; a sixth fails.
+      - name: Store lint (eslint-plugin-obsidianmd)
+        run: npm run lint
       - name: Release requirements (manifest, versions.json, LICENSE)
         run: npm run check:release
