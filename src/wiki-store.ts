@@ -1441,6 +1441,17 @@ export interface ChatTurnRecord {
   role: 'user' | 'assistant';
   content: string;
   sources?: { title: string; linkPath: string }[];
+  /**
+   * What this turn was grounded in — the mode plus the note, or `wiki`, or
+   * `direct` for an ungrounded answer.
+   *
+   * Follow-up context is only ever built from turns that share the current
+   * key. The panel is one scrolling transcript, but the material under it
+   * changes when you switch notes or modes, and a model handed "what does it
+   * say about caching?" after three turns about a different note answers
+   * confidently about the wrong one.
+   */
+  grounding?: string;
 }
 
 

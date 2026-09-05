@@ -1,7 +1,7 @@
 import { App, ButtonComponent, EventRef, PluginSettingTab, Setting, TFolder } from 'obsidian';
 import { ConfirmModal } from './ingest-modal';
 import type LiteRtSpikePlugin from './main';
-import { DEFAULT_WIKI_DIR, wikiScaffoldPaths } from './wiki-store';
+import { DEFAULT_WIKI_DIR, wikiScaffoldPaths, type ChatTurnRecord } from './wiki-store';
 import { DURATION, notify } from './notify';
 
 export interface GemmaWikiSettings {
@@ -15,6 +15,20 @@ export interface GemmaWikiSettings {
   devCommands: boolean;
   staleDays: number;
   defaultMode: 'note' | 'wiki';
+  /**
+   * The last chat thread, so closing the panel does not discard it (#100).
+   *
+   * One thread, not a history: this exists so an accidental close, a restart,
+   * or a plugin update does not cost you an exchange that took half a minute
+   * of GPU time to produce. A list of past threads is a different feature,
+   * with its own UI and its own delete semantics.
+   *
+   * Plugin data, deliberately — not a file in the vault. #96 spent its whole
+   * diff moving chat transcripts OUT of the vault, and this is view state, not
+   * material: nothing retrieves it, and it is not markdown anyone has to look
+   * at. Capped on write so data.json cannot grow without anyone noticing.
+   */
+  lastThread?: ChatTurnRecord[];
   // Semi-auto ingest scan (manual trigger; no background timer yet).
   scanQuietHours: number;
   // The folders you last scanned. Written by the scan dialog, not by hand —
