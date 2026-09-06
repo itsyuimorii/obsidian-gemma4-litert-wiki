@@ -7,7 +7,7 @@
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
-    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="32" height="32">
+    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="30" height="30">
   </picture>
   &nbsp;Gemma 4 E4B LLM Wiki
 </h1>
@@ -16,7 +16,7 @@
 
 <p align="center"><a href="README.md">English</a> · <b>日本語</b></p>
 
-<p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ コミュニティストアから入れる</b></a><br><a href="https://gemma-wiki-demo.vercel.app"><b>▶ 動くところを見る</b></a> — 初回起動からウィキ完成まで全機能を 23 シーンで。インストール不要、矢印キーで進みます。</p>
+<p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ コミュニティストアから入れる</b></a><br><a href="https://gemma-wiki-demo.vercel.app"><b>▶ 動くところを見る</b></a> — 全機能を 23 シーンで。インストール不要。</p>
 
 **設定するものが何もない、無料のローカル AI。** Gemma 4 E4B が [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) と WebGPU を通じて Obsidian 自身のプロセスの中で動きます — **API キーも、Ollama も、LM Studio も、localhost のサーバーも、アカウントも、サブスクリプションも不要**。プロバイダーを選ぶ必要すらありません。モデルはもうここにあるからです。
 
