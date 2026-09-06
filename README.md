@@ -12,7 +12,7 @@
   &nbsp;Gemma 4 E4B LLM Wiki
 </h1>
 
-<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b><br>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
+<p align="center"><b>Turn your clipped notes into a living Karpathy LLM wiki.</b><br>Chat with your vault, connect ideas, find gaps, and generate quizzes &amp; flashcards —<br>with <b>Gemma 4 E4B</b> running locally inside Obsidian. No API key, Ollama, or server.</p>
 
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
