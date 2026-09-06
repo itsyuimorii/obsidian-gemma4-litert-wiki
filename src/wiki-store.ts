@@ -7,6 +7,10 @@ import {
   linkNeighbours,
   parseSchema,
   pickCardPath,
+  planSchemaRewrite,
+  schemaBackupName,
+  schemaBackupsToPrune,
+  SCHEMA_BACKUP_KEEP,
   slugify,
   type IndexEntry,
   type WikiSchema,
@@ -668,11 +672,20 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
   } else if (schemaFile instanceof TFile) {
     const current = await vault.read(schemaFile).catch(() => null);
     if (current !== null) {
-      const d = parseSchema(current);
-      // One argument, so a slot cannot be forgotten here — which is the call
-      // that would erase the user's own lists if it were.
-      const rebuilt = buildSchemaFile(d);
-      if (rebuilt !== current) await vault.modify(schemaFile, rebuilt).catch(() => {});
+      // The plan can refuse (issue #120): lists visible on the page but
+      // invisible to the parser mean a rewrite would hand back a
+      // correct-looking empty file, and a stale schema.md is the cheaper
+      // failure by any measure. A refused file keeps working — readSchema
+      // still parses what it can — it just stops being regenerated.
+      const plan = planSchemaRewrite(current);
+      if (plan.kind === 'refuse') {
+        console.warn(
+          `[gemma-litert-wiki] schema.md left untouched (${plan.why}) — ` +
+            'its lists could not be read back confidently, so it was not regenerated'
+        );
+      } else if (plan.kind === 'rewrite') {
+        await writeSchemaWithBackup(vault, plan.content).catch(() => {});
+      }
     }
   }
   // READMEs are the plugin's own documentation and are rewritten on every
@@ -702,6 +715,58 @@ export async function ensureWikiScaffold(vault: Vault): Promise<void> {
 
 export async function writeWikiPage(vault: Vault, pagePath: string, content: string): Promise<void> {
   await writeFile(vault, pagePath, content);
+}
+
+/**
+ * Overwrite schema.md, keeping the previous version beside it first.
+ *
+ * Every writer of schema.md comes through here (issue #120). The file is the
+ * one generated thing in the wiki that is also irreplaceable — Tags, Rejected
+ * and hand-written aliases have no source to rebuild from — so before any
+ * write that changes it, the current content goes to
+ * `schema.md.bak.<stamp>` in the same folder, newest SCHEMA_BACKUP_KEEP kept.
+ * Written through the adapter: the name is not a type Obsidian indexes, so it
+ * never appears in the explorer or the graph, but it syncs and it opens in
+ * any editor, which is all a way back needs.
+ *
+ * If the backup cannot be written, the rewrite does not happen — a stale
+ * schema.md costs nothing, an unprotected overwrite is the failure this
+ * exists to end. Returns whether the write went through.
+ */
+export async function writeSchemaWithBackup(vault: Vault, next: string): Promise<boolean> {
+  const path = schemaPath();
+  const file = vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) {
+    await vault.create(path, next).catch(() => {});
+    return true;
+  }
+  const current = await vault.read(file).catch(() => null);
+  if (current === null) return false;
+  if (current === next) return true;
+
+  const backupPath = normalizePath(`${wikiDir()}/${schemaBackupName(new Date())}`);
+  try {
+    await vault.adapter.write(backupPath, current);
+  } catch (err) {
+    console.warn('[gemma-litert-wiki] schema.md backup failed — leaving the file untouched', err);
+    return false;
+  }
+  await vault.modify(file, next);
+
+  // Best-effort: pruning failure never blocks anything, it just leaves an
+  // extra old copy on disk.
+  try {
+    const listing = await vault.adapter.list(wikiDir());
+    for (const name of schemaBackupsToPrune(
+      listing.files.map((f) => f.split('/').pop() ?? ''),
+      SCHEMA_BACKUP_KEEP
+    )) {
+      await vault.adapter.remove(normalizePath(`${wikiDir()}/${name}`));
+    }
+  } catch {
+    // ignore
+  }
+  return true;
 }
 
 const INDEX_LINE = /^- \[\[([^\]|]+)\|([^\]]+)\]\] — (.+)$/;
@@ -846,7 +911,7 @@ export async function queuePendingTags(
   if (!fresh.length) return { before, after: before };
   const pending = [...schema.pending, ...fresh];
   const next = buildSchemaFile({ ...schema, pending });
-  await writeFile(vault, schemaPath(), next);
+  await writeSchemaWithBackup(vault, next);
   return { before, after: pending.length };
 }
 
