@@ -1,16 +1,18 @@
+
+
+<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
+
+<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
+
+<p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
+
 <p align="center">
   <a href="https://gemma-wiki-demo.vercel.app/tour.html">
     <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900">
   </a>
 </p>
 
-<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
-
-<p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b><br>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
-
-<p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
-
-<p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ Install from the community store</b></a><br><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install.</p>
+<p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ Install from the community store</b></a><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a></p>
 
 **Free local AI, with nothing to configure.** Gemma 4 E4B runs inside Obsidian's own process through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU — **no API key, no Ollama, no LM Studio, no localhost server, no account, no subscription**. There is no provider to pick, because the model is already here.
 
@@ -20,6 +22,7 @@
 
 ## 📑 Contents
 
+- [📑 Contents](#-contents)
 - [✨ Features at a glance](#-features-at-a-glance)
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)
