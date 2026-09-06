@@ -18,15 +18,20 @@
 
 <p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ Install from the community store</b></a><br><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install.</p>
 
-**Free local AI, with nothing to configure.** Gemma 4 E4B runs inside Obsidian's own process through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU — **no API key, no Ollama, no LM Studio, no localhost server, no account, no subscription**. There is no provider to pick, because the model is already here.
+### What do you do with everything you have already saved?
 
-**That model then builds [Andrej Karpathy's LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) from your notes** — a cross-linked layer of cards, concepts, tags, links and a schema you can edit by hand — and every page is shown to you in full before a single byte is written.
+Clipped articles. Saved posts. Course notes. Papers you meant to read. A vault that looks organised and is mostly unread — not because there is too much in it, but because there is no way to tell what is in it without opening things one at a time.
 
-**Chat with a note or your whole vault**, grounded in what you actually wrote and with sources listed by the plugin rather than cited by the model. Turn any note into quizzes and flashcards. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both under [Privacy](#-privacy) — it never touches the network again.
+**Web Clipper helps you collect. This is for what happens next.**
+
+**Gemma 4 E4B builds [Andrej Karpathy's LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) out of the notes you already have** — a summary card per note, an index, concept pages over the clusters that form, tags drawn from one shared vocabulary instead of whatever each note invented, and links between the notes that turn out to be related. All plain Markdown, in your vault.
+
+Then **chat with one note or the whole thing**, grounded in what you actually wrote, with sources listed by the plugin rather than cited by the model. Find gaps and contradictions. Turn any note into quizzes and flashcards. **Your own notes are never modified by the model** — the wiki is a separate layer built above them.
+
+**And the model is already inside Obsidian.** Gemma 4 E4B runs in Obsidian's own process through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU — **no API key, no Ollama, no LM Studio, no localhost server, no account, no subscription**. There is no provider to pick. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both under [Privacy](#-privacy) — it never touches the network again.
 
 ## 📑 Contents
 
-- [📑 Contents](#-contents)
 - [✨ Features at a glance](#-features-at-a-glance)
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)
@@ -136,7 +141,11 @@ Either way: answers stream in from a model running inside Obsidian's own process
 
 ## 🤔 Why this exists
 
-Most "local AI" Obsidian plugins still depend on a second, independently-running application — Ollama or LM Studio has to be installed and running in the background before the plugin does anything. That's local in the sense that your notes don't leave your machine, but it isn't local in the sense of "install the plugin and it just works."
+I use Web Clipper a lot, and the easier saving got, the more I accumulated things I never went back to. An interesting article, a useful thread, course material, something that might matter later — all of it saved, almost none of it processed. What you end up with is a very tidy collection of things you have not actually read, connected, or learned.
+
+I did not want another tool for saving more. I wanted something that would work through the backlog already sitting in the vault. That is what this is: it takes the notes you have collected and turns them into something you can query, connect, review and be tested on.
+
+The second reason is narrower and more technical. Most "local AI" Obsidian plugins still depend on a second, independently-running application — Ollama or LM Studio has to be installed and running in the background before the plugin does anything. That's local in the sense that your notes don't leave your machine, but it isn't local in the sense of "install the plugin and it just works."
 
 This project asks a narrower question: **can the model run in the exact same process as the plugin, using only what Electron and WebGPU already provide?** The answer, validated end to end (see [Benchmarks](#-benchmarks)), is yes — for short, well-scoped text tasks. Whether it's enough to carry a full Karpathy-style wiki (entity/concept extraction, cross-referencing, contradiction detection) is the open question this project is working through, one validated step at a time, in public commit history.
 
