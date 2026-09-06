@@ -1,7 +1,7 @@
 {
   "id": "gemma-litert-wiki",
   "name": "Gemma 4 E4B LLM Wiki",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "minAppVersion": "1.11.4",
   "description": "Turn your clipped notes into a living Karpathy LLM wiki. Chat with your vault, connect ideas, find gaps, generate quizzes and flashcards — with Gemma 4 E4B running locally, right inside your vault. No API key, no Ollama, no server.",
   "author": "itsyuimorii",
