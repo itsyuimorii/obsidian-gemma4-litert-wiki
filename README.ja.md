@@ -1,28 +1,31 @@
-<p align="center">
-  <a href="https://gemma-wiki-demo.vercel.app/tour.html">
-    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900">
-  </a>
-</p>
-
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
-    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="30" height="30">
+    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="96" height="96">
   </picture>
   &nbsp;Gemma 4 E4B LLM Wiki
 </h1>
 
-<p align="center"><b>Gemma 4 E4B が Obsidian 自身のプロセスの中で動き、</b><br>あなたのノートから<b>Andrej Karpathy の生きた LLM ウィキ</b>を育てる。</p>
+<p align="center"><b>集めたノートを、生きた Karpathy LLM ウィキに。</b><br>vault と対話し、考えをつなぎ、抜けを見つけ、クイズとフラッシュカードを作る —<br><b>Gemma 4 E4B</b> は Obsidian の中でローカルに動きます。API キーも Ollama もサーバーも不要。</p>
 
 <p align="center"><a href="README.md">English</a> · <b>日本語</b></p>
 
 <p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ コミュニティストアから入れる</b></a><br><a href="https://gemma-wiki-demo.vercel.app"><b>▶ 動くところを見る</b></a> — 全機能を 23 シーンで。インストール不要。</p>
 
-**設定するものが何もない、無料のローカル AI。** Gemma 4 E4B が [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) と WebGPU を通じて Obsidian 自身のプロセスの中で動きます — **API キーも、Ollama も、LM Studio も、localhost のサーバーも、アカウントも、サブスクリプションも不要**。プロバイダーを選ぶ必要すらありません。モデルはもうここにあるからです。
+> ☔️ 保存したもの、そのあとどうしていますか？
+> 切り抜いた記事。保存した投稿。講座のノート。読むつもりだった論文。整っては見えるのに、ほとんど読み返されていない vault — 多すぎるからではありません。一つずつ開いてみるまで、そこに何があるのか分からないからです。
 
-**そのモデルが、あなたのノートから [Andrej Karpathy の LLM ウィキ](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) を組み上げます** — カード、概念、タグ、リンク、そして手で編集できるスキーマからなる相互リンク層。そして**書き込まれる前に、すべてのページが全文で提示されます**。
+**Gemma 4 E4B が、すでにあるノートから [Andrej Karpathy の LLM ウィキ](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) を組み上げます** — ノート 1 枚につき要約カード 1 枚、索引、まとまりが見えてきたところに立つ概念ページ、ノートごとに勝手に増えた語ではなく 1 つの共通語彙から引いたタグ、そして関連が判明したノート同士のリンク。すべて、あなたの vault の中のプレーンな Markdown です。
 
-**1 つのノートにも、vault 全体にも問いかけられます。**答えはあなたが実際に書いたものに基づき、出典はモデルではなくプラグインが列挙します。ノートはクイズやフラッシュカードにもなります。**ノートがどこかにアップロードされることは決してありません。アップロード先のサーバーそのものが存在しないからです。** ここでのプライバシーは、ポリシーに書かれた約束ではなく、アーキテクチャの性質です。初回のダウンロード（約 3 GB のモデルと WebAssembly ランタイム。どちらも [プライバシー](#-プライバシー) に記載）を終えたあと、このプラグインが再びネットワークに触れることはありません。
+そのうえで、**1 つのノートにも、全体にも問いかけられます。** 答えはあなたが実際に書いたものに基づき、出典はモデルが生成するのではなくプラグインが列挙します。抜けや矛盾を見つけることも、どのノートからでもクイズやフラッシュカードを作ることもできます。
+
+**あなた自身のノートがモデルによって書き換えられることはありません。** ウィキはその上に築かれる独立した層であり、ノートはあなたが書いたままの姿で残ります。
+
+**そしてモデルは、すでに Obsidian の中にあります。** Gemma 4 E4B は [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) と WebGPU を通じて Obsidian 自身のプロセスの中で動きます — **API キーも、Ollama も、LM Studio も、localhost のサーバーも、アカウントも、サブスクリプションも不要**。
+
+プロバイダーを選ぶ必要すらありません。**ノートがどこかにアップロードされることは決してありません。アップロード先のサーバーそのものが存在しないからです。** ここでのプライバシーは、ポリシーに書かれた約束ではなく、アーキテクチャの性質です。
+
+初回のダウンロード（約 3 GB のモデルと WebAssembly ランタイム。どちらも [プライバシー](#-プライバシー) に記載）を終えたあとは、推論はローカルで動き、ネットワークはもう必要ありません。
 
 このプラグインは **[Andrej Karpathy の LLM-wiki パターン](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)** を実装しています。あなたの生のノートが *モデルによって* 書き換えられることはありません — 不変性の制約が縛るのは LLM であって、あなたではありません。チャットで間違いに気づいたとき、自分でノートを直すのがごく普通の対処です（ウィキ側が変更を検知し、再取り込みを提案します）。その上に、相互リンクされた独立したウィキ層が作られます。ノート 1 枚につきカード 1 枚、そして **1 バイトでも書き込まれる前に、ページ全文が必ずあなたに提示されます。**
 
@@ -95,7 +98,6 @@
 
 - [✨ 主な機能](#-主な機能)
 - [💬 ノートと対話する — 完全にオフラインで](#-ノートと対話する--完全にオフラインで)
-- [📑 目次](#-目次)
 - [🤔 なぜ作ったのか](#-なぜ作ったのか)
 - [🔌 ほかの AI プラグインとの違い](#-ほかの-ai-プラグインとの違い)
 - [📋 動作要件](#-動作要件)
