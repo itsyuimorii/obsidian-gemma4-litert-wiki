@@ -1,11 +1,17 @@
 
 
-<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="32" height="32">
+  </picture>
+  &nbsp;Gemma 4 E4B LLM Wiki <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
+</h1>
 
 <p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
 
 <p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ Install from the community store</b></a><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a></p>
-<p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
+
 
 <p align="center">
   <a href="https://gemma-wiki-demo.vercel.app/tour.html">
