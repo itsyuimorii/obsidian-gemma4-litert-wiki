@@ -4,6 +4,7 @@
 
 <p align="center"><b>Gemma 4 E4B runs inside Obsidian's own process</b>and builds <b>Andrej Karpathy's living LLM wiki</b> from your notes.</p>
 
+<p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ Install from the community store</b></a><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a></p>
 <p align="center"><b>English</b> · <a href="README.ja.md">日本語</a></p>
 
 <p align="center">
@@ -12,7 +13,7 @@
   </a>
 </p>
 
-<p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ Install from the community store</b></a><a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a></p>
+
 
 **Free local AI, with nothing to configure.** Gemma 4 E4B runs inside Obsidian's own process through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) and WebGPU — **no API key, no Ollama, no LM Studio, no localhost server, no account, no subscription**. There is no provider to pick, because the model is already here.
 
