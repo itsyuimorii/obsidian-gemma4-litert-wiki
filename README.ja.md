@@ -1,10 +1,11 @@
-<h1 align="center">
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
     <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="96" height="96">
   </picture>
-  &nbsp;Gemma 4 E4B LLM Wiki
-</h1>
+</p>
+
+<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
 
 <p align="center"><b>集めたノートを、生きた Karpathy LLM ウィキに。</b><br>vault と対話し、考えをつなぎ、抜けを見つけ、クイズとフラッシュカードを作る —<br><b>Gemma 4 E4B</b> は Obsidian の中でローカルに動きます。API キーも Ollama もサーバーも不要。</p>
 

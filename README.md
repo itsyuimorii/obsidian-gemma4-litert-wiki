@@ -1,10 +1,11 @@
-<h1 align="center">
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
     <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="96" height="96">
   </picture>
-  &nbsp;Gemma 4 E4B LLM Wiki
-</h1>
+</p>
+
+<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
 
 <p align="center"><b>Turn your notes into a living Karpathy LLM wiki.</b><br>Chat with your vault, connect ideas, find gaps, and generate quizzes &amp; flashcards —<br>with <b>Gemma 4 E4B</b> running locally inside Obsidian. No API key, Ollama, or server.</p>
 
