@@ -1,8 +1,7 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
-    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="Gemma Wiki logo" width="96" height="96">
-  </picture>
+  <a href="https://gemma-wiki-demo.vercel.app/tour.html">
+    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900">
+  </a>
 </p>
 
 <h1 align="center">Gemma 4 E4B LLM Wiki</h1>
@@ -18,8 +17,6 @@
 **That model then builds [Andrej Karpathy's LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) from your notes** — a cross-linked layer of cards, concepts, tags, links and a schema you can edit by hand — and every page is shown to you in full before a single byte is written.
 
 **Chat with a note or your whole vault**, grounded in what you actually wrote and with sources listed by the plugin rather than cited by the model. Turn any note into quizzes and flashcards. **Your notes are never uploaded anywhere, because there is no server to upload them to**: privacy is a property of the architecture, not a promise in a policy. After the one-time downloads — the ~3 GB model and the WASM runtime, both under [Privacy](#-privacy) — it never touches the network again.
-
-<p align="center"><img src="assets/poster/poster-p01.png" alt="The Obsidian window with the Gemma Wiki panel docked on the right, answering a question about the open note and listing its sources." width="900"></p>
 
 ## 📑 Contents
 
