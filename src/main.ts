@@ -35,6 +35,7 @@ import {
   wikiAnswersDir,
   wikiDir,
   cardPathFor,
+  writeSchemaWithBackup,
   writeWikiPage,
   type IndexEntry,
   type NoteExtraction,
@@ -1360,7 +1361,7 @@ export default class LiteRtSpikePlugin extends Plugin {
         () => {
           this.runApproved('Organize tags', async () => {
             await ensureWikiScaffold(this.app.vault);
-            await writeWikiPage(this.app.vault, path, content);
+            await writeSchemaWithBackup(this.app.vault, content);
             await appendLog(this.app.vault, 'schema', `tag vocabulary (${vocab.length} tags)`);
             this.statusEnd(`Schema written: ${path}`);
             resolve(true);
@@ -1814,7 +1815,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       added++;
     }
     if (!added) return;
-    await writeWikiPage(this.app.vault, schemaPath(), buildSchemaFile({ ...schema, aliases }));
+    await writeSchemaWithBackup(this.app.vault, buildSchemaFile({ ...schema, aliases }));
   }
 
   // One strict-JSON call: old tag -> closest vocabulary tag. Flat object in,
