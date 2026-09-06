@@ -4,7 +4,13 @@
   </a>
 </p>
 
-<h1 align="center">Gemma 4 E4B LLM Wiki</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/itsyuimorii/obsidian-gemma4-litert-wiki/main/assets/logo.svg" alt="" width="32" height="32">
+  </picture>
+  &nbsp;Gemma 4 E4B LLM Wiki
+</h1>
 
 <p align="center"><b>Gemma 4 E4B が Obsidian 自身のプロセスの中で動き、</b><br>あなたのノートから<b>Andrej Karpathy の生きた LLM ウィキ</b>を育てる。</p>
 
