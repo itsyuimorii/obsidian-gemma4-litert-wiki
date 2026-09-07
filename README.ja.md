@@ -223,6 +223,7 @@
 | **[Test] Load WASM runtime (no model download)** | モデルなしで LiteRT-LM の WASM ランタイムだけを読み込み、ランタイムの問題とモデルの問題を切り分けます。 |
 | **[Test] Fix grammar of selection** | 選択範囲に対して実際の生成を走らせ、prefill / decode 速度と最初のトークンまでの時間をコンソールに記録します。 |
 | **[Test] JSON reliability test (5 runs)** | 選択範囲に対して構造化 JSON 生成を 5 回独立に実行し、成功率として報告します。モデルが取り込みパイプラインを確実に駆動できるかを見るリスクテストです。 |
+| **[Test] Benchmark this machine** | 固定のベンチマーク用ノート 5 本（短い英文・長い英文・日本語・コード中心・リンクの羅列）をそれぞれ 1 回ずつ抽出にかけ、お使いの GPU でのカード 1 枚あたりの秒数、コールドスタート、最初のトークンまでの時間、prefill / decode のスループットを報告します。貼り付け可能な Markdown をクリップボードと `benchmark.md` に書き出します。どこにも送信されません — 上の表にご自分のハードウェアを載せたい場合は、結果用の issue に貼ってください。 |
 
 ## 🔧 仕組み
 
