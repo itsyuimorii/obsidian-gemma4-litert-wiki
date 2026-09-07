@@ -117,6 +117,16 @@ const AT_BUDGET = 0.95;
 /** Terminal punctuation, Latin and CJK. A closing quote or bracket may follow it. */
 const ENDS_A_SENTENCE = /[.!?。！？…][)\]"'”’」』]*\s*$/;
 
+/**
+ * A closing brace or bracket, optionally followed by a code fence. A reply
+ * that ends this way is a closed structure, not a sentence that stopped early:
+ * every structured call here returns JSON, and the first calibration sample
+ * (#109) showed all fifteen valid replies flagged mid-sentence because `}` is
+ * not a full stop. The unterminated case — a brace that never closes — is
+ * caught structurally by scanJsonObject and does not need this heuristic.
+ */
+const ENDS_CLOSED_STRUCTURE = /[}\]]\s*(?:```)?\s*$/;
+
 export interface CutOffReport {
   cutOff: boolean;
   /** The output landed on or near the token budget, so the budget is why it stopped. */
@@ -144,7 +154,8 @@ export function looksCutOff(text: string, maxOutputTokens?: number): CutOffRepor
     maxOutputTokens !== undefined &&
     maxOutputTokens > 0 &&
     estimateImproveTokens(body) >= maxOutputTokens * AT_BUDGET;
-  const midSentence = body.length > 0 && !ENDS_A_SENTENCE.test(body);
+  const midSentence =
+    body.length > 0 && !ENDS_A_SENTENCE.test(body) && !ENDS_CLOSED_STRUCTURE.test(body);
   return { cutOff: atBudget && midSentence, atBudget, midSentence };
 }
 
