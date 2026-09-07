@@ -1114,7 +1114,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         const served = this.wasmDir;
         if (!served) throw new Error('The local runtime server did not report its directory.');
         ensureCommonJsMarker(served);
-        setWasmScriptResolver((url) => path.join(served, path.basename(new URL(url).pathname)));
+        setWasmScriptResolver((url) => {
+          const fileName = path.basename(new URL(url).pathname);
+          this.status(`Fetching the local runtime — ${fileName}…`);
+          return ensureRuntimeFile(served, fileName, (p) => {
+            const mb = (p.receivedBytes / 1e6).toFixed(0);
+            const total = p.totalBytes ? ` / ${(p.totalBytes / 1e6).toFixed(0)}` : '';
+            this.status(`Fetching the local runtime… ${mb}${total} MB`);
+          }).finally(() => this.statusEnd());
+        });
 
         const { loadLiteRtLm } = await import('@litert-lm/core');
         await loadLiteRtLm(baseUrl);

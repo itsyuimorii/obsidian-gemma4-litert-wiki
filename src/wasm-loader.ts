@@ -21,10 +21,17 @@
  * Everything else here is the vendor's logic, kept as it was.
  */
 
-/** Maps the URL the library asks for onto the file already on disk. */
-let resolveToDisk: ((url: string) => string) | null = null;
+/**
+ * Maps the URL the library asks for onto a file on disk, fetching it first if
+ * it is not there yet. Async on purpose: the .wasm half of the runtime reaches
+ * disk through the loopback server, which downloads on a miss, but the glue
+ * .js is required straight off disk and never passes through that server. A
+ * fresh store install has neither file, so a resolver that only mapped paths
+ * sent require() at a file nothing had ever downloaded (#123).
+ */
+let resolveToDisk: ((url: string) => Promise<string>) | null = null;
 
-export function setWasmScriptResolver(fn: (url: string) => string): void {
+export function setWasmScriptResolver(fn: (url: string) => Promise<string>): void {
   resolveToDisk = fn;
 }
 
@@ -45,13 +52,13 @@ type Host = {
  * at runtime, so an import would send esbuild looking for a file that does not
  * exist at build time.
  */
-function loadGlue(url: string): unknown {
+async function loadGlue(url: string): Promise<unknown> {
   if (!resolveToDisk) {
     throw new Error(
       'The WASM script resolver was not installed before the runtime was loaded.'
     );
   }
-  const diskPath = resolveToDisk(url);
+  const diskPath = await resolveToDisk(url);
   const req = (window as unknown as { require?: (id: string) => unknown }).require;
   if (typeof req !== 'function') {
     throw new Error('This plugin needs Obsidian on desktop, where require() is available.');
@@ -69,7 +76,7 @@ export const createWasmLib = async (
   const host = self as unknown as Host;
 
   if (wasmLoaderScript) {
-    const exported = loadGlue(String(wasmLoaderScript));
+    const exported = await loadGlue(String(wasmLoaderScript));
     // A dev install can put the glue under a package.json that declares
     // `"type": "module"`, in which case Node treats it as ESM, the UMD tail
     // never runs, and require() hands back an empty namespace instead of the
@@ -89,7 +96,7 @@ export const createWasmLib = async (
     throw new Error('ModuleFactory not set.');
   }
   if (assetLoaderScript) {
-    const exported = loadGlue(String(assetLoaderScript));
+    const exported = await loadGlue(String(assetLoaderScript));
     if (typeof exported === 'function') host.ModuleFactory = exported as Host['ModuleFactory'];
     if (!host.ModuleFactory) {
       throw new Error('ModuleFactory not set.');

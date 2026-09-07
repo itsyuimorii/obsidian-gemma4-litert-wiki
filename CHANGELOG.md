@@ -4,6 +4,20 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.11 — 2026-09-06
+
+Fixes a fresh install failing before the model prompt ever appears (#123).
+
+- **The runtime's glue script is downloaded before it is required.** 1.0.7
+  switched the runtime from a `<script>` tag to `require()` so the plugin
+  could be listed, but only the `.wasm` half of the runtime reached disk
+  through the loopback server that downloads on a miss — the `.js` glue was
+  required straight off disk, and on a machine that had never run an earlier
+  version nothing had ever put it there. The result was
+  `Cannot find module …/wasm/litertlm_wasm_internal.js` and no model prompt.
+  The resolver now goes through the same downloader the server uses, and the
+  status bar shows the fetch while it runs.
+
 ## 1.0.10 — 2026-09-06
 
 Documentation only, for the same reason 1.0.9 was: the directory snapshots the
