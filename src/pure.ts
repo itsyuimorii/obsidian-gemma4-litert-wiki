@@ -936,3 +936,66 @@ export function migrateSettings(saved: unknown, knownKeys: readonly string[]): M
   data.settingsVersion = SETTINGS_VERSION;
   return { data, changed: true };
 }
+
+
+// ---------------------------------------------------------------------------
+// Vault shape, for the "Folder structure" skill
+//
+// Paths and counts only. "How should I organise this?" is a question about
+// the shape of a vault, not its contents, and shape is the one thing none of
+// the three chat modes could see: This note sees one file, Wiki sees ingested
+// pages, Direct sees nothing. A folder name is not material in the sense the
+// trust model protects — it is already visible in the file explorer — so
+// handing the model the tree crosses no line the plugin draws.
+// ---------------------------------------------------------------------------
+
+export interface VaultTreeOptions {
+  /** Folder to leave out entirely — the wiki, which the plugin wrote. */
+  exclude?: string;
+  /** Hard cap on emitted lines, so a huge vault stays inside a prompt. */
+  maxLines?: number;
+}
+
+/**
+ * Render markdown paths as an indented folder tree with a note count per
+ * folder. Counts are recursive (a folder's number includes its subfolders),
+ * folders sort by name at each level, and root-level notes appear as a
+ * single line rather than one per file.
+ */
+export function formatVaultTree(paths: readonly string[], opts: VaultTreeOptions = {}): string {
+  const exclude = opts.exclude ? opts.exclude.replace(/\/+$/, '') + '/' : null;
+  const maxLines = opts.maxLines ?? 120;
+
+  interface Node { children: Map<string, Node>; notes: number }
+  const root: Node = { children: new Map(), notes: 0 };
+  let rootNotes = 0;
+
+  for (const raw of paths) {
+    if (!raw.endsWith('.md')) continue;
+    if (exclude && raw.startsWith(exclude)) continue;
+    const parts = raw.split('/');
+    if (parts.length === 1) { rootNotes++; continue; }
+    let node = root;
+    for (const dir of parts.slice(0, -1)) {
+      let next = node.children.get(dir);
+      if (!next) { next = { children: new Map(), notes: 0 }; node.children.set(dir, next); }
+      node = next;
+      node.notes++;
+    }
+  }
+
+  const lines: string[] = [];
+  const walk = (node: Node, depth: number) => {
+    const names = [...node.children.keys()].sort((a, b) => a.localeCompare(b));
+    for (const name of names) {
+      if (lines.length >= maxLines) return;
+      const child = node.children.get(name)!;
+      lines.push(`${'  '.repeat(depth)}${name}/ (${child.notes})`);
+      walk(child, depth + 1);
+    }
+  };
+  walk(root, 0);
+  if (rootNotes > 0 && lines.length < maxLines) lines.push(`(root) ${rootNotes} loose note${rootNotes === 1 ? '' : 's'}`);
+  if (lines.length >= maxLines) lines.push('…');
+  return lines.join('\n');
+}
