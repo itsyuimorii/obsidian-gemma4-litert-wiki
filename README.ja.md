@@ -11,6 +11,20 @@
 
 <p align="center"><a href="README.md">English</a> · <b>日本語</b></p>
 
+<p align="center">
+  <a href="https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm"><img src="https://img.shields.io/badge/Built%20with-Gemma%204%20E4B-7b6cd9?style=for-the-badge&logo=googlegemini&logoColor=white" alt="Built with Gemma 4 E4B"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0f766e?style=for-the-badge" alt="MIT licensed"></a>
+  <a href="#-プライバシー"><img src="https://img.shields.io/badge/Server-none-16a34a?style=for-the-badge" alt="No server"></a>
+</p>
+
+<p align="center">
+  <a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><img src="https://img.shields.io/badge/Obsidian-1.11.4%2B-7b6cd9?style=flat&logo=obsidian&logoColor=white" alt="Obsidian 1.11.4+"></a>
+  <a href="https://github.com/google-ai-edge/LiteRT-LM"><img src="https://img.shields.io/badge/runtime-LiteRT--LM-7b6cd9?style=flat" alt="Runtime: LiteRT-LM"></a>
+  <img src="https://img.shields.io/badge/GPU-WebGPU-7b6cd9?style=flat&logo=webgpu&logoColor=white" alt="GPU: WebGPU">
+  <img src="https://img.shields.io/badge/API%20key-none-7b6cd9?style=flat" alt="No API key">
+  <a href="tests"><img src="https://img.shields.io/badge/tests-169-7b6cd9?style=flat" alt="169 tests"></a>
+</p>
+
 <p align="center"><a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ コミュニティストアから入れる</b></a><br><a href="https://gemma-wiki-demo.vercel.app"><b>▶ 動くところを見る</b></a> — 全機能を 23 シーンで。インストール不要。</p>
 
 > ☔️ 保存したもの、そのあとどうしていますか？
