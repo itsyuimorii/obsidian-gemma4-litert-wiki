@@ -1,3 +1,4 @@
+import { SETTINGS_VERSION } from './pure';
 import {
   App,
   ButtonComponent,
@@ -13,6 +14,12 @@ import { DEFAULT_WIKI_DIR, wikiScaffoldPaths, type ChatTurnRecord } from './wiki
 import { DURATION, notify } from './notify';
 
 export interface GemmaWikiSettings {
+  /**
+   * Shape version of this object on disk. Migrations key on it rather than on
+   * which keys are present, because for one key — lastThread — absence is
+   * normal. See migrateSettings in pure.ts.
+   */
+  settingsVersion: number;
   wikiDir: string;
   // Engine context window (maxNumTokens). Bigger = longer notes fit and more
   // grounding per answer, at the cost of GPU memory and first-token latency.
@@ -65,6 +72,7 @@ export interface GemmaWikiSettings {
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
+  settingsVersion: SETTINGS_VERSION,
   wikiDir: DEFAULT_WIKI_DIR,
   contextTokens: 64000,
   devCommands: false,

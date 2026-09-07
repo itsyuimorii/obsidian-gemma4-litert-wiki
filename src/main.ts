@@ -57,7 +57,7 @@ import {
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
-import { chunkForImprove, estimateImproveTokens, improveOutputBudget } from './pure';
+import { chunkForImprove, estimateImproveTokens, improveOutputBudget, migrateSettings } from './pure';
 import {
   looksCutOff,
   looksRepetitive,
@@ -994,7 +994,34 @@ export default class LiteRtSpikePlugin extends Plugin {
             }
 
             log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
-            const text = `JSON reliability: ${successCount}/${RUNS} valid. Full detail in console (search "JSON reliability").`;
+
+            // The measurements also go to a file, because the point of this
+            // command is to calibrate the repetition thresholds (#109) and
+            // that needs a sample from a real machine — which means someone
+            // who is not a developer running it a few times and handing the
+            // numbers over. A console they have to open, filter and copy from
+            // is where samples go to die; a note in the wiki folder is not.
+            // Outside cards/ and concepts/, so nothing retrieves it.
+            const calibPath = `${wikiDir()}/calibration.md`;
+            const adapter = this.app.vault.adapter;
+            if (!(await adapter.exists(calibPath))) {
+              await adapter.write(
+                calibPath,
+                '# Calibration samples\n\n' +
+                  'Written by `[Test] JSON reliability test`. Each block is one invocation; each line one ' +
+                  'model reply. `run` is the longest run of identical sentences, `distinct` the share of ' +
+                  'distinct 4-grams. Nothing reads this file — it exists to be sent to whoever is tuning ' +
+                  'the thresholds in model-output.ts.\n'
+              );
+            }
+            await adapter.append(
+              calibPath,
+              `\n## ${new Date().toISOString()} — ${selection.length} chars, ${successCount}/${RUNS} valid\n` +
+                outcomes.map((o) => `- ${o}`).join('\n') +
+                '\n'
+            );
+
+            const text = `JSON reliability: ${successCount}/${RUNS} valid. Written to ${calibPath}.`;
             if (successCount === RUNS) p.done(text, DURATION.LONG);
             else p.warn(text);
           } catch (err) {
@@ -3469,11 +3496,15 @@ export default class LiteRtSpikePlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = {
-      ...DEFAULT_SETTINGS,
-      ...((await this.loadData()) as Partial<GemmaWikiSettings> | null),
-    };
+    // Saved data is migrated before it is trusted (#121). The spread alone
+    // could not tell "never set" from "set under an old name", and a key
+    // saved with an old type went straight through the cast.
+    const { data, changed } = migrateSettings(await this.loadData(), Object.keys(DEFAULT_SETTINGS));
+    this.settings = { ...DEFAULT_SETTINGS, ...(data as Partial<GemmaWikiSettings>) };
     setDebugLogging(this.settings.devCommands);
+    // Write the migrated shape back once, so the next load is a no-op and the
+    // version stamp is on disk.
+    if (changed) await this.saveData(this.settings);
   }
 
   async saveSettings() {
