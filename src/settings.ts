@@ -29,7 +29,7 @@ export interface GemmaWikiSettings {
   // they are debugging tools, not things to do with your notes.
   devCommands: boolean;
   staleDays: number;
-  defaultMode: 'note' | 'wiki';
+  defaultMode: 'note' | 'wiki' | 'direct';
   /**
    * The last chat thread, so closing the panel does not discard it (#100).
    *
@@ -155,11 +155,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           {
             name: 'Default mode',
             desc: 'Which mode a freshly opened chat panel starts in.',
-            aliases: ['this note', 'wiki mode'],
+            aliases: ['this note', 'wiki mode', 'direct'],
             control: {
               type: 'dropdown',
               key: 'defaultMode',
-              options: { note: 'This note', wiki: 'Wiki' },
+              options: { note: 'This note', wiki: 'Wiki', direct: 'Direct' },
             },
           },
         ],
@@ -535,9 +535,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         dd
           .addOption('note', 'This note')
           .addOption('wiki', 'Wiki')
+          .addOption('direct', 'Direct')
           .setValue(this.plugin.settings.defaultMode)
           .onChange(async (v) => {
-            this.plugin.settings.defaultMode = v === 'wiki' ? 'wiki' : 'note';
+            this.plugin.settings.defaultMode =
+              v === 'wiki' ? 'wiki' : v === 'direct' ? 'direct' : 'note';
             await this.plugin.saveSettings();
           })
       );

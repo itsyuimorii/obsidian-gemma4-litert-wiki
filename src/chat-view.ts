@@ -169,7 +169,29 @@ export interface SuggestionSpec {
  * WIKI stays empty until you file something. Two different emptinesses; the
  * remedy belongs to the one that persists.
  */
-export function suggestionsFor(mode: 'note' | 'wiki'): SuggestionSpec[] {
+/**
+ * Where a question is answered from.
+ *
+ * `direct` is the model on its own — no note, no wiki, no Sources row. It
+ * exists because Gemma 4 E4B is a general model and the plugin already had
+ * the whole ungrounded path built for the per-answer escape hatch; the only
+ * thing missing was a way to choose it on purpose instead of arriving at it
+ * after a question failed. Grounded stays the default: this is a mode you
+ * pick, never one you land in.
+ */
+export type ChatMode = 'note' | 'wiki' | 'direct';
+
+export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
+  if (mode === 'direct') {
+    // No actions here, because an action files something into the wiki and
+    // nothing in this mode is grounded enough to file. Three questions that
+    // say what the mode is for without any note being open.
+    return [
+      { label: 'Explain a term', ask: 'Explain the difference between a mutex and a semaphore.' },
+      { label: 'Draft an outline', ask: 'Draft an outline for a short talk on why local-first software matters.' },
+      { label: 'Rewrite this', ask: 'Rewrite this sentence to be clearer: ' },
+    ];
+  }
   if (mode === 'note') {
     // "Key points" went: it and "Summarize" are the same operation in two
     // layouts, and they were two of the three slots. The freed slot goes to
@@ -230,13 +252,13 @@ export class ChatView extends ItemView {
   private turns: ChatTurnRecord[] = [];
   private lastQuestion: string | null = null;
   private activeConversation: Conversation | null = null;
-  private mode: 'note' | 'wiki' = 'note'; // overwritten from settings in onOpen
+  private mode: ChatMode = 'note'; // overwritten from settings in onOpen
   // Whether the wiki holds any pages. Cached, because the chips are drawn
   // synchronously and metadataCache fires 'resolved' constantly — reading
   // index.md on every one of those would be a file read per keystroke-ish
   // event for a boolean that changes about once.
   private wikiEmpty = true;
-  private modeButtons: { note: HTMLElement; wiki: HTMLElement } | null = null;
+  private modeButtons: { note: HTMLElement; wiki: HTMLElement; direct: HTMLElement } | null = null;
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
   private suggestionRow!: HTMLElement;
@@ -714,9 +736,16 @@ export class ChatView extends ItemView {
     // notes" and were confused when it only saw the open file.
     const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'This note' });
     const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
-    this.modeButtons = { note: noteBtn, wiki: wikiBtn };
+    // Third, and last: the order is how much of your own material is behind
+    // the answer, most first.
+    const directBtn = modeRow.createEl('button', {
+      cls: 'gemma4-chat-mode-btn',
+      text: 'Direct',
+    });
+    this.modeButtons = { note: noteBtn, wiki: wikiBtn, direct: directBtn };
     noteBtn.addEventListener('click', () => this.setMode('note'));
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
+    directBtn.addEventListener('click', () => this.setMode('direct'));
 
     const attachBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
@@ -743,7 +772,7 @@ export class ChatView extends ItemView {
     });
     setIcon(skillsBtn, 'zap');
     setTooltip(skillsBtn, 'Run a skill');
-    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean }[] = [
+    const SKILLS: { label: string; icon: string; prompt: string; mode?: ChatMode; fill?: boolean }[] = [
       {
         // Nouns, because every one of these hands you a thing: a quiz, a set of
         // cards, a checklist. The menu was three imperatives and two nouns,
@@ -888,13 +917,21 @@ export class ChatView extends ItemView {
     await this.restoreThread();
   }
 
-  private setMode(mode: 'note' | 'wiki') {
+  private setMode(mode: ChatMode) {
     this.mode = mode;
     this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
     this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
+    this.modeButtons?.direct.toggleClass('gemma4-chat-mode-active', mode === 'direct');
+    // The Direct placeholder says where the answer comes from rather than what
+    // to type, because that is the one thing that changes about an answer here
+    // and the Sources row — which says it everywhere else — is absent.
     this.inputEl?.setAttribute(
       'placeholder',
-      mode === 'note' ? 'Ask about this note… (Enter to send)' : 'Ask your wiki… (Enter to send)'
+      mode === 'note'
+        ? 'Ask about this note… (Enter to send)'
+        : mode === 'wiki'
+          ? 'Ask your wiki… (Enter to send)'
+          : 'Ask anything — answered by the model, not your notes'
     );
     this.renderSuggestions();
     this.updateNoteChip();
@@ -907,6 +944,12 @@ export class ChatView extends ItemView {
     if (this.mode === 'wiki') {
       setIcon(icon, 'library');
       this.noteChipEl.createSpan({ text: 'Wiki (ingested pages)' });
+      this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
+      return;
+    }
+    if (this.mode === 'direct') {
+      setIcon(icon, 'sparkles');
+      this.noteChipEl.createSpan({ text: 'Gemma 4 E4B only — no sources' });
       this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
       return;
     }
@@ -1160,7 +1203,7 @@ export class ChatView extends ItemView {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
     // and let Gemma answer from its own knowledge. No retrieval, no sources,
     // and the answer is marked ungrounded so the trust model stays intact.
-    if (ungrounded) {
+    if (ungrounded || this.mode === 'direct') {
       return {
         systemPrompt:
           "Answer the user's question from your own general knowledge. You do NOT have access to " +
