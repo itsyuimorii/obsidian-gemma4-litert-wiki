@@ -140,6 +140,13 @@ export interface SuggestionSpec {
   label: string;
   /** What to send, for the chips that ask a question. */
   ask?: string;
+  /**
+   * Put this in the input box and hand over the cursor, instead of sending.
+   * For a chip whose question is only half written — "Explain a term" cannot
+   * be sent, because which term is the whole question. A chip that sends a
+   * made-up example in that spot answers something nobody asked.
+   */
+  fill?: string;
   /** A non-question action: scan, file a note, reformat one. Styled as a write. */
   action?: 'scan' | 'ingest' | 'improve';
   /**
@@ -188,10 +195,12 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
     // No actions here, because an action files something into the wiki and
     // nothing in this mode is grounded enough to file. Three questions that
     // say what the mode is for without any note being open.
+    // All three fill rather than ask: each is a sentence with the important
+    // word missing, and that word is yours. The ellipsis in the label says so.
     return [
-      { label: 'Explain a term', ask: 'Explain the difference between a mutex and a semaphore.' },
-      { label: 'Draft an outline', ask: 'Draft an outline for a short talk on why local-first software matters.' },
-      { label: 'Rewrite this', ask: 'Rewrite this sentence to be clearer: ' },
+      { label: 'Explain a term…', fill: 'Explain, in plain terms: ' },
+      { label: 'Draft an outline…', fill: 'Draft a short outline for: ' },
+      { label: 'Rewrite this…', fill: 'Rewrite this to be clearer, keeping the meaning:\n\n' },
     ];
   }
   if (mode === 'note') {
@@ -399,6 +408,14 @@ export class ChatView extends ItemView {
   // only: canned wiki-mode questions would fight the lexical retrieval.
   /** What pressing a suggestion does — from a chip or from a message. */
   private runSuggestion(spec: SuggestionSpec) {
+    if (spec.fill !== undefined) {
+      this.inputEl.value = spec.fill;
+      this.autoGrowInput();
+      this.inputEl.focus();
+      const end = this.inputEl.value.length;
+      this.inputEl.setSelectionRange(end, end);
+      return;
+    }
     if (spec.ask) {
       void this.handleSend({ text: spec.ask, wholeWiki: spec.wholeWiki, promptLabel: spec.label });
       return;
