@@ -1290,9 +1290,13 @@ export class ChatView extends ItemView {
       return null;
     }
     let noteBlock = '';
+    let noteBodyChars = 0;
     const sources: { title: string; linkPath: string }[] = [];
     if (file) {
       const noteContent = await this.app.vault.read(file);
+      // Frontmatter is not material a question can be answered from, so it
+      // does not count towards whether this note has anything to say.
+      noteBodyChars = noteContent.replace(/^---\n[\s\S]*?\n---\n?/, '').trim().length;
       noteBlock = `## Open note: ${file.basename}\n${noteContent}\n\n`;
       sources.push({ title: file.basename, linkPath: file.path.replace(/\.md$/, '') });
     }
@@ -1360,6 +1364,18 @@ export class ChatView extends ItemView {
         clamped.text,
       sourcePath: file?.path ?? 'wiki/index.md',
       sources,
+      // The same signal wiki mode sets, for the same reason: there is nothing
+      // here to answer from. An empty or near-empty note is the note you have
+      // open when you have just made one — ask anything general of it and the
+      // honest refusal was the whole answer, while the identical question in
+      // wiki mode offered a way forward. Thin is 80 characters of body,
+      // roughly a title and a line: below that no question is really being
+      // answered "from the note".
+      //
+      // Deliberately not set for a note with content. There the refusal is
+      // the correct and complete answer, and a hatch under every good answer
+      // would be an invitation to leave grounding by default.
+      noPageMatch: noteBodyChars < 80 && !attachments.blocks,
       // The note IS the thread here. Attachments deliberately do not enter the
       // key: adding one extends the same conversation, and dropping history
       // because a pill appeared would surprise nobody in a good way.
@@ -1549,7 +1565,10 @@ export class ChatView extends ItemView {
         const hatch = body.createDiv({ cls: 'gemma4-chat-hatch' });
         const btn = hatch.createEl('button', {
           cls: 'gemma4-chat-hatch-btn',
-          text: 'Not in your wiki? Ask Gemma directly (no sources)',
+          text:
+            context.grounding.startsWith('note:')
+              ? 'Not in this note? Ask Gemma directly (no sources)'
+              : 'Not in your wiki? Ask Gemma directly (no sources)',
         });
         btn.addEventListener('click', () => {
           if (this.busy) return;
