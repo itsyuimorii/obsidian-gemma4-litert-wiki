@@ -7,7 +7,12 @@
 // not a log to be interpreted — it is a finished Markdown block, correct to
 // paste into an issue with nothing added and nothing removed.
 //
-// Pure, and imports nothing, so the formatting is tested without a GPU.
+// Pure, so every decision here is tested without a GPU. What the command
+// itself is left holding is only the parts that genuinely need one: creating a
+// conversation, sending a message, and reading the clock.
+
+import { contentHash } from './pure.ts';
+import { looksRepetitive, parseModelJson } from './model-output.ts';
 
 export interface BenchMeasurement {
   fixtureId: string;
@@ -120,4 +125,81 @@ export function buildBenchmarkReport(
     '',
     '</details>',
   ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Judging one reply
+// ---------------------------------------------------------------------------
+
+/** What the engine reports back about a single generation. */
+export interface BenchTimings {
+  wallMs: number;
+  timeToFirstTokenInSecond: number;
+  lastPrefillTokensPerSecond: number;
+  lastPrefillTokenCount: number;
+  lastDecodeTokensPerSecond: number;
+  lastDecodeTokenCount: number;
+}
+
+/**
+ * Turn one model reply into a row of the table.
+ *
+ * This is the quality half of the benchmark and the half that is easy to get
+ * quietly wrong, because the four verdicts overlap: a truncated reply is also
+ * unreadable JSON, and a looping reply usually parses perfectly. Reporting a
+ * cut-off run as "wrong shape" would send a reader looking for a prompt bug
+ * instead of a token budget, so each flag is decided independently from the
+ * evidence for it, and the report prints all of them.
+ *
+ * `looping` is deliberately judged on the WHOLE reply rather than on the
+ * parsed summary: a loop that runs past the token budget never becomes valid
+ * JSON, so a check that only looked at parsed fields would miss exactly the
+ * case this fixture set includes a link dump to provoke.
+ */
+export function evaluateBenchReply(
+  fixture: { id: string; label: string },
+  reply: string,
+  timings: BenchTimings
+): BenchMeasurement {
+  const read = parseModelJson<Record<string, unknown>>(reply);
+  const rec = read.ok ? read.value : {};
+  return {
+    fixtureId: fixture.id,
+    label: fixture.label,
+    wallMs: timings.wallMs,
+    ttftSeconds: timings.timeToFirstTokenInSecond,
+    prefillTokensPerSecond: timings.lastPrefillTokensPerSecond,
+    prefillTokenCount: timings.lastPrefillTokenCount,
+    decodeTokensPerSecond: timings.lastDecodeTokensPerSecond,
+    decodeTokenCount: timings.lastDecodeTokenCount,
+    usableJson: read.ok,
+    rightShape:
+      read.ok &&
+      typeof rec.summary === 'string' &&
+      Array.isArray(rec.tags) &&
+      rec.tags.length === 3 &&
+      rec.tags.every((t: unknown) => typeof t === 'string'),
+    looping: looksRepetitive(reply).repetitive,
+    cutOff: !read.ok && read.reason === 'cut-off',
+    replyHash: contentHash(reply),
+  };
+}
+
+/**
+ * The GPU line, from whatever `adapter.info` chose to fill in.
+ *
+ * Chromium reliably populates `vendor` and `architecture`; `device` and
+ * `description` are frequently empty strings, and printing those as blanks in
+ * a table other people read is worse than leaving them out. Order is fixed so
+ * two reports from the same chip produce the same string and can be grouped.
+ */
+export function formatGpuInfo(info: Record<string, unknown> | null | undefined): string {
+  if (!info) return 'adapter reported no identity';
+  const parts = ['vendor', 'architecture', 'device', 'description']
+    .map((k) => {
+      const v = info[k];
+      return typeof v === 'string' ? v.trim() : '';
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'adapter reported no identity';
 }

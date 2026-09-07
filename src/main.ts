@@ -61,6 +61,8 @@ import { chunkForImprove, estimateImproveTokens, improveOutputBudget, migrateSet
 import { BENCH_CORPUS } from './bench-corpus';
 import {
   buildBenchmarkReport,
+  evaluateBenchReply,
+  formatGpuInfo,
   typicalSecondsPerCard,
   type BenchMeasurement,
 } from './bench-report';
@@ -153,17 +155,8 @@ async function describeGpu(): Promise<string> {
     const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<unknown> } }).gpu;
     if (!gpu) return 'no WebGPU adapter';
     const adapter = (await gpu.requestAdapter()) as { info?: Record<string, unknown> } | null;
-    const info = adapter?.info ?? {};
-    // Vendor and architecture are what Chromium reliably fills in; `device`
-    // and `description` are often empty, so they are dropped rather than
-    // printed as blanks in a table other people read.
-    const parts = ['vendor', 'architecture', 'device', 'description']
-      .map((k) => {
-        const v = info[k];
-        return typeof v === 'string' ? v.trim() : '';
-      })
-      .filter(Boolean);
-    return parts.length ? parts.join(' \u00b7 ') : 'adapter reported no identity';
+    const info = adapter?.info;
+    return formatGpuInfo(info);
   } catch {
     return 'unavailable';
   }
@@ -1023,28 +1016,7 @@ export default class LiteRtSpikePlugin extends Plugin {
               p.update(`Benchmark: ${i + 1}/${BENCH_CORPUS.length} — ${fixture.label}…`);
               const { reply, wallMs, bench } = await runOne(fixture.text);
 
-              const read = parseModelJson<Record<string, unknown>>(reply);
-              const rec = read.ok ? read.value : {};
-              const measurement: BenchMeasurement = {
-                fixtureId: fixture.id,
-                label: fixture.label,
-                wallMs,
-                ttftSeconds: bench.timeToFirstTokenInSecond,
-                prefillTokensPerSecond: bench.lastPrefillTokensPerSecond,
-                prefillTokenCount: bench.lastPrefillTokenCount,
-                decodeTokensPerSecond: bench.lastDecodeTokensPerSecond,
-                decodeTokenCount: bench.lastDecodeTokenCount,
-                usableJson: read.ok,
-                rightShape:
-                  read.ok &&
-                  typeof rec.summary === 'string' &&
-                  Array.isArray(rec.tags) &&
-                  rec.tags.length === 3 &&
-                  rec.tags.every((t: unknown) => typeof t === 'string'),
-                looping: looksRepetitive(reply).repetitive,
-                cutOff: !read.ok && read.reason === 'cut-off',
-                replyHash: contentHash(reply),
-              };
+              const measurement = evaluateBenchReply(fixture, reply, { ...bench, wallMs });
               measurements.push(measurement);
               log(`Benchmark ${fixture.id}:`, measurement, 'reply:', reply);
             }
