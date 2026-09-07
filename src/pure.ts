@@ -862,3 +862,77 @@ export function schemaBackupsToPrune(names: string[], keep: number): string[] {
   const backups = names.filter((n) => n.startsWith(SCHEMA_BACKUP_PREFIX)).sort();
   return keep > 0 ? backups.slice(0, Math.max(0, backups.length - keep)) : backups;
 }
+
+
+// ---------------------------------------------------------------------------
+// Settings migration (#121)
+//
+// data.json is read on every start and spread over the defaults. That spread
+// cannot tell a key the user never set from a key saved under an old name, and
+// it passes a value of the wrong type straight through the type assertion. So
+// saved data goes through this table first.
+//
+// The table is keyed on an explicit version stamp, not on which keys are
+// present: `lastThread` is the one setting whose absence is normal, and any
+// future optional setting inherits the same ambiguity. A version number also
+// covers the case a presence check cannot see at all — a key that exists with
+// the wrong type.
+//
+// Append-only. Never delete an entry, however old: data on disk may still be
+// from that version, and an install that sat unopened for a year is the exact
+// case a migration exists for.
+// ---------------------------------------------------------------------------
+
+/** The shape version this build writes. Bump when adding a migration. */
+export const SETTINGS_VERSION = 1;
+
+type SavedSettings = Record<string, unknown>;
+
+/**
+ * Each entry migrates from version N (its index) to N+1. `known` is the set of
+ * keys this build understands — passed in so this file stays free of the
+ * obsidian import that settings.ts carries.
+ */
+const MIGRATIONS: Array<(data: SavedSettings, known: ReadonlySet<string>) => SavedSettings> = [
+  // 0 -> 1: the first stamped shape. Every data.json written before the stamp
+  // existed is version 0. Nothing was renamed on the way here, so this only
+  // drops keys the plugin no longer reads — they would otherwise sit in the
+  // file forever, looking like settings the user chose.
+  (data, known) => {
+    const out: SavedSettings = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (known.has(k) || k === 'lastThread') out[k] = v;
+    }
+    return out;
+  },
+];
+
+export interface MigratedSettings {
+  data: SavedSettings;
+  /** True when the caller should write the result back. */
+  changed: boolean;
+}
+
+/**
+ * Bring saved settings up to SETTINGS_VERSION. Pure: takes whatever loadData
+ * returned (including null) and gives back the shape this build expects, plus
+ * whether anything moved so the caller can persist it once.
+ */
+export function migrateSettings(saved: unknown, knownKeys: readonly string[]): MigratedSettings {
+  if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) {
+    // Nothing on disk, or nothing usable. Defaults will fill in; stamping the
+    // version makes the first save a versioned one.
+    return { data: { settingsVersion: SETTINGS_VERSION }, changed: saved !== null && saved !== undefined };
+  }
+  const known = new Set(knownKeys);
+  let data: SavedSettings = { ...(saved as SavedSettings) };
+  const from = typeof data.settingsVersion === 'number' && Number.isInteger(data.settingsVersion)
+    ? Math.max(0, data.settingsVersion)
+    : 0;
+  if (from >= SETTINGS_VERSION) return { data, changed: false };
+  for (let v = from; v < SETTINGS_VERSION; v++) {
+    data = MIGRATIONS[v](data, known);
+  }
+  data.settingsVersion = SETTINGS_VERSION;
+  return { data, changed: true };
+}
