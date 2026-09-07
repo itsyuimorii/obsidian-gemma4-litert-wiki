@@ -326,3 +326,16 @@ test('the decision is a pure function of its inputs', () => {
   const first = JSON.stringify(nextOutputCap(args));
   for (let i = 0; i < 10; i++) assert.equal(JSON.stringify(nextOutputCap(args)), first);
 });
+
+
+test('a closed JSON object is not mid-sentence, even though it ends in a brace', () => {
+  const json = '{"summary": "The grinder requires cleaning.", "tags": ["grinder", "cleaning", "maintenance"]}';
+  assert.equal(looksCutOff(json, 512).midSentence, false);
+  assert.equal(looksCutOff(json + '\n```', 512).midSentence, false);
+  assert.equal(looksCutOff('[1, 2, 3]', 512).midSentence, false);
+});
+
+test('an unterminated JSON object is still mid-sentence', () => {
+  assert.equal(looksCutOff('{"summary": "The grinder requi', 512).midSentence, true);
+  assert.equal(looksCutOff('{"tags": ["grinder", "clean', 512).midSentence, true);
+});
