@@ -354,7 +354,7 @@ export function buildSchemaFile(schema: Partial<WikiSchema> = {}): string {
   return (
     `# Wiki Schema\n\n` +
     `> [!info]- How this file works\n` +
-    `> The wiki's tag rules — plain markdown, read before every ingest. **The lists are yours; the explanations are the plugin's.** Edit tags freely and they are never overwritten; the callouts (this one included) are rewritten on every start, so deleting or editing them does not stick. Anything else you write in this file will not survive a restart either — your own notes belong in your own notes.\n` +
+    `> The wiki's tag rules — plain markdown, read before every ingest. **The lists are yours; the explanations are the plugin's.** Edit tags freely and they are never overwritten; the callouts (this one included) are rewritten on every start, so deleting or editing them does not stick. Anything else you write in this file will not survive a restart either — your own notes belong in your own notes. Before each such rewrite the previous version is saved next to this file as \`schema.md.bak.<date>\` (the newest 5 are kept, hidden from the file explorer) — if a list ever goes missing, look there.\n` +
     `>\n` +
     `> Three ways it changes, all yours: edit by hand (read before every ingest) · **Tidy the wiki** rebuilds the vocabulary from the tags in use, and brings existing pages in line afterwards. Nothing changes without an approval of yours.\n\n` +
     `## Tags\n\n` +
@@ -761,4 +761,104 @@ export function findDuplicatePairs(opts: {
   // you just created never reaches the top.
   found.sort((x, y) => Math.max(y.a.mtime, y.b.mtime) - Math.max(x.a.mtime, x.b.mtime));
   return { pairs: found.slice(0, cap), total: found.length };
+}
+
+// ---------------------------------------------------------------------------
+// A way back for schema.md
+// ---------------------------------------------------------------------------
+
+// schema.md is regenerated on every start: parse, rebuild, overwrite. The
+// design is right — it is what keeps the callouts current while the six data
+// slots ride through — but three of those slots (Tags, Rejected, and any
+// hand-written alias) have no source to rebuild from. Every other generated
+// file in the wiki can be reconstructed; schema.md is the one that is also
+// irreplaceable. And the failure is silent by construction: a parse that
+// loses everything returns the same shape as a schema that legitimately holds
+// nothing, so the rewrite writes a correct-looking empty file and nothing
+// throws.
+//
+// Two answers, layered. planSchemaRewrite refuses the rewrites it can tell
+// are wrong — a file whose lists are visible to a dumb line scan but invisible
+// to the parser, or a rebuild that does not reach a fixed point. And for
+// everything no check can see coming, the caller keeps a copy: the previous
+// content goes beside the file as `schema.md.bak.<stamp>` before any rewrite
+// that changes it, newest few kept. The round-trip test proves the parser and
+// the builder agree with each other; only the copy on disk helps with an
+// input neither anticipated.
+
+export type SchemaRewritePlan =
+  | { kind: 'unchanged' }
+  | { kind: 'rewrite'; content: string }
+  | { kind: 'refuse'; why: 'unreadable-lists' | 'unstable-rebuild' };
+
+/**
+ * List items a dumb scan can see: `- thing` lines outside callouts, minus the
+ * `(none)` placeholders. Deliberately a SECOND, stupider reader — its whole
+ * value is that it does not share parseSchema's idea of where a section
+ * starts, so a section header the user reworded hides the list from the
+ * parser but not from this.
+ */
+function visibleListItems(content: string): number {
+  let count = 0;
+  for (const raw of content.split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('>')) continue;
+    if (!line.startsWith('- ')) continue;
+    if (line.slice(2).trim().startsWith('(')) continue;
+    count++;
+  }
+  return count;
+}
+
+export function planSchemaRewrite(current: string): SchemaRewritePlan {
+  const parsed = parseSchema(current);
+
+  // Lists on the page, none in the parse: far more likely a parse failure
+  // than a user who deleted every list and left the bullets. Refusing keeps
+  // the file exactly as it is — stale callouts cost nothing, a lost veto list
+  // is permanent. (A user with no tags at all but a bulleted section of
+  // their own also lands here; that is over-protection, chosen on purpose.)
+  const items = parsed.tags.length + parsed.pending.length + parsed.rejected.length;
+  if (items === 0 && visibleListItems(current) > 0) {
+    return { kind: 'refuse', why: 'unreadable-lists' };
+  }
+
+  const rebuilt = buildSchemaFile(parsed);
+  if (rebuilt === current) return { kind: 'unchanged' };
+
+  // The rebuild must be a fixed point: parsing what we are about to write and
+  // building again has to reproduce it byte for byte. If it does not, the
+  // parser and the builder disagree about this very file, and writing it
+  // would begin walking the data somewhere — likely nowhere good. Believed
+  // unreachable today; this is insurance against the regression the
+  // round-trip test cannot see, on the input it was never shown.
+  if (buildSchemaFile(parseSchema(rebuilt)) !== rebuilt) {
+    return { kind: 'refuse', why: 'unstable-rebuild' };
+  }
+  return { kind: 'rewrite', content: rebuilt };
+}
+
+/** How many previous versions of schema.md are kept beside it. */
+export const SCHEMA_BACKUP_KEEP = 5;
+
+const SCHEMA_BACKUP_PREFIX = 'schema.md.bak.';
+
+/**
+ * `schema.md.bak.20260906-142233` — local time, second precision. No colons,
+ * because vaults sync to Windows; lexicographic order is age order, which is
+ * what lets pruning sort names instead of stat-ing files.
+ */
+export function schemaBackupName(now: Date): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  return (
+    SCHEMA_BACKUP_PREFIX +
+    `${p(now.getFullYear(), 4)}${p(now.getMonth() + 1)}${p(now.getDate())}` +
+    `-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`
+  );
+}
+
+/** Which of these file names are schema backups past the keep limit — oldest first. */
+export function schemaBackupsToPrune(names: string[], keep: number): string[] {
+  const backups = names.filter((n) => n.startsWith(SCHEMA_BACKUP_PREFIX)).sort();
+  return keep > 0 ? backups.slice(0, Math.max(0, backups.length - keep)) : backups;
 }
