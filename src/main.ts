@@ -1,4 +1,4 @@
-import { addIcon, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, apiVersion, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Platform, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { fs, http, path, type Bytes, type HttpServer } from './node-api';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
@@ -58,6 +58,19 @@ import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
 import { chunkForImprove, estimateImproveTokens, improveOutputBudget, migrateSettings } from './pure';
+import { BENCH_CORPUS } from './bench-corpus';
+import {
+  buildBenchmarkReport,
+  typicalSecondsPerCard,
+  type BenchMeasurement,
+} from './bench-report';
+
+/**
+ * Output budget for one benchmark call. Fixed rather than scaled from the
+ * input: the cap is part of what is being measured, and a budget that varied
+ * per machine would make the decode numbers incomparable.
+ */
+const BENCH_OUTPUT_TOKENS = 512;
 import {
   looksCutOff,
   looksRepetitive,
@@ -131,6 +144,59 @@ async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
     return { ok: true, detail: `Adapter found. ${JSON.stringify(info)}` };
   } catch (err) {
     return { ok: false, detail: `requestAdapter() threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+/** GPU identity for the benchmark table, from the same adapter the runtime uses. */
+async function describeGpu(): Promise<string> {
+  try {
+    const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<unknown> } }).gpu;
+    if (!gpu) return 'no WebGPU adapter';
+    const adapter = (await gpu.requestAdapter()) as { info?: Record<string, unknown> } | null;
+    const info = adapter?.info ?? {};
+    // Vendor and architecture are what Chromium reliably fills in; `device`
+    // and `description` are often empty, so they are dropped rather than
+    // printed as blanks in a table other people read.
+    const parts = ['vendor', 'architecture', 'device', 'description']
+      .map((k) => {
+        const v = info[k];
+        return typeof v === 'string' ? v.trim() : '';
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(' \u00b7 ') : 'adapter reported no identity';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+/**
+ * OS for the benchmark table, via Obsidian's Platform rather than
+ * `navigator.platform` — which the store's own lint rule rejects, and which
+ * reports a string ("MacIntel") that has been wrong about the hardware since
+ * Apple Silicon shipped.
+ */
+function describePlatform(): string {
+  if (Platform.isMacOS) return 'macOS';
+  if (Platform.isWin) return 'Windows';
+  if (Platform.isLinux) return 'Linux';
+  return 'unknown';
+}
+
+/**
+ * Whether the machine is on battery, best effort.
+ *
+ * Worth recording because Apple Silicon throttles hard when unplugged, and two
+ * reports from the same chip that disagree by a factor of two are otherwise
+ * just confusing. The Battery API is not present everywhere; null means the
+ * question could not be answered, which is not the same as "plugged in".
+ */
+async function onBattery(): Promise<boolean | null> {
+  try {
+    const nav = navigator as unknown as { getBattery?: () => Promise<{ charging: boolean }> };
+    if (typeof nav.getBattery !== 'function') return null;
+    return !(await nav.getBattery()).charging;
+  } catch {
+    return null;
   }
 }
 
@@ -882,6 +948,146 @@ export default class LiteRtSpikePlugin extends Plugin {
             p.fail('Fixing grammar', err);
           } finally {
             await conversation?.delete().catch(() => {});
+          }
+        },
+      });
+
+      this.addCommand({
+        id: 'litert-benchmark-machine',
+        name: '[Test] Benchmark this machine',
+        callback: async () => {
+          // The README's benchmark table has one machine in it — the author's.
+          // Every other row has to come from a stranger who installed the
+          // plugin, so the entire design constraint is that running this and
+          // handing over the result costs one click and one paste. Hence: a
+          // fixed corpus compiled into the bundle (a number is comparable only
+          // if everyone measured the same thing), and finished Markdown out.
+          //
+          // Nothing is uploaded, here or anywhere. "No network calls after the
+          // first download" is the first row of the README's comparison table
+          // and the one claim nothing else in the category can make; a
+          // telemetry endpoint would spend it to collect what one issue thread
+          // collects for free.
+          const p = new Progress('Benchmark: loading model…');
+          let conversation: import('@litert-lm/core').Conversation | undefined;
+          try {
+            const engine = await this.ensureEngine((text) => {
+              log(text);
+              p.update(text);
+            });
+            const { SamplerType } = await import('@litert-lm/core');
+
+            const runOne = async (text: string) => {
+              conversation = await engine.createConversation({
+                preface: {
+                  messages: [
+                    {
+                      role: 'system',
+                      content:
+                        'You extract structured metadata from a note. Given the text the user provides, ' +
+                        'respond with ONLY a single JSON object matching this exact shape, no markdown code ' +
+                        'fences, no explanation, nothing before or after it: ' +
+                        '{"summary": "one sentence summary", "tags": ["tag1", "tag2", "tag3"]}. ' +
+                        'Tags must be short lowercase noun phrases, exactly 3 of them.',
+                    },
+                  ],
+                },
+                sessionConfig: {
+                  samplerParams: { type: SamplerType.GREEDY },
+                  maxOutputTokens: BENCH_OUTPUT_TOKENS,
+                },
+              });
+              try {
+                const wallStart = Date.now();
+                const message = await conversation.sendMessage(text);
+                const wallMs = Date.now() - wallStart;
+                const bench = await conversation.getBenchmarkInfo();
+                return { reply: textOf(message.content), wallMs, bench };
+              } finally {
+                await conversation?.delete().catch(() => {});
+                conversation = undefined;
+              }
+            };
+
+            // The first call of a session pays a one-time shader-compilation
+            // cost that has nothing to do with the note. Spend it here on a
+            // throwaway and report it on its own line, rather than letting it
+            // land on whichever fixture happens to run first and make that row
+            // look four times slower than it is.
+            p.update('Benchmark: warming up (one-time GPU cost)…');
+            const cold = await runOne('Warm-up. Reply with {"summary": "ok", "tags": ["a", "b", "c"]}.');
+
+            const measurements: BenchMeasurement[] = [];
+            for (let i = 0; i < BENCH_CORPUS.length; i++) {
+              const fixture = BENCH_CORPUS[i];
+              p.update(`Benchmark: ${i + 1}/${BENCH_CORPUS.length} — ${fixture.label}…`);
+              const { reply, wallMs, bench } = await runOne(fixture.text);
+
+              const read = parseModelJson<Record<string, unknown>>(reply);
+              const rec = read.ok ? read.value : {};
+              const measurement: BenchMeasurement = {
+                fixtureId: fixture.id,
+                label: fixture.label,
+                wallMs,
+                ttftSeconds: bench.timeToFirstTokenInSecond,
+                prefillTokensPerSecond: bench.lastPrefillTokensPerSecond,
+                prefillTokenCount: bench.lastPrefillTokenCount,
+                decodeTokensPerSecond: bench.lastDecodeTokensPerSecond,
+                decodeTokenCount: bench.lastDecodeTokenCount,
+                usableJson: read.ok,
+                rightShape:
+                  read.ok &&
+                  typeof rec.summary === 'string' &&
+                  Array.isArray(rec.tags) &&
+                  rec.tags.length === 3 &&
+                  rec.tags.every((t: unknown) => typeof t === 'string'),
+                looping: looksRepetitive(reply).repetitive,
+                cutOff: !read.ok && read.reason === 'cut-off',
+                replyHash: contentHash(reply),
+              };
+              measurements.push(measurement);
+              log(`Benchmark ${fixture.id}:`, measurement, 'reply:', reply);
+            }
+
+            const report = buildBenchmarkReport(
+              {
+                gpu: await describeGpu(),
+                pluginVersion: this.manifest.version,
+                obsidianVersion: apiVersion,
+                platform: describePlatform(),
+                contextTokens: this.effectiveContextTokens ?? this.settings.contextTokens ?? 4096,
+                coldStartSeconds: cold.wallMs / 1000,
+                onBattery: await onBattery(),
+              },
+              measurements
+            );
+
+            // Both, on purpose. The clipboard is for the paste that is the
+            // whole point of the command; the file is because a clipboard is
+            // one Cmd+C away from being gone and the run took minutes.
+            const path = `${wikiDir()}/benchmark.md`;
+            const adapter = this.app.vault.adapter;
+            if (!(await adapter.exists(path))) {
+              await adapter.write(
+                path,
+                '# Benchmark results\n\n' +
+                  'Written by `[Test] Benchmark this machine`. Nothing reads this file and nothing is ' +
+                  'sent anywhere. Paste a block into the results issue to add your hardware to the ' +
+                  "README's table.\n"
+              );
+            }
+            await adapter.append(path, `\n## ${new Date().toISOString()}\n\n${report}\n`);
+            await navigator.clipboard.writeText(report).catch(() => {});
+
+            log('Benchmark report:\n' + report);
+            p.done(
+              `Benchmark done — ${typicalSecondsPerCard(measurements).toFixed(1)}s per card. ` +
+                `Copied to the clipboard and written to ${path}.`,
+              DURATION.LONG
+            );
+          } catch (err) {
+            await conversation?.delete().catch(() => {});
+            p.fail('The benchmark', err);
           }
         },
       });
