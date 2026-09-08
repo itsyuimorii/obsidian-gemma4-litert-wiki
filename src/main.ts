@@ -60,6 +60,7 @@ import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from '.
 import {
   chunkForImprove,
   diffUsage,
+  suggestRelated,
   estimateImproveTokens,
   formatUsageReport,
   improveOutputBudget,
@@ -2289,11 +2290,44 @@ export default class LiteRtSpikePlugin extends Plugin {
       // Ask the model only where there is nothing to reciprocate. A page
       // with links already has the relationships it needs; what it lacks is
       // the other half of them.
-      let i = 0;
       const empty = entries.filter((e) => !(out.get(e.linkPath)?.size));
+
+      // First pass, no model: pages that share a tag, or whose summaries share
+      // enough terms, are related on evidence already in the metadata. Every
+      // page placed here is one twenty-second call not made, and the result
+      // is the same for the same wiki every time — which the model's is not.
+      const tagsOf = new Map<string, string[]>();
+      for (const e of entries) {
+        const file = this.app.vault.getAbstractFileByPath(`${e.linkPath}.md`);
+        if (!(file instanceof TFile)) continue;
+        const raw = fmOf(this.app, file)?.tags;
+        const tags = Array.isArray(raw)
+          ? raw.map((t) => String(t))
+          : typeof raw === 'string'
+            ? raw.split(/[,\s]+/).filter(Boolean)
+            : [];
+        tagsOf.set(e.linkPath, tags.map((t) => slugify(t)).filter(Boolean));
+      }
+      const stillEmpty: IndexEntry[] = [];
       for (const entry of empty) {
+        const found = suggestRelated(entry, entries, tagsOf);
+        if (!found.length) {
+          stillEmpty.push(entry);
+          continue;
+        }
+        const set = out.get(entry.linkPath);
+        for (const r of found) set?.add(r.entry.linkPath);
+      }
+      const placed = empty.length - stillEmpty.length;
+
+      // Second pass: only what the metadata could not place.
+      let i = 0;
+      for (const entry of stillEmpty) {
         i++;
-        this.status(`Relinking ${i}/${empty.length} — ${entry.title}…`);
+        this.status(
+          `Relinking ${i}/${stillEmpty.length} — ${entry.title}…` +
+            (placed ? ` (${placed} placed without the model)` : '')
+        );
         const candidates = entries.filter((e) => e.linkPath !== entry.linkPath);
         const related = await this.pickRelatedPages(entry.summary, candidates);
         const set = out.get(entry.linkPath);
