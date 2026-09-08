@@ -1011,3 +1011,92 @@ export function formatVaultTree(paths: readonly string[], opts: VaultTreeOptions
   if (lines.length >= maxLines) lines.push('…');
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// Where the time goes (#132)
+//
+// Every model call on this plugin costs seconds, not milliseconds — the model
+// is in the renderer and there is no server absorbing the latency. So "that
+// ingest felt slow" is a claim nobody can act on: an ingest is a draft call, a
+// tag pass, a link pass and a provenance check, and knowing which of the four
+// to look at is the whole of the optimisation.
+//
+// Totals are cumulative and deliberately never reset. A reset would be wrong
+// the moment two runs overlap, and a background scan running while you file
+// one note by hand is exactly the case this is for. Callers take a snapshot
+// before their work and diff it afterwards.
+// ---------------------------------------------------------------------------
+
+export interface TaskUsage {
+  calls: number;
+  /** Wall time spent inside the model. Overlaps when calls run concurrently. */
+  millis: number;
+}
+
+export type UsageSnapshot = Readonly<Record<string, TaskUsage>>;
+
+export interface UsageRow extends TaskUsage {
+  task: string;
+  /** Share of the window's total time, 0–1. Zero when nothing was measured. */
+  share: number;
+  /** Mean wall time per call, for spotting one slow call among many fast ones. */
+  millisPerCall: number;
+}
+
+/**
+ * What happened between two snapshots, slowest first.
+ *
+ * Tasks absent from `after`, or whose numbers went backwards, are dropped
+ * rather than reported as negative: the only ways that happens are a reload
+ * between the two snapshots or a caller passing them the wrong way round, and
+ * a row saying a step took minus four seconds helps with neither.
+ */
+export function diffUsage(before: UsageSnapshot, after: UsageSnapshot): UsageRow[] {
+  const rows: UsageRow[] = [];
+  let total = 0;
+  for (const [task, now] of Object.entries(after)) {
+    const was = before[task] ?? { calls: 0, millis: 0 };
+    const calls = now.calls - was.calls;
+    const millis = now.millis - was.millis;
+    if (calls <= 0 || millis < 0) continue;
+    rows.push({ task, calls, millis, share: 0, millisPerCall: millis / calls });
+    total += millis;
+  }
+  for (const r of rows) r.share = total > 0 ? r.millis / total : 0;
+  // Slowest first: the row you act on is the one at the top, and ties break by
+  // name so the same work produces the same report twice.
+  rows.sort((a, b) => b.millis - a.millis || a.task.localeCompare(b.task));
+  return rows;
+}
+
+/** `1.4s`, `320ms`, `2m 05s` — whichever reads as a duration at that size. */
+export function formatMillis(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return `${m}m ${String(s).padStart(2, '0')}s`;
+}
+
+/**
+ * A Markdown table of the rows, plus a total line.
+ *
+ * Returns an empty string when nothing was measured, so a caller can append it
+ * unconditionally and a run that made no model calls adds no noise.
+ */
+export function formatUsageReport(rows: readonly UsageRow[]): string {
+  if (!rows.length) return '';
+  const total = rows.reduce((n, r) => n + r.millis, 0);
+  const calls = rows.reduce((n, r) => n + r.calls, 0);
+  const lines = [
+    '| Step | Calls | Time | Per call | Share |',
+    '|---|---:|---:|---:|---:|',
+    ...rows.map(
+      (r) =>
+        `| ${r.task} | ${r.calls} | ${formatMillis(r.millis)} | ` +
+        `${formatMillis(r.millisPerCall)} | ${Math.round(r.share * 100)}% |`
+    ),
+    `| **Total** | **${calls}** | **${formatMillis(total)}** | | |`,
+  ];
+  return lines.join('\n');
+}

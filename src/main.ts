@@ -57,7 +57,15 @@ import {
 import { buildReviewBoard, ReviewBoardModal } from './review-board';
 import { AutoIngestReviewModal, findIngestCandidates, ScanFolderModal, type IngestDraft } from './auto-ingest';
 import { GemmaWikiSettingTab, DEFAULT_SETTINGS, type GemmaWikiSettings } from './settings';
-import { chunkForImprove, estimateImproveTokens, improveOutputBudget, migrateSettings } from './pure';
+import {
+  chunkForImprove,
+  diffUsage,
+  estimateImproveTokens,
+  formatUsageReport,
+  improveOutputBudget,
+  migrateSettings,
+  type UsageSnapshot,
+} from './pure';
 import { BENCH_CORPUS } from './bench-corpus';
 import {
   buildBenchmarkReport,
@@ -130,6 +138,42 @@ export function setDebugLogging(on: boolean) {
 }
 function log(...args: unknown[]) {
   if (debugLogging) console.log('[gemma-litert-wiki]', ...args);
+}
+
+// Cumulative per-step model time (#132). Impure by necessity — it is a running
+// total for the process — but everything that reads it is pure: callers take a
+// snapshot, do their work, and diff the two. Never reset: a background scan
+// overlapping a hand-filed note is the normal case, and a reset would charge
+// one run's time to the other.
+const taskUsage = new Map<string, { calls: number; millis: number }>();
+
+function recordTaskUsage(task: string, millis: number): void {
+  const e = taskUsage.get(task) ?? { calls: 0, millis: 0 };
+  e.calls += 1;
+  e.millis += millis;
+  taskUsage.set(task, e);
+}
+
+/** A copy, so a caller holding one is not watching it change underneath them. */
+function usageSnapshot(): UsageSnapshot {
+  return Object.fromEntries([...taskUsage].map(([k, v]) => [k, { ...v }]));
+}
+
+/**
+ * Time one model step under a label.
+ *
+ * Wraps rather than instruments each call site: there are eleven of those and
+ * a measurement someone has to remember to add is a measurement that goes
+ * missing. Failures are timed too — a step that takes twenty seconds and then
+ * throws is exactly the one worth seeing.
+ */
+async function timed<T>(task: string, run: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  try {
+    return await run();
+  } finally {
+    recordTaskUsage(task, Date.now() - started);
+  }
 }
 
 async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
@@ -229,6 +273,8 @@ export default class LiteRtSpikePlugin extends Plugin {
   private serverBaseUrl: string | null = null;
   /** The directory the loopback server serves — also where the glue is required from. */
   private wasmDir: string | null = null;
+  /** Snapshot taken by the mark command; the next report diffs against it. */
+  private usageMark: UsageSnapshot | null = null;
   private wasmLoadPromise: Promise<void> | null = null;
   private enginePromise: Promise<Engine> | null = null;
   // What the engine actually granted, read back from LiteRT-LM after
@@ -942,6 +988,41 @@ export default class LiteRtSpikePlugin extends Plugin {
           } finally {
             await conversation?.delete().catch(() => {});
           }
+        },
+      });
+
+      this.addCommand({
+        id: 'litert-where-time-goes',
+        name: '[Test] Where the time goes (since the last reset)',
+        callback: async () => {
+          // Reads the running totals rather than measuring anything itself, so
+          // it reports the work you actually did — a real scan over your real
+          // notes — instead of a synthetic run that may not resemble it.
+          const rows = diffUsage(this.usageMark ?? {}, usageSnapshot());
+          if (!rows.length) {
+            notify('warn', 'Nothing measured yet. Run an ingest, a Tidy pass or a chat first.');
+            return;
+          }
+          const from = this.usageMark ? 'since the last mark' : 'since the plugin loaded';
+          const report = `## Where the time goes — ${from}\n\n${formatUsageReport(rows)}\n`;
+          await this.app.vault.adapter.append(`${wikiDir()}/benchmark.md`, `\n${report}`);
+          await navigator.clipboard.writeText(report).catch(() => {});
+          notify(
+            'done',
+            `${rows.length} step${rows.length === 1 ? '' : 's'} measured — copied, and appended to ${wikiDir()}/benchmark.md`
+          );
+        },
+      });
+
+      this.addCommand({
+        id: 'litert-mark-time',
+        name: '[Test] Mark now, so the next report covers only what follows',
+        callback: () => {
+          // A mark rather than a reset. Two runs can overlap — a background
+          // scan while you file a note by hand — and zeroing the counters
+          // would charge one run's time to the other.
+          this.usageMark = usageSnapshot();
+          notify('done', 'Marked. The next report covers only what happens from here.');
         },
       });
 
@@ -1883,7 +1964,10 @@ export default class LiteRtSpikePlugin extends Plugin {
       });
       const list = tagsWithCounts.map(([t, n]) => `- ${t} (${n})`).join('\n');
       this.status('Asking Gemma to organize the vocabulary…');
-      const message = await conversation.sendMessage(`Tags in use:\n${list}`);
+      const conv = conversation;
+      const message = await timed('organize-vocabulary', () =>
+        conv.sendMessage(`Tags in use:\n${list}`)
+      );
       const raw = textOf(message.content);
       const read = parseModelJson<{ vocabulary?: unknown }>(raw);
       if (!read.ok) {
@@ -2486,7 +2570,10 @@ export default class LiteRtSpikePlugin extends Plugin {
         sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 400 },
       });
       const list = members.map((m) => `- ${m.title}: ${m.summary}`).join('\n');
-      const message = await conversation.sendMessage(`Concept: ${tag}\n\nPages:\n${list}`);
+      const conv = conversation;
+      const message = await timed('concept-page', () =>
+        conv.sendMessage(`Concept: ${tag}\n\nPages:\n${list}`)
+      );
       const raw = textOf(message.content);
       const text = raw.trim().replace(/^#+\s.*$/gm, '').trim();
       if (!text) throw new Error('Model returned an empty overview.');
@@ -2597,7 +2684,10 @@ export default class LiteRtSpikePlugin extends Plugin {
         sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 256 },
       });
       const claimsBlock = keyPoints.map((p) => `- ${p}`).join('\n');
-      const message = await conversation.sendMessage(`Source:\n${sourceText}\n\nClaims:\n${claimsBlock}`);
+      const conv = conversation;
+      const message = await timed('provenance', () =>
+        conv.sendMessage(`Source:\n${sourceText}\n\nClaims:\n${claimsBlock}`)
+      );
       const raw = textOf(message.content);
       const read = parseModelJson<{ unsupported?: unknown }>(raw);
       if (!read.ok) {
@@ -3580,7 +3670,8 @@ export default class LiteRtSpikePlugin extends Plugin {
           },
         });
 
-        const message = await conversation.sendMessage(noteContent);
+        const conv = conversation;
+        const message = await timed('ingest', () => conv.sendMessage(noteContent));
         const raw = textOf(message.content);
         const read = parseModelJson<NoteExtraction>(raw);
         if (!read.ok) {
