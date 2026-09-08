@@ -1,3 +1,4 @@
+import { formatVaultTree } from './pure';
 import {
   App,
   FuzzySuggestModal,
@@ -32,6 +33,7 @@ import {
   readSkills,
   scoreEntries,
   type ChatTurnRecord,
+  wikiDir,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
 import { notify } from './notify';
@@ -138,6 +140,13 @@ export interface SuggestionSpec {
   label: string;
   /** What to send, for the chips that ask a question. */
   ask?: string;
+  /**
+   * Put this in the input box and hand over the cursor, instead of sending.
+   * For a chip whose question is only half written — "Explain a term" cannot
+   * be sent, because which term is the whole question. A chip that sends a
+   * made-up example in that spot answers something nobody asked.
+   */
+  fill?: string;
   /** A non-question action: scan, file a note, reformat one. Styled as a write. */
   action?: 'scan' | 'ingest' | 'improve';
   /**
@@ -169,7 +178,31 @@ export interface SuggestionSpec {
  * WIKI stays empty until you file something. Two different emptinesses; the
  * remedy belongs to the one that persists.
  */
-export function suggestionsFor(mode: 'note' | 'wiki'): SuggestionSpec[] {
+/**
+ * Where a question is answered from.
+ *
+ * `direct` is the model on its own — no note, no wiki, no Sources row. It
+ * exists because Gemma 4 E4B is a general model and the plugin already had
+ * the whole ungrounded path built for the per-answer escape hatch; the only
+ * thing missing was a way to choose it on purpose instead of arriving at it
+ * after a question failed. Grounded stays the default: this is a mode you
+ * pick, never one you land in.
+ */
+export type ChatMode = 'note' | 'wiki' | 'direct';
+
+export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
+  if (mode === 'direct') {
+    // No actions here, because an action files something into the wiki and
+    // nothing in this mode is grounded enough to file. Three questions that
+    // say what the mode is for without any note being open.
+    // All three fill rather than ask: each is a sentence with the important
+    // word missing, and that word is yours. The ellipsis in the label says so.
+    return [
+      { label: 'Explain a term…', fill: 'Explain, in plain terms: ' },
+      { label: 'Draft an outline…', fill: 'Draft a short outline for: ' },
+      { label: 'Rewrite this…', fill: 'Rewrite this to be clearer, keeping the meaning:\n\n' },
+    ];
+  }
   if (mode === 'note') {
     // "Key points" went: it and "Summarize" are the same operation in two
     // layouts, and they were two of the three slots. The freed slot goes to
@@ -230,13 +263,13 @@ export class ChatView extends ItemView {
   private turns: ChatTurnRecord[] = [];
   private lastQuestion: string | null = null;
   private activeConversation: Conversation | null = null;
-  private mode: 'note' | 'wiki' = 'note'; // overwritten from settings in onOpen
+  private mode: ChatMode = 'note'; // overwritten from settings in onOpen
   // Whether the wiki holds any pages. Cached, because the chips are drawn
   // synchronously and metadataCache fires 'resolved' constantly — reading
   // index.md on every one of those would be a file read per keystroke-ish
   // event for a boolean that changes about once.
   private wikiEmpty = true;
-  private modeButtons: { note: HTMLElement; wiki: HTMLElement } | null = null;
+  private modeButtons: { note: HTMLElement; wiki: HTMLElement; direct: HTMLElement } | null = null;
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
   private suggestionRow!: HTMLElement;
@@ -375,6 +408,14 @@ export class ChatView extends ItemView {
   // only: canned wiki-mode questions would fight the lexical retrieval.
   /** What pressing a suggestion does — from a chip or from a message. */
   private runSuggestion(spec: SuggestionSpec) {
+    if (spec.fill !== undefined) {
+      this.inputEl.value = spec.fill;
+      this.autoGrowInput();
+      this.inputEl.focus();
+      const end = this.inputEl.value.length;
+      this.inputEl.setSelectionRange(end, end);
+      return;
+    }
     if (spec.ask) {
       void this.handleSend({ text: spec.ask, wholeWiki: spec.wholeWiki, promptLabel: spec.label });
       return;
@@ -714,9 +755,16 @@ export class ChatView extends ItemView {
     // notes" and were confused when it only saw the open file.
     const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'This note' });
     const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
-    this.modeButtons = { note: noteBtn, wiki: wikiBtn };
+    // Third, and last: the order is how much of your own material is behind
+    // the answer, most first.
+    const directBtn = modeRow.createEl('button', {
+      cls: 'gemma4-chat-mode-btn',
+      text: 'Direct',
+    });
+    this.modeButtons = { note: noteBtn, wiki: wikiBtn, direct: directBtn };
     noteBtn.addEventListener('click', () => this.setMode('note'));
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
+    directBtn.addEventListener('click', () => this.setMode('direct'));
 
     const attachBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
@@ -743,7 +791,15 @@ export class ChatView extends ItemView {
     });
     setIcon(skillsBtn, 'zap');
     setTooltip(skillsBtn, 'Run a skill');
-    const SKILLS: { label: string; icon: string; prompt: string; mode?: 'note' | 'wiki'; fill?: boolean }[] = [
+    const SKILLS: {
+      label: string;
+      icon: string;
+      prompt: string;
+      mode?: ChatMode;
+      fill?: boolean;
+      /** Builds the prompt at click time, for a skill whose material is computed rather than typed. */
+      build?: () => Promise<string>;
+    }[] = [
       {
         // Nouns, because every one of these hands you a thing: a quiz, a set of
         // cards, a checklist. The menu was three imperatives and two nouns,
@@ -778,6 +834,31 @@ export class ChatView extends ItemView {
           'What important questions does this material raise but not answer? List the gaps and ' +
           'why each matters.',
       },
+      {
+        // Direct, because the question is about the vault's shape and no
+        // grounded mode can see it: This note sees one file, Wiki sees
+        // ingested pages. The tree — folder names and note counts, nothing
+        // read from inside any file — is built when you click and travels
+        // inside the message, so the model is answering about what you
+        // showed it rather than claiming to have looked.
+        label: 'Folder structure',
+        icon: 'folder-tree',
+        mode: 'direct',
+        prompt: '',
+        build: async () => {
+          const tree = formatVaultTree(
+            this.app.vault.getMarkdownFiles().map((f) => f.path),
+            { exclude: wikiDir() }
+          );
+          return (
+            'Below is the folder layout of my Obsidian vault — folder names and how many notes ' +
+            'each holds, nothing else. Suggest how I could organise it better: what to merge, ' +
+            'split, rename, or add, and where uncategorised notes should go. Be concrete and ' +
+            'brief; do not invent folders that are not listed as if they existed.\n\n' +
+            '```\n' + (tree || '(empty vault)') + '\n```'
+          );
+        },
+      },
     ];
 
     // Custom skills (issue #4) live as files in <wiki>/skills/ — "config as a
@@ -796,7 +877,7 @@ export class ChatView extends ItemView {
         // which mode it wants.
         const unusable = all.filter((s) => s.mode && s.mode !== this.mode);
         if (unusable.length === all.length && all.length) {
-          const want = all[0].mode === 'wiki' ? 'Wiki' : 'This note';
+          const want = all[0].mode === 'wiki' ? 'Wiki' : all[0].mode === 'direct' ? 'Direct' : 'This note';
           menu.addItem((item) => item.setTitle(`Switch to ${want} to use these`).setDisabled(true));
           menu.addSeparator();
         }
@@ -819,7 +900,10 @@ export class ChatView extends ItemView {
             }
             item.onClick(() => {
               if (!skill.fill) {
-                void this.handleSend({ text: skill.prompt, promptLabel: skill.label });
+                void (async () => {
+                  const text = 'build' in skill && skill.build ? await skill.build() : skill.prompt;
+                  await this.handleSend({ text, promptLabel: skill.label });
+                })();
                 return;
               }
               // fill: true is the one case that DOES want the box — the prompt
@@ -888,13 +972,21 @@ export class ChatView extends ItemView {
     await this.restoreThread();
   }
 
-  private setMode(mode: 'note' | 'wiki') {
+  private setMode(mode: ChatMode) {
     this.mode = mode;
     this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
     this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
+    this.modeButtons?.direct.toggleClass('gemma4-chat-mode-active', mode === 'direct');
+    // The Direct placeholder says where the answer comes from rather than what
+    // to type, because that is the one thing that changes about an answer here
+    // and the Sources row — which says it everywhere else — is absent.
     this.inputEl?.setAttribute(
       'placeholder',
-      mode === 'note' ? 'Ask about this note… (Enter to send)' : 'Ask your wiki… (Enter to send)'
+      mode === 'note'
+        ? 'Ask about this note… (Enter to send)'
+        : mode === 'wiki'
+          ? 'Ask your wiki… (Enter to send)'
+          : 'Ask anything — answered by the model, not your notes'
     );
     this.renderSuggestions();
     this.updateNoteChip();
@@ -907,6 +999,12 @@ export class ChatView extends ItemView {
     if (this.mode === 'wiki') {
       setIcon(icon, 'library');
       this.noteChipEl.createSpan({ text: 'Wiki (ingested pages)' });
+      this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
+      return;
+    }
+    if (this.mode === 'direct') {
+      setIcon(icon, 'sparkles');
+      this.noteChipEl.createSpan({ text: 'Gemma 4 E4B only — no sources' });
       this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
       return;
     }
@@ -926,8 +1024,98 @@ export class ChatView extends ItemView {
   private appendUserMessage(text: string) {
     this.emptyStateEl.hide();
     const row = this.messagesEl.createDiv({ cls: 'gemma4-chat-row gemma4-chat-row-user' });
-    row.createDiv({ cls: 'gemma4-chat-bubble-user', text });
+    const bubble = row.createDiv({ cls: 'gemma4-chat-bubble-user', text });
+    const edit = row.createEl('button', { cls: 'gemma4-chat-edit-btn', text: 'Edit' });
+    edit.setAttribute('aria-label', 'Edit this question and ask again');
+    edit.addEventListener('click', () => this.beginEdit(row, bubble, edit, text));
     this.scrollToBottom();
+  }
+
+  /**
+   * Rewrite a question you already asked, and ask it again from there.
+   *
+   * A wrong question is the common case in a panel this narrow — a typo, a
+   * word the model read the other way, a request that turned out to need one
+   * more sentence. Without this the only repair is to retype the whole thing
+   * and leave the failed exchange sitting in the transcript above the good
+   * one, which makes the thread progressively harder to read back.
+   *
+   * Everything from the edited question onward is dropped, from the DOM and
+   * from `turns` together. That is the honest thing to do: the answers below
+   * were responses to the old wording, and keeping them would leave the model
+   * reading its own replies to a question that no longer exists as history for
+   * the new one.
+   */
+  private beginEdit(
+    row: HTMLElement,
+    bubble: HTMLElement,
+    editBtn: HTMLElement,
+    original: string
+  ) {
+    if (this.busy) return;
+    bubble.hide();
+    editBtn.hide();
+
+    const box = row.createDiv({ cls: 'gemma4-chat-edit-box' });
+    const area = box.createEl('textarea', { cls: 'gemma4-chat-edit-area' });
+    area.value = original;
+
+    const actions = box.createDiv({ cls: 'gemma4-chat-edit-actions' });
+    const dropped = this.turnsAfter(original);
+    if (dropped > 0) {
+      actions.createSpan({
+        cls: 'gemma4-chat-edit-note',
+        text: dropped === 1 ? 'Replaces 1 later message' : `Replaces ${dropped} later messages`,
+      });
+    }
+    const cancel = actions.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Cancel' });
+    const send = actions.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Ask again' });
+
+    const close = () => {
+      box.remove();
+      bubble.show();
+      editBtn.show();
+    };
+    cancel.addEventListener('click', close);
+
+    const submit = () => {
+      const next = area.value.trim();
+      if (!next || this.busy) return;
+      // Drop this row and everything after it, then re-ask. Removing the row
+      // itself matters: runGeneration draws its own question bubble, so
+      // leaving this one would show the question twice.
+      const rows = Array.from(this.messagesEl.children);
+      const from = rows.indexOf(row);
+      if (from >= 0) rows.slice(from).forEach((r) => r.remove());
+      this.dropTurnsFrom(original);
+      void this.runGeneration(next);
+    };
+    send.addEventListener('click', submit);
+    area.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
+      }
+    });
+
+    area.focus();
+    area.setSelectionRange(area.value.length, area.value.length);
+  }
+
+  /** How many recorded turns follow the last time this question was asked. */
+  private turnsAfter(question: string): number {
+    const at = this.turns.map((t) => t.content).lastIndexOf(question);
+    return at < 0 ? 0 : this.turns.length - at - 1;
+  }
+
+  /** Forget the last occurrence of this question and everything after it. */
+  private dropTurnsFrom(question: string) {
+    const at = this.turns.map((t) => t.content).lastIndexOf(question);
+    if (at >= 0) this.turns = this.turns.slice(0, at);
+    void this.persistThread();
   }
 
   private appendAssistantMessage(): { body: HTMLElement; row: HTMLElement } {
@@ -1160,7 +1348,7 @@ export class ChatView extends ItemView {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
     // and let Gemma answer from its own knowledge. No retrieval, no sources,
     // and the answer is marked ungrounded so the trust model stays intact.
-    if (ungrounded) {
+    if (ungrounded || this.mode === 'direct') {
       return {
         systemPrompt:
           "Answer the user's question from your own general knowledge. You do NOT have access to " +
@@ -1290,9 +1478,13 @@ export class ChatView extends ItemView {
       return null;
     }
     let noteBlock = '';
+    let noteBodyChars = 0;
     const sources: { title: string; linkPath: string }[] = [];
     if (file) {
       const noteContent = await this.app.vault.read(file);
+      // Frontmatter is not material a question can be answered from, so it
+      // does not count towards whether this note has anything to say.
+      noteBodyChars = noteContent.replace(/^---\n[\s\S]*?\n---\n?/, '').trim().length;
       noteBlock = `## Open note: ${file.basename}\n${noteContent}\n\n`;
       sources.push({ title: file.basename, linkPath: file.path.replace(/\.md$/, '') });
     }
@@ -1360,6 +1552,18 @@ export class ChatView extends ItemView {
         clamped.text,
       sourcePath: file?.path ?? 'wiki/index.md',
       sources,
+      // The same signal wiki mode sets, for the same reason: there is nothing
+      // here to answer from. An empty or near-empty note is the note you have
+      // open when you have just made one — ask anything general of it and the
+      // honest refusal was the whole answer, while the identical question in
+      // wiki mode offered a way forward. Thin is 80 characters of body,
+      // roughly a title and a line: below that no question is really being
+      // answered "from the note".
+      //
+      // Deliberately not set for a note with content. There the refusal is
+      // the correct and complete answer, and a hatch under every good answer
+      // would be an invitation to leave grounding by default.
+      noPageMatch: noteBodyChars < 80 && !attachments.blocks,
       // The note IS the thread here. Attachments deliberately do not enter the
       // key: adding one extends the same conversation, and dropping history
       // because a pill appeared would surprise nobody in a good way.
@@ -1549,7 +1753,10 @@ export class ChatView extends ItemView {
         const hatch = body.createDiv({ cls: 'gemma4-chat-hatch' });
         const btn = hatch.createEl('button', {
           cls: 'gemma4-chat-hatch-btn',
-          text: 'Not in your wiki? Ask Gemma directly (no sources)',
+          text:
+            context.grounding.startsWith('note:')
+              ? 'Not in this note? Ask Gemma directly (no sources)'
+              : 'Not in your wiki? Ask Gemma directly (no sources)',
         });
         btn.addEventListener('click', () => {
           if (this.busy) return;

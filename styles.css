@@ -158,6 +158,30 @@
   flex-direction: column;
 }
 
+/* Obsidian's side panels are chrome, so their containers do not select by
+   default. A transcript is not chrome — the answer is the thing you came for,
+   and dragging across part of it is how anyone takes text somewhere else.
+   Your own questions too: they are worth re-reading and re-using.
+   
+   The descendant selector is the load-bearing half. An answer is rendered
+   markdown, so the text actually under the cursor is in a <p>, an <li> or a
+   <code> that the container's own rule never reaches. */
+.gemma4-chat .gemma4-chat-messages,
+.gemma4-chat .gemma4-chat-messages * {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+/* Buttons inside the transcript stay unselectable — dragging across an
+   action should press it or do nothing, not highlight its label. */
+.gemma4-chat .gemma4-chat-messages button,
+.gemma4-chat .gemma4-chat-messages button * {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
 .gemma4-chat-row-user {
   align-items: flex-end;
 }
@@ -1362,4 +1386,72 @@
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   margin: 0 0 12px;
+}
+
+
+/* --- Editing a question you already sent --- */
+
+.gemma4-chat-row-user {
+  position: relative;
+}
+
+.gemma4-chat-edit-btn {
+  align-self: flex-end;
+  margin-top: 3px;
+  padding: 1px 6px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  /* Hidden until the row is hovered: every question would otherwise carry a
+     control that is used rarely, in a panel where vertical space is the
+     scarce thing. */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.gemma4-chat-row-user:hover .gemma4-chat-edit-btn,
+.gemma4-chat-edit-btn:focus-visible {
+  opacity: 1;
+}
+
+.gemma4-chat-edit-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-chat-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 85%;
+  align-self: flex-end;
+}
+
+.gemma4-chat-edit-area {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--interactive-accent);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.gemma4-chat-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.gemma4-chat-edit-note {
+  margin-right: auto;
+  align-self: center;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
 }

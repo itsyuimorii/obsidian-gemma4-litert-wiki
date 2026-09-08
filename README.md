@@ -38,6 +38,7 @@
 - 📚 **Concept pages over the clusters that emerge** — written above your notes, linking down into each one.
 - 🔍 **Gaps and contradictions surfaced** — including claims in two notes that cannot both be true.
 - 🎓 **Quizzes and flashcards from any note** — so the archive is something you revisit, not just something you kept.
+- 💬 **Or ask it anything at all** — Direct mode drops the grounding and answers from the model itself, offline and free. It is a 4B model, so it is weaker at general knowledge than anything behind an API, and it says so by carrying no sources and never filing its answers into your wiki.
 
 Everything it writes is plain Markdown, in your vault.
 

@@ -4,6 +4,41 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.12 — 2026-09-07
+
+Chat gains a third mode and stops getting in the way of ordinary things.
+
+- **Direct: ask the model on its own.** Gemma 4 E4B is a general model, and
+  until now the only way to use it as one was to ask a grounded question that
+  failed and press the hatch that appeared underneath. Direct sits third,
+  after This note and Wiki — the order is how much of your own material stands
+  behind the answer. Grounded stays the default, there is no Sources row, and
+  a Direct answer still cannot be filed into the wiki: the wiki only ever
+  holds what came from something you wrote.
+- **The transcript can be selected and copied.** Obsidian's side panels do not
+  select by default because they are chrome, and a transcript is not chrome.
+  Questions, answers and notices are all selectable now; buttons are not.
+- **A question you already asked can be edited.** Hover it, press Edit, change
+  the wording, Enter to ask again. Everything from that question onward is
+  dropped — from the thread and from the model's history together — because
+  the answers below were to the old wording.
+- **A skill that reads your vault's shape.** Folder structure, in Direct mode,
+  hands the model your folder tree — names and note counts, nothing read from
+  inside any file, the wiki folder excluded — and asks how to organise it. No
+  grounded mode could see the vault's shape: This note sees one file, Wiki
+  sees ingested pages.
+- **An empty note offers the same way out the wiki does.** Asking something
+  general with a new note open ended at "I did not follow your request" and
+  nothing followed, while the identical question in Wiki mode offered to ask
+  Gemma directly. The hatch was wired to a signal only Wiki mode ever set.
+- **Settings survive being renamed.** Saved settings now pass through a
+  versioned migration table before they are trusted. The bare spread could not
+  tell a key you never set from one saved under an old name, and a key stored
+  with the wrong type went through the type assertion untouched.
+- **A closed JSON object is no longer reported as a truncated sentence.** The
+  first real calibration sample flagged every valid reply mid-sentence,
+  because JSON ends in a brace rather than a full stop.
+
 ## 1.0.11 — 2026-09-06
 
 Fixes a fresh install failing before the model prompt ever appears (#123).
