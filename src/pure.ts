@@ -188,18 +188,27 @@ const STOPWORDS = new Set([
 // zero pages (issue #23).
 const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
 
-export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
-  const q = question.toLowerCase();
+/**
+ * The terms a piece of text contributes to a lexical match.
+ *
+ * ASCII words longer than two letters minus stopwords; CJK as sliding 2-char
+ * windows, because there are no word boundaries and single characters are
+ * mostly particles (的/は/て). One definition, used by retrieval and by the
+ * relink pre-pass, so "related" means the same thing in both places.
+ */
+export function queryTerms(text: string): string[] {
+  const q = text.toLowerCase();
   const ascii = q.split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
-  // CJK: no word boundaries, so use sliding 2-char windows (bigrams) as
-  // terms — specific enough to avoid single-char particle noise (的/は/て),
-  // and they substring-match the equally-CJK haystack.
   const cjk: string[] = [];
   for (const run of q.match(CJK_RUN) ?? []) {
     if (run.length === 1) cjk.push(run);
     else for (let i = 0; i < run.length - 1; i++) cjk.push(run.slice(i, i + 2));
   }
-  const terms = [...new Set([...ascii, ...cjk])];
+  return [...new Set([...ascii, ...cjk])];
+}
+
+export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
+  const terms = queryTerms(question);
   if (!terms.length) return [];
   const scored = entries
     .map((e) => {
@@ -1099,4 +1108,57 @@ export function formatUsageReport(rows: readonly UsageRow[]): string {
     `| **Total** | **${calls}** | **${formatMillis(total)}** | | |`,
   ];
   return lines.join('\n');
+}
+
+
+// ---------------------------------------------------------------------------
+// Related pages without a model call
+//
+// Relink fills an empty Related section by asking the model which pages
+// relate. That is one call per empty page, twenty seconds each, and on a wiki
+// of eighty pages most of the answers were already visible in the metadata:
+// two pages that share a tag, or whose summaries use the same terms. This
+// finds those first. Only a page it cannot place goes to the model.
+//
+// Two signals, deliberately unequal. A shared tag is a curated statement —
+// someone (or the vocabulary pass) decided both pages are about that — so one
+// shared tag qualifies on its own. Term overlap is incidental: two summaries
+// can share "notes" and "week" and have nothing to do with each other, so it
+// takes three overlapping terms before overlap alone counts as a relation.
+// ---------------------------------------------------------------------------
+
+export interface RelatedSuggestion {
+  entry: IndexEntry;
+  sharedTags: string[];
+  termHits: number;
+}
+
+export function suggestRelated(
+  page: IndexEntry,
+  candidates: readonly IndexEntry[],
+  tagsOf: ReadonlyMap<string, readonly string[]>,
+  max = 3
+): RelatedSuggestion[] {
+  const mine = new Set(tagsOf.get(page.linkPath) ?? []);
+  const terms = queryTerms(`${page.title} ${page.summary}`);
+  const out: RelatedSuggestion[] = [];
+  for (const c of candidates) {
+    if (c.linkPath === page.linkPath) continue;
+    const sharedTags = (tagsOf.get(c.linkPath) ?? []).filter((t) => mine.has(t)).sort();
+    const hay = `${c.title} ${c.summary}`.toLowerCase();
+    const termHits = terms.reduce((n, t) => n + (hay.includes(t) ? 1 : 0), 0);
+    if (sharedTags.length >= 1 || termHits >= 3) out.push({ entry: c, sharedTags, termHits });
+  }
+  // Strictly tags first, then overlap, then path. Not a weighted sum: a
+  // weighted sum lets six incidental word hits outrank one curated tag, and
+  // the whole reason a tag counts is that it is a decision rather than a
+  // coincidence. Path last, so the same wiki gives the same answer twice —
+  // which is what lets a user trust a preview they have seen before.
+  out.sort(
+    (a, b) =>
+      b.sharedTags.length - a.sharedTags.length ||
+      b.termHits - a.termHits ||
+      a.entry.linkPath.localeCompare(b.entry.linkPath)
+  );
+  return out.slice(0, max);
 }
