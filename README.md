@@ -275,6 +275,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 | **[Test] Load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without the model — isolates runtime issues from model issues. |
 | **[Test] Fix grammar of selection** | Runs a real generation on the selection, logging prefill/decode speed and time-to-first-token to the console. |
 | **[Test] JSON reliability test (5 runs)** | Five independent structured-JSON generations against the selection, reported as a pass rate — the risk test for whether the model can reliably drive the ingest pipeline. |
+| **[Test] Benchmark this machine** | Runs the five fixed benchmark notes (short, long, Japanese, code-heavy, link dump) through one extraction each and reports seconds per card, cold start, time to first token and prefill/decode throughput for your GPU. Writes a pasteable Markdown block to the clipboard and to `benchmark.md`. Nothing is uploaded — paste it into the results issue if you would like your hardware in the table above. |
 
 > **Every feature, one plate each:** [gemma-wiki-demo.vercel.app/tour.html](https://gemma-wiki-demo.vercel.app/tour.html) — fourteen sections, most important first. Or [step through the deck](https://gemma-wiki-demo.vercel.app) as 23 scenes.
 
@@ -301,6 +302,16 @@ criteria are explicit.
 
 All numbers are from `Conversation.getBenchmarkInfo()` — real LiteRT-LM instrumentation, not estimates — measured on real hardware, not vendor-quoted figures.
 
+### How fast is it on *your* GPU?
+
+The table below is one machine, because it is the machine this was written on. If you have anything else — a 4060, a 5070, a 4070, another Mac — **run `[Test] Benchmark this machine` and paste the result into the results issue.** It runs five fixed notes through one extraction each, takes a couple of minutes, and copies a finished Markdown block to your clipboard. Nothing is uploaded; the paste is the whole mechanism.
+
+The five notes are compiled into the plugin rather than read from your vault, so every machine measures exactly the same text — a short English note, a long one, a Japanese one (CJK costs roughly four times the tokens per character, so it belongs in any honest table), a code-heavy one, and a link dump with almost no prose.
+
+The number to compare is **seconds per card**. Prefill and decode throughput are the underlying physics; seconds per card is what you wait. Multiply by the size of a folder to estimate a scan.
+
+Two things must match or two reports are not comparable, and the command records both: the **context window** setting, because the per-call budget scales with it, and whether the machine was **on battery**, because Apple Silicon throttles hard when unplugged.
+
 | Scenario | Prefill | Decode | Time to first token |
 |---|---|---|---|
 | Cold engine, 2098-token input | 74.7 tok/s | 29.1 tok/s | **28.1 s** |
@@ -313,6 +324,8 @@ All numbers are from `Conversation.getBenchmarkInfo()` — real LiteRT-LM instru
 **Quality**, checked by hand against six English test passages (basic typos, subtle grammar, a passage with zero errors, a bulleted list, technical jargon that should *not* be "corrected", and a 700-word article with errors scattered through the final paragraph): zero missed errors, zero hallucinated changes, exact-match output on the already-correct passage, all technical terms and list formatting preserved, and no quality drop-off between the first and last paragraph of the long passage.
 
 **Structured output reliability**: 5/5 independent runs produced valid, correctly-shaped JSON (`{"summary": string, "tags": string[3]}`) with greedy sampling — the load-bearing assumption behind an eventual ingest pipeline.
+
+**On quality across GPUs:** decoding is greedy, so the same model on the same input should produce the *same card* on a 4060 and on an M-series Mac — this is not a "faster GPU summarises better" situation. Whether that holds exactly is unverified: different backends round differently, and a near-tie between two tokens could flip. The benchmark report includes a hash of each reply, so two pasted reports from different hardware settle it.
 
 ## 🗺️ Roadmap
 

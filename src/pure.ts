@@ -937,6 +937,18 @@ export function migrateSettings(saved: unknown, knownKeys: readonly string[]): M
   return { data, changed: true };
 }
 
+// Cheap 32-bit content hash (FNV-1a) — only needs to detect "changed vs
+// not", so no crypto. Hex string, stored in page frontmatter as
+// source_hash so re-ingest and (later) auto-scan can skip unchanged notes.
+export function contentHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
 
 // ---------------------------------------------------------------------------
 // Vault shape, for the "Folder structure" skill
