@@ -4,6 +4,27 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.13 — 2026-09-08
+
+Relink gets faster, and the listing catches up with 1.0.12.
+
+- **Relink places pages from their metadata before it asks the model.** An
+  empty Related section used to cost one model call per page, about twenty
+  seconds each. Two pages that share a tag, or whose summaries share enough
+  terms, are now linked without a call — deterministically, so the same wiki
+  gives the same suggestions every time. Only a page the metadata cannot place
+  goes to the model, exactly as before. The status line says how many were
+  placed without it.
+- **The README says you can also just ask it things.** Direct mode shipped in
+  1.0.12; the copy describing it did not. It does now, in both languages, with
+  the limitation in the same sentence: a 4B model is weaker at general
+  knowledge than anything behind an API.
+- **Two developer commands for measuring rather than guessing.** Where the time
+  goes reports how long each pipeline step spent inside the model, from the
+  work you actually did; Benchmark this machine runs five fixed notes so a
+  number from your GPU is comparable with one from someone else's. Both sit
+  behind the Developer commands toggle and neither sends anything anywhere.
+
 ## 1.0.12 — 2026-09-07
 
 Chat gains a third mode and stops getting in the way of ordinary things.
