@@ -2099,10 +2099,17 @@ export class ChatView extends ItemView {
     for (let i = this.turns.length - 1; i >= 0; i--) {
       const t = this.turns[i];
       if (t.grounding !== grounding) continue;
-      const cost = estimateTokens(t.historyText ?? t.content);
+      // A thread saved before historyText existed still carries the two-part
+      // answer whole; cut it at the marker the second part was joined with.
+      const text =
+        t.historyText ??
+        (t.role === 'assistant' && grounding === 'vault'
+          ? t.content.split(/\n\n---\n\*\*Gemma 4 E4B adds/)[0]
+          : t.content);
+      const cost = estimateTokens(text);
       if (spent + cost > ceiling) break;
       spent += cost;
-      picked.unshift({ role: t.role, content: t.historyText ?? t.content });
+      picked.unshift({ role: t.role, content: text });
     }
     // Never open on an assistant turn: a leading answer with no question in
     // front of it reads as something the user said.
