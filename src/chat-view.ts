@@ -375,9 +375,9 @@ const MODE_GUIDE: Record<
     ],
   },
   wiki: {
-    title: 'Ask your wiki',
+    title: 'Ask the cards in {wiki}/',
     reads: '',
-    goodFor: 'Good for: what connects my notes, what is still open, what did I add this week.',
+    goodFor: 'Good for: what connects the cards, what is still open, what you filed this week.',
     others: [
       ['vault', 'Vault', 'For a note as you wrote it, filed or not'],
       ['note', 'This note', 'For only the note you have open'],
@@ -510,7 +510,13 @@ export class ChatView extends ItemView {
     // reads, what it is good for, where else to go — under a title that
     // says it is empty and one line that says how to fill it. The earlier
     // screen said only "empty" and left the difference from Vault unsaid.
-    el.createDiv({ cls: 'gemma4-chat-empty-title', text: wikiEmpty ? 'Your wiki is empty' : guide.title });
+    // The wiki folder is a setting, so every line that names it is written
+    // with {wiki} and filled in here.
+    const named = (text: string) => text.replace('{wiki}', wikiDir());
+    el.createDiv({
+      cls: 'gemma4-chat-empty-title',
+      text: wikiEmpty ? named('Nothing is filed in {wiki}/ yet') : named(guide.title),
+    });
     // The wiki line names the folder, which is a setting, so it is built here.
     const reads =
       this.mode === 'wiki'
@@ -518,7 +524,7 @@ export class ChatView extends ItemView {
           (wikiEmpty ? '. Nothing is there yet.' : ', reviewed by you.')
         : guide.reads;
     el.createDiv({ cls: 'gemma4-chat-empty-hint', text: reads });
-    el.createDiv({ cls: 'gemma4-chat-empty-hint', text: guide.goodFor });
+    el.createDiv({ cls: 'gemma4-chat-empty-hint', text: named(guide.goodFor) });
     if (wikiEmpty) {
       el.createDiv({ cls: 'gemma4-chat-empty-hint', text: 'Press Scan a folder below to build it.' });
     }
@@ -529,8 +535,7 @@ export class ChatView extends ItemView {
     const lines = el.createDiv({ cls: 'gemma4-chat-empty-guide' });
     for (const [mode, label, what] of guide.others) {
       const line = lines.createDiv({ cls: 'gemma4-chat-empty-guide-line' });
-      // The wiki folder is a setting, so its name is filled in here.
-      line.appendText(what.replace('{wiki}', wikiDir()) + ' → ');
+      line.appendText(named(what) + ' → ');
       const b = line.createEl('button', { cls: 'gemma4-chat-empty-guide-mode', text: label });
       b.addEventListener('click', () => this.setMode(mode));
     }
@@ -1148,7 +1153,7 @@ export class ChatView extends ItemView {
       mode === 'note'
         ? 'Ask about this note… (Enter to send) — Wiki or Vault above for anything else'
         : mode === 'wiki'
-          ? 'Ask across your cards… (Enter to send) — This note or Vault above for anything else'
+          ? `Ask across the cards in ${wikiDir()}/… (Enter to send) — This note or Vault for anything else`
           : 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
     );
     this.renderSuggestions();
