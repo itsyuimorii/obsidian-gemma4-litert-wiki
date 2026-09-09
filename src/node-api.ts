@@ -105,7 +105,94 @@ import * as nodeFs from 'node:fs';
 import * as nodePath from 'node:path';
 import * as nodeHttp from 'node:http';
 
-export const fs = nodeFs as unknown as FsApi;
+const rawFs = nodeFs as unknown as FsApi;
 export const path = nodePath as unknown as PathApi;
 export const http = nodeHttp as unknown as HttpApi;
 export const bytes = nodeBuffer as unknown as BufferApi;
+
+// ---------------------------------------------------------------------------
+// Confinement
+// ---------------------------------------------------------------------------
+
+/**
+ * The one directory this plugin's filesystem calls may touch.
+ *
+ * Everything written outside the vault API is the model file, the WebGPU
+ * runtime that runs it, and the partial downloads of both: gigabytes that
+ * cannot be buffered into `vault.adapter.writeBinary` without an
+ * out-of-memory crash, and that must resume from a byte offset when a
+ * download drops. All of it lives in this plugin's own folder under
+ * `.obsidian/plugins/`.
+ *
+ * "Uses the Node fs module" is true, and the honest reading of it is "can
+ * read and write any file on the system" — unless something stops it. This
+ * is that something: `confineFilesystemTo` is called once, at load, with
+ * the plugin's own directory, and every call below refuses a path outside
+ * it. A reviewer does not have to trace fourteen call sites to know what
+ * this plugin can reach; they have to read one function.
+ */
+let root: string | null = null;
+
+/** Called once at plugin load. Later calls are ignored, so nothing can widen it. */
+export function confineFilesystemTo(dir: string): void {
+  if (root === null) root = nodePath.resolve(dir);
+}
+
+/** For tests and for the settings page, which shows where the model lives. */
+export function filesystemRoot(): string | null {
+  return root;
+}
+
+/**
+ * Resolve a path and prove it is inside the root. `path.resolve` collapses
+ * `..` first, so a traversal is compared after it has been spent rather than
+ * before. The separator on the end is what stops the root's name from being
+ * a prefix of a sibling: `/plugins/gemma-litert-wiki` must not admit
+ * `/plugins/gemma-litert-wiki-evil`.
+ */
+function inside(p: string): string {
+  if (root === null) throw new Error('Filesystem used before confineFilesystemTo()');
+  const abs = nodePath.resolve(p);
+  if (abs !== root && !abs.startsWith(root + nodePath.sep)) {
+    throw new Error(`Refused: ${abs} is outside this plugin's folder`);
+  }
+  return abs;
+}
+
+/**
+ * The same fourteen functions, each with its path arguments checked. Written
+ * out rather than proxied: a list a reader can audit is the point.
+ */
+export const fs: FsApi = {
+  existsSync: (p) => rawFs.existsSync(inside(p)),
+  mkdirSync: (p, opts) => rawFs.mkdirSync(inside(p), opts),
+  readdirSync: (p) => rawFs.readdirSync(inside(p)),
+  statSync: (p) => rawFs.statSync(inside(p)),
+  renameSync: (from, to) => rawFs.renameSync(inside(from), inside(to)),
+  rmSync: (p, opts) => rawFs.rmSync(inside(p), opts),
+  writeFileSync: (p, data) => rawFs.writeFileSync(inside(p), data),
+  openSync: (p, flags) => rawFs.openSync(inside(p), flags),
+  // A descriptor, not a path: it can only have come from openSync above.
+  writeSync: (fd, data, offset, length) => rawFs.writeSync(fd, data, offset, length),
+  closeSync: (fd) => rawFs.closeSync(fd),
+  readFile: (p, cb) => {
+    let abs: string;
+    try {
+      abs = inside(p);
+    } catch (err) {
+      // The callback is this function's only way to report, so a refusal
+      // travels the same road an ENOENT would.
+      cb(err as Error, nodeBuffer.alloc(0) as unknown as Bytes);
+      return;
+    }
+    rawFs.readFile(abs, cb);
+  },
+  createWriteStream: (p, opts) => rawFs.createWriteStream(inside(p), opts),
+  createReadStream: (p, opts) => rawFs.createReadStream(inside(p), opts),
+  promises: {
+    stat: async (p) => rawFs.promises.stat(inside(p)),
+    unlink: async (p) => rawFs.promises.unlink(inside(p)),
+    rename: async (from, to) => rawFs.promises.rename(inside(from), inside(to)),
+    rm: async (p, opts) => rawFs.promises.rm(inside(p), opts),
+  },
+};

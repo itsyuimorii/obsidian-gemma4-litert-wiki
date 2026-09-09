@@ -75,6 +75,16 @@ default; this is what a first session in it actually runs into.
   saved default of *vault* goes back to *note*, because 1.0.15 wrote that
   value into every install that had said *direct*: it was this plugin's
   choice, not a person's. A saved *note* or *wiki* is untouched.
+- **Every filesystem call is confined to the plugin's own folder.** The
+  model and the runtime are written with Node's `fs`, because
+  `vault.adapter` buffers a whole file into memory and cannot resume a
+  dropped download from a byte offset — which the community directory's
+  scanner reports, correctly, as "can read and write any file on the
+  system". Every call now resolves its path and is refused unless it lands
+  inside `.obsidian/plugins/<this plugin>/`. The root is set once at load
+  and cannot be widened. Both ends of a rename are checked, `..` is spent
+  before the comparison, and a sibling folder whose name merely starts with
+  the same characters is refused.
 - **Every screen names the wiki folder and calls each mode one thing.**
   Wiki mode's own screen says it reads the cards in `gemma-wiki/` — in its
   title, in what it is good for, and in the input placeholder. Wiki mode

@@ -370,6 +370,8 @@ No backend, no telemetry, no analytics. This plugin makes network requests to ex
 
 The runtime is fetched rather than bundled because it ships in four variants totalling ~101 MB and your machine loads exactly one, chosen by the library's own feature probes; shipping all four would put a 101 MB payload in every install to use a fifth of it. Only files matching `litertlm_wasm_*internal.{js,wasm}` are accepted, and nothing here updates the plugin itself — the version is fixed at build time.
 
+The plugin writes outside Obsidian's vault API, and that is worth being precise about. The model (~3 GB) and the runtime cannot go through `vault.adapter`, which buffers a whole file into memory and cannot resume a dropped download from a byte offset; both need Node's `fs`. So every filesystem call this plugin makes passes through one guard first, which resolves the path and refuses it unless it lands inside this plugin's own folder under `.obsidian/plugins/`. The guard is set once at load and cannot be widened afterwards. Nothing else on your disk is readable or writable by this plugin, and your notes are only ever touched through Obsidian's own API.
+
 The plugin also runs a **loopback HTTP server** (`127.0.0.1`, ephemeral port, alive only while the plugin is loaded). It exists because the WebGPU runtime can only be handed the model over HTTP; it serves files from your own disk to your own machine, has no inference endpoint, and is not reachable from outside it.
 
 <details>

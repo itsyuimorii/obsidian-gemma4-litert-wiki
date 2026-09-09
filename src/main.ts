@@ -1,5 +1,5 @@
 import { addIcon, apiVersion, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Platform, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
-import { fs, http, path, type Bytes, type HttpServer } from './node-api';
+import { confineFilesystemTo, fs, http, path, type Bytes, type HttpServer } from './node-api';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
@@ -529,6 +529,15 @@ export default class LiteRtSpikePlugin extends Plugin {
     // BUILD_STAMP is written at build time; if it does not match the file on
     // disk, the plugin needs a toggle off and on.
     log(`loaded — v${this.manifest.version} build ${BUILD_STAMP}`);
+    // Before anything else touches a filesystem. Every fs call this plugin
+    // makes is refused unless its path resolves inside this folder — the
+    // model, the runtime and their partial downloads all live here, and
+    // nothing else is ever read or written outside the vault API. On mobile
+    // or any adapter without a real path there is no root, and the first fs
+    // call throws rather than falling back to an unconfined one.
+    if (this.app.vault.adapter instanceof FileSystemAdapter) {
+      confineFilesystemTo(this.pluginAbsDir());
+    }
     await this.loadSettings();
     setWikiDir(this.settings.wikiDir);
     this.addSettingTab(new GemmaWikiSettingTab(this.app, this));
