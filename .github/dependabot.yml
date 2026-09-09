@@ -23,3 +23,8 @@ updates:
       # Bumping the runtime is a release decision, not a chore: build.js bakes
       # this version into the CDN URL the plugin fetches its WASM from.
       - dependency-name: "@litert-lm/core"
+      # A TypeScript major lands before typescript-eslint's peer range admits
+      # it, and the grouped PR then fails at npm install. Minors and patches
+      # still arrive; the major is taken by hand when the toolchain is ready.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
