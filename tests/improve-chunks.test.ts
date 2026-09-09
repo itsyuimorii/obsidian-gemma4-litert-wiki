@@ -158,6 +158,6 @@ test('improve: every chunk the chunker produces fits the budget it is given', ()
 test('improve: CJK is measured by the same estimate, not by length', () => {
   // 1.5 tok per CJK character vs 0.25 for Latin. A flat cap truncated CJK
   // notes at roughly a third of the character count an English note survived.
-  const cjk = '这是一段中文笔记，用来测试输出预算是否跟着输入走。'.repeat(200);
+  const cjk = 'これは出力予算が入力に追従するかを確かめるための日本語のメモです。'.repeat(200);
   assert.ok(improveOutputBudget(cjk, 24000) >= estimateImproveTokens(cjk));
 });

@@ -130,7 +130,7 @@ test('with no budget stated, nothing is claimed', () => {
 
 test('CJK terminal punctuation counts as finished', () => {
   assert.equal(looksCutOff('プロンプトの接頭辞が変わるたびに無効になります。', 5).midSentence, false);
-  assert.equal(looksCutOff('缓存会在提示前缀改变时失效。', 5).midSentence, false);
+  assert.equal(looksCutOff('キャッシュは接頭辞が変わると無効になる。', 5).midSentence, false);
 });
 
 test('a closing quote or bracket after the full stop still counts as finished', () => {
@@ -177,10 +177,10 @@ test('ordinary prose is not a loop', () => {
 
 test('ordinary CJK prose is not a loop', () => {
   const real =
-    '这个插件把生成的内容放在单独的 wiki 目录里，从不改动原始笔记。' +
-    '每次录入会写一张卡片，包含摘要、三个标签和几条要点。' +
-    '检索先读索引，再打开索引指向的页面，这样提示词才装得下很小的上下文窗口。' +
-    '概念页在卡片之上，向下链接到每一张卡片。';
+    'このプラグインは生成した内容を別の wiki フォルダに置き、元のノートは決して変更しない。' +
+    '取り込みのたびに一枚のカードを書き、要約と三つのタグと数行の要点を含める。' +
+    '検索はまず索引を読み、次に索引が指すページを開くので、小さな文脈窓にも収まる。' +
+    '概念ページはカードの上に置かれ、それぞれのカードへ下向きにリンクする。';
   assert.equal(looksRepetitive(real).repetitive, false);
 });
 

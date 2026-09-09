@@ -931,7 +931,7 @@ export interface WikiSkill {
   label: string;
   icon: string;
   prompt: string;
-  mode?: 'note' | 'wiki';
+  mode?: 'note' | 'wiki' | 'vault';
   /**
    * Put the prompt in the input box and stop, instead of sending it.
    *
