@@ -1551,3 +1551,27 @@ export function looksLikeCollectionQuery(question: string): boolean {
   const ja = /(?:つながり|関連|共通|全体|傾向|テーマ|パターン|足りない|抜け|欠け|矛盾|食い違|今週追加|追加したもの)/;
   return en.test(q) || ja.test(q);
 }
+
+/**
+ * Drop a leading "I do not have access to your notes" from an answer that
+ * then goes on to answer anyway. The second half of a Vault answer is asked
+ * for general knowledge about the subject, and a 4B model asked "what did I
+ * write about coffee" will still open with the disclaimer before writing
+ * about coffee. Under a label that says the notes were handled above, that
+ * sentence is not caution, it is a contradiction. Only the opening is
+ * removed, and only when something substantive follows; a bare refusal is
+ * returned untouched so it can be seen for what it is.
+ */
+export function stripLeadingRefusal(answer: string): string {
+  const text = answer.trim();
+  // First paragraph, or first sentence if the paragraph runs on.
+  const paraEnd = text.search(/\n\s*\n/);
+  const firstPara = paraEnd === -1 ? text : text.slice(0, paraEnd);
+  const sentenceEnd = firstPara.search(/(?<=[.!?。！？])\s/);
+  const head = sentenceEnd === -1 ? firstPara : firstPara.slice(0, sentenceEnd);
+  if (!looksLikeRefusal(head)) return text;
+  const rest = text.slice(head.length).replace(/^[\s.]*(?:However|That said|But|Still|Nevertheless|ただし|しかし)?[,，、]?\s*/i, '');
+  if (rest.trim().length < 40) return text;
+  // Recase the first letter, since "however, I can" is now the opening.
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}

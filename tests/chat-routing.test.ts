@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { asksAboutOwnNotes, looksLikeRefusal } from '../src/pure.ts';
+import { asksAboutOwnNotes, looksLikeRefusal, stripLeadingRefusal } from '../src/pure.ts';
 
 // --- asksAboutOwnNotes -----------------------------------------------------
 
@@ -105,4 +105,32 @@ test('only the opening of the answer is read', () => {
   const good = 'Finer grounds expose more surface. '.repeat(10);
   const late = good + 'I do not have access to your files.';
   assert.equal(looksLikeRefusal(late), false);
+});
+
+// --- stripLeadingRefusal ---------------------------------------------------
+
+test('a leading "no access" sentence is dropped when an answer follows', () => {
+  const out = stripLeadingRefusal(
+    'Since I do not have access to your personal notes, I cannot tell you what you specifically wrote about coffee.\n\n' +
+    'However, I can provide you with some general knowledge about coffee.\n\n' +
+    '**What is Coffee?**\nCoffee is a beverage made from the roasted seeds of the Coffea plant.'
+  );
+  assert.ok(out.startsWith('I can provide you with some general knowledge about coffee.'), out.slice(0, 80));
+  assert.ok(out.includes('**What is Coffee?**'));
+  assert.ok(!/do not have access/.test(out));
+});
+
+test('a bare refusal is returned untouched', () => {
+  const bare = 'I do not have access to your personal notes or wiki.';
+  assert.equal(stripLeadingRefusal(bare), bare);
+});
+
+test('an answer that does not open with a refusal is returned untouched', () => {
+  const good = 'Coffee is a beverage made from roasted seeds.\n\nIt originated in Ethiopia.';
+  assert.equal(stripLeadingRefusal(good), good);
+});
+
+test('a refusal in the first sentence of a run-on paragraph is dropped', () => {
+  const out = stripLeadingRefusal('I cannot see your notes. Coffee is a beverage made from roasted seeds, brewed hot or cold, and drunk worldwide.');
+  assert.ok(out.startsWith('Coffee is a beverage'), out);
 });

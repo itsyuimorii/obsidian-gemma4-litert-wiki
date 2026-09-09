@@ -10,6 +10,7 @@ import {
   rankVaultDocs,
   rescoreWithBodies,
   standingInstructions,
+  stripLeadingRefusal,
   type VaultDoc,
 } from './pure';
 import {
@@ -2004,6 +2005,8 @@ export class ChatView extends ItemView {
       body: HTMLElement;
       typing: HTMLElement;
       sourcePath: string;
+      /** Applied to the finished text before it is rendered and returned. */
+      finalText?: (text: string) => string;
     }
   ): Promise<{ text: string; conversation: Conversation }> {
     const { SamplerType } = await import('@litert-lm/core');
@@ -2057,6 +2060,7 @@ export class ChatView extends ItemView {
     // answer gets one proper markdown render pass.
     opts.typing.remove();
     streamTextEl.remove();
+    if (opts.finalText) text = opts.finalText(text);
     const rendered = opts.body.createDiv({ cls: 'gemma4-chat-markdown' });
     await MarkdownRenderer.render(this.app, text, rendered, opts.sourcePath, this);
     return { text, conversation };
@@ -2217,13 +2221,19 @@ export class ChatView extends ItemView {
       if (context.vault?.kind === 'both' && !this.stopRequested) {
         body.createDiv({ cls: 'gemma4-chat-part-label gemma4-chat-part-label-adds', text: 'Gemma 4 E4B adds' });
         const typing2 = this.showTypingIndicator(body);
+        // The question is reframed, not forwarded: asked "what did I write
+        // about coffee" a 4B model answers that it cannot see the notes, and
+        // no system prompt talks it out of it. Asked about the subject of
+        // that question, it writes about coffee. What slips through anyway
+        // is trimmed after.
         const second = await this.streamAnswer(engine, {
           systemPrompt: ADDS_PROMPT,
           history: [],
-          question,
+          question: `About the subject of this question, from general knowledge only: ${question}`,
           body,
           typing: typing2,
           sourcePath: context.sourcePath,
+          finalText: stripLeadingRefusal,
         });
         conversation = second.conversation;
         const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
