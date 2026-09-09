@@ -1,10 +1,24 @@
-import { asksAboutOwnNotes, formatVaultTree, looksLikeRefusal, standingInstructions } from './pure';
+import {
+  asksAboutOwnNotes,
+  excerptAround,
+  formatVaultTree,
+  looksLikeListQuery,
+  looksLikeRecentQuery,
+  looksLikeRefusal,
+  pickVaultExamples,
+  queryTerms,
+  rankVaultDocs,
+  rescoreWithBodies,
+  standingInstructions,
+  type VaultDoc,
+} from './pure';
 import {
   App,
   FuzzySuggestModal,
   ItemView,
   Menu,
   MarkdownRenderer,
+  getAllTags,
   setIcon,
   setTooltip,
   TFile,
@@ -188,19 +202,20 @@ export interface SuggestionSpec {
  * after a question failed. Grounded stays the default: this is a mode you
  * pick, never one you land in.
  */
-export type ChatMode = 'note' | 'wiki' | 'direct';
+export type ChatMode = 'note' | 'wiki' | 'vault';
 
 export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
-  if (mode === 'direct') {
+  if (mode === 'vault') {
     // No actions here, because an action files something into the wiki and
-    // nothing in this mode is grounded enough to file. Three questions that
-    // say what the mode is for without any note being open.
+    // this mode is the one that reads raw notes rather than the wiki. Three
+    // openings that say what the mode is for: one that searches, two that
+    // do not need a note at all.
     // All three fill rather than ask: each is a sentence with the important
     // word missing, and that word is yours. The ellipsis in the label says so.
     return [
+      { label: 'Find my notes on…', fill: 'Which of my notes are about: ' },
       { label: 'Explain a term…', fill: 'Explain, in plain terms: ' },
       { label: 'Draft an outline…', fill: 'Draft a short outline for: ' },
-      { label: 'Rewrite this…', fill: 'Rewrite this to be clearer, keeping the meaning:\n\n' },
     ];
   }
   if (mode === 'note') {
@@ -251,7 +266,34 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
   ];
 }
 
-type RouteTarget = ChatMode | 'anyway';
+type RouteTarget = ChatMode;
+
+/**
+ * The second half of a Vault answer. The first half, already on screen,
+ * came from the notes; this one is the subject itself. Without this the
+ * second pass reused DIRECT_PROMPT, and a question shaped "what did I write
+ * about coffee" got "I do not have access to your notes" — true, useless,
+ * and already said by the label above it. The model is told the notes are
+ * handled and asked for what it knows about coffee.
+ */
+const ADDS_PROMPT =
+  "The first part of this reply, already written, answered from the user's own notes. You " +
+  'write the second part: general knowledge about the SUBJECT of the question — what it is, ' +
+  'useful background, related ideas, anything worth knowing that personal notes may not say. ' +
+  'You have not seen the notes; do not refer to them, and never say you lack access to notes ' +
+  'or files — that is understood and already handled above. If the question is phrased as ' +
+  'being about the notes ("what did I write about X", "which of my notes cover X"), answer ' +
+  'about X itself. Be concise. You may use markdown.';
+
+/** Vault mode's ceiling on note material per answer, and per note. */
+const VAULT_MATERIAL_TOKENS = 4800;
+const VAULT_NOTE_TOKENS = 1200;
+
+/** The model on its own: no notes, and it must not pretend otherwise. */
+const DIRECT_PROMPT =
+  "Answer the user's question from your own general knowledge. You do NOT have access to " +
+  "the user's notes or wiki here — never claim a fact came from them. If you are unsure, " +
+  'say so plainly. Be concise. You may use markdown.';
 
 /**
  * What each mode is for, said in the empty panel: a title, one line, three
@@ -268,8 +310,8 @@ const MODE_GUIDE: Record<
     hint: 'Answers come from the note in front of you, inside Obsidian — nothing leaves your machine.',
     examples: ['What is the main argument here?', 'List the action items in this note', 'Explain the terms this note uses'],
     others: [
-      ['wiki', 'Wiki', 'About your whole vault'],
-      ['direct', 'Direct', 'Anything else'],
+      ['wiki', 'Wiki', 'Across the wiki it built'],
+      ['vault', 'Vault', 'Anything else'],
     ],
   },
   wiki: {
@@ -278,16 +320,20 @@ const MODE_GUIDE: Record<
     examples: ['What is in my wiki?', 'What did I add this week?', 'Which pages disagree with each other?'],
     others: [
       ['note', 'This note', 'About one note'],
-      ['direct', 'Direct', 'Anything else'],
+      ['vault', 'Vault', 'Anything else'],
     ],
   },
-  direct: {
+  vault: {
     title: 'Ask anything',
-    hint: 'Answered by Gemma 4 E4B itself. It never reads your notes here, and nothing it says is filed.',
-    examples: ['Explain, in plain terms, what a KV cache is', 'Draft a short outline for a talk on local AI', 'Rewrite this paragraph to be clearer'],
+    hint:
+      'Your notes are searched first. What they say comes with sources; then Gemma 4 E4B ' +
+      'answers on its own, marked as its own.',
+    // Replaced at render time by pickVaultExamples, from this vault's own
+    // tags and titles; these are the shape only.
+    examples: ['What have I written about …?', 'Which of my notes mention …?', 'Explain, in plain terms: …'],
     others: [
-      ['note', 'This note', 'About the note you have open'],
-      ['wiki', 'Wiki', 'About your vault'],
+      ['note', 'This note', 'Only the note you have open'],
+      ['wiki', 'Wiki', 'Across the wiki it built'],
     ],
   },
 };
@@ -310,7 +356,9 @@ export class ChatView extends ItemView {
   // index.md on every one of those would be a file read per keystroke-ish
   // event for a boolean that changes about once.
   private wikiEmpty = true;
-  private modeButtons: { note: HTMLElement; wiki: HTMLElement; direct: HTMLElement } | null = null;
+  private modeButtons: { note: HTMLElement; wiki: HTMLElement; vault: HTMLElement } | null = null;
+  /** Set by Stop; a two-part Vault answer checks it before starting part two. */
+  private stopRequested = false;
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
   private suggestionRow!: HTMLElement;
@@ -353,6 +401,19 @@ export class ChatView extends ItemView {
       sources.push({ title: f.basename, linkPath: f.path.replace(/\.md$/, '') });
     }
     return { blocks, sources };
+  }
+
+  /** Example questions for the Vault panel, from this vault's tags and titles. */
+  private vaultExamples(): string[] {
+    const prefix = `${wikiDir()}/`;
+    const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix));
+    const tags: string[] = [];
+    for (const f of files) {
+      const cache = this.app.metadataCache.getFileCache(f);
+      if (cache) tags.push(...(getAllTags(cache) ?? []));
+    }
+    const recent = [...files].sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 5).map((f) => f.basename);
+    return pickVaultExamples(tags, recent);
   }
 
   private buildEmptyState() {
@@ -428,7 +489,7 @@ export class ChatView extends ItemView {
     // say: "Ask your wiki" is not enough to stop someone asking it what a
     // KV cache is.
     const examples = el.createDiv({ cls: 'gemma4-chat-empty-examples' });
-    for (const ex of guide.examples) {
+    for (const ex of this.mode === 'vault' ? this.vaultExamples() : guide.examples) {
       const btn = examples.createEl('button', { cls: 'gemma4-chat-empty-example', text: ex });
       btn.addEventListener('click', () => void this.handleSend({ text: ex, wholeWiki: this.mode === 'wiki' && asksAboutOwnNotes(ex) }));
     }
@@ -812,16 +873,17 @@ export class ChatView extends ItemView {
     // notes" and were confused when it only saw the open file.
     const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'This note' });
     const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
-    // Third, and last: the order is how much of your own material is behind
-    // the answer, most first.
-    const directBtn = modeRow.createEl('button', {
+    // Third: the widest net. It reads every raw note in the vault and, when
+    // none of them answers, lets the model answer on its own — so it is the
+    // default, and the one to type into without thinking.
+    const vaultBtn = modeRow.createEl('button', {
       cls: 'gemma4-chat-mode-btn',
-      text: 'Direct',
+      text: 'Vault',
     });
-    this.modeButtons = { note: noteBtn, wiki: wikiBtn, direct: directBtn };
+    this.modeButtons = { note: noteBtn, wiki: wikiBtn, vault: vaultBtn };
     noteBtn.addEventListener('click', () => this.setMode('note'));
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
-    directBtn.addEventListener('click', () => this.setMode('direct'));
+    vaultBtn.addEventListener('click', () => this.setMode('vault'));
 
     const attachBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
@@ -892,15 +954,16 @@ export class ChatView extends ItemView {
           'why each matters.',
       },
       {
-        // Direct, because the question is about the vault's shape and no
-        // grounded mode can see it: This note sees one file, Wiki sees
-        // ingested pages. The tree — folder names and note counts, nothing
-        // read from inside any file — is built when you click and travels
-        // inside the message, so the model is answering about what you
-        // showed it rather than claiming to have looked.
+        // Vault, because the question is about the vault's shape. The tree —
+        // folder names and note counts, nothing read from inside any file —
+        // is built when you click and travels inside the message, so the
+        // model is answering about what you showed it rather than claiming
+        // to have looked. A skill that builds its own material is sent
+        // ungrounded: searching the vault for a prompt that already contains
+        // the vault would be circular.
         label: 'Folder structure',
         icon: 'folder-tree',
-        mode: 'direct',
+        mode: 'vault',
         prompt: '',
         build: async () => {
           const tree = formatVaultTree(
@@ -925,7 +988,10 @@ export class ChatView extends ItemView {
     skillsBtn.addEventListener('click', (evt) => {
       void (async () => {
         const custom = await readSkills(this.app.vault);
-        const all = [...SKILLS, ...custom];
+        // Typed as the built-in shape on purpose: a custom skill fits it (no
+        // `build`), and without the annotation TypeScript reduces the union
+        // to the custom type and `build` vanishes from every element.
+        const all: typeof SKILLS = [...SKILLS, ...custom];
         const menu = new Menu();
         // A skill that declares a mode used to switch you into it on click.
         // That is a menu item quietly changing what the panel is grounded in
@@ -934,7 +1000,7 @@ export class ChatView extends ItemView {
         // which mode it wants.
         const unusable = all.filter((s) => s.mode && s.mode !== this.mode);
         if (unusable.length === all.length && all.length) {
-          const want = all[0].mode === 'wiki' ? 'Wiki' : all[0].mode === 'direct' ? 'Direct' : 'This note';
+          const want = all[0].mode === 'wiki' ? 'Wiki' : all[0].mode === 'vault' ? 'Vault' : 'This note';
           menu.addItem((item) => item.setTitle(`Switch to ${want} to use these`).setDisabled(true));
           menu.addSeparator();
         }
@@ -958,8 +1024,9 @@ export class ChatView extends ItemView {
             item.onClick(() => {
               if (!skill.fill) {
                 void (async () => {
+                  const built = 'build' in skill && !!skill.build;
                   const text = 'build' in skill && skill.build ? await skill.build() : skill.prompt;
-                  await this.handleSend({ text, promptLabel: skill.label });
+                  await this.handleSend({ text, promptLabel: skill.label, ungrounded: built });
                 })();
                 return;
               }
@@ -1006,7 +1073,10 @@ export class ChatView extends ItemView {
     this.setMode(this.plugin.settings.defaultMode);
 
     this.sendButton.addEventListener('click', () => void this.handleSend());
-    this.stopButton.addEventListener('click', () => this.activeConversation?.cancel());
+    this.stopButton.addEventListener('click', () => {
+      this.stopRequested = true;
+      this.activeConversation?.cancel();
+    });
     this.inputEl.addEventListener('keydown', (evt) => {
       if (evt.key === 'Enter' && !evt.shiftKey) {
         evt.preventDefault();
@@ -1033,7 +1103,7 @@ export class ChatView extends ItemView {
     this.mode = mode;
     this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
     this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
-    this.modeButtons?.direct.toggleClass('gemma4-chat-mode-active', mode === 'direct');
+    this.modeButtons?.vault.toggleClass('gemma4-chat-mode-active', mode === 'vault');
     // The Direct placeholder says where the answer comes from rather than what
     // to type, because that is the one thing that changes about an answer here
     // and the Sources row — which says it everywhere else — is absent.
@@ -1046,10 +1116,10 @@ export class ChatView extends ItemView {
     this.inputEl?.setAttribute(
       'placeholder',
       mode === 'note'
-        ? 'Ask about this note… (Enter to send) — Wiki or Direct above for anything else'
+        ? 'Ask about this note… (Enter to send) — Wiki or Vault above for anything else'
         : mode === 'wiki'
-          ? 'Ask across everything filed… (Enter to send) — This note or Direct above for anything else'
-          : 'Ask anything — answered by the model, never your notes. This note or Wiki above for those'
+          ? 'Ask across the wiki it built… (Enter to send) — This note or Vault above for anything else'
+          : 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
     );
     this.renderSuggestions();
     this.updateNoteChip();
@@ -1065,9 +1135,9 @@ export class ChatView extends ItemView {
       this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
       return;
     }
-    if (this.mode === 'direct') {
-      setIcon(icon, 'sparkles');
-      this.noteChipEl.createSpan({ text: 'Gemma 4 E4B only — no sources' });
+    if (this.mode === 'vault') {
+      setIcon(icon, 'folder-search');
+      this.noteChipEl.createSpan({ text: 'Your notes, then Gemma 4 E4B' });
       this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
       return;
     }
@@ -1365,7 +1435,9 @@ export class ChatView extends ItemView {
    * box as if you had typed it and changed your mind. The box is where YOU
    * write; it is not a transport for text the plugin already has.
    */
-  private async handleSend(opts: { text?: string; wholeWiki?: boolean; promptLabel?: string } = {}) {
+  private async handleSend(
+    opts: { text?: string; wholeWiki?: boolean; promptLabel?: string; ungrounded?: boolean } = {}
+  ) {
     if (this.busy) return;
     // The input is the one door the greyed chips do not cover: you can type a
     // question while an Improve is running and press Enter. Same engine, same
@@ -1387,28 +1459,14 @@ export class ChatView extends ItemView {
       void this.plugin.saveSettings();
     }
     this.appendUserMessage(question);
-    // A question about your own notes, asked in the one mode that never reads
-    // them. The model's answer would be "I do not have access to your files",
-    // twenty seconds from now; the panel says it first, and offers the modes
-    // that can answer. "Ask Gemma anyway" keeps the door open for the case
-    // the detector got wrong.
-    if (this.mode === 'direct' && asksAboutOwnNotes(question)) {
-      this.routeCard(
-        this.messagesEl,
-        'This sounds like a question about your notes. Direct mode never reads them — it answers from the model alone.',
-        question,
-        ['wiki', 'note', 'anyway']
-      );
-      return;
-    }
-    await this.runGeneration(question, false, opts.wholeWiki ?? false, opts.promptLabel);
+    await this.runGeneration(question, opts.ungrounded ?? false, opts.wholeWiki ?? false, opts.promptLabel);
   }
 
   /**
    * The card that says "wrong mode" and offers the right one. Each target is
    * a button that re-asks the same question there, in place — no retyping,
    * and the answer lands under the card so the thread reads as one attempt
-   * that found its footing. 'anyway' runs the question ungrounded as asked.
+   * that found its footing.
    */
   private routeCard(parent: HTMLElement, text: string, question: string, targets: RouteTarget[]) {
     const card = parent.createDiv({ cls: 'gemma4-chat-hatch gemma4-chat-route' });
@@ -1419,10 +1477,9 @@ export class ChatView extends ItemView {
     for (const t of targets) {
       if (t === 'note' && !hasNote) continue;
       const label =
-        t === 'wiki' ? 'Ask your wiki'
+        t === 'wiki' ? 'Ask the wiki'
         : t === 'note' ? 'Ask the open note'
-        : t === 'direct' ? 'Ask Gemma directly (no sources)'
-        : 'Ask Gemma anyway (no sources)';
+        : 'Ask across your vault';
       const btn = bar.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: label });
       buttons.push(btn);
       btn.addEventListener('click', () => {
@@ -1436,15 +1493,197 @@ export class ChatView extends ItemView {
 
   /** Re-ask a question in another mode, switching the panel to it first. */
   private async askInMode(target: RouteTarget, question: string) {
-    if (target === 'anyway') {
-      await this.runGeneration(question, true);
-      return;
-    }
     this.setMode(target);
     // A vault question routed to Wiki mode is about the collection, not about
     // whichever pages happen to share its words — ground it in every page.
     const wholeWiki = target === 'wiki' && asksAboutOwnNotes(question);
-    await this.runGeneration(question, target === 'direct', wholeWiki);
+    await this.runGeneration(question, false, wholeWiki);
+  }
+
+  /**
+   * Vault mode: search every raw note first, then decide what the answer is
+   * made of. This is what every "chat with your vault" is underneath — the
+   * plugin finds the few notes that matter, the model reads those — and the
+   * search is lexical over what the metadata cache already knows (titles,
+   * tags, headings) plus the bodies of the likely ones. The wiki folder is
+   * excluded: that layer has its own mode.
+   *
+   * Bodies: every note in a vault of up to 400, because a match that lives
+   * only in a body ("tried a new coffee today" in a daily note) is common and
+   * cachedRead is cheap at that size. Above that, only the notes metadata
+   * already put forward, so a ten-thousand-note vault does not read ten
+   * thousand files per question.
+   */
+  private async buildVaultContext(
+    question: string,
+    historyTokens: number
+  ): Promise<Awaited<ReturnType<ChatView['buildContext']>>> {
+    const prefix = `${wikiDir()}/`;
+    const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix));
+    const docs: VaultDoc[] = files.map((f) => {
+      const cache = this.app.metadataCache.getFileCache(f);
+      return {
+        path: f.path,
+        title: f.basename,
+        tags: cache ? (getAllTags(cache) ?? []) : [],
+        headings: (cache?.headings ?? []).map((h) => h.heading),
+      };
+    });
+    const link = (path: string) => {
+      const base = path.replace(/^.*\//, '').replace(/\.md$/, '');
+      const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+      return { base, folder, linkPath: path.replace(/\.md$/, '') };
+    };
+
+    // "What did I write recently" is answered by the file system, not by
+    // search: the eight most recently edited notes, newest first, with the
+    // date each was touched. The model adds a line per note from its
+    // opening; it is not asked to know when anything happened.
+    if (looksLikeRecentQuery(question)) {
+      const recent = [...files].sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 8);
+      const hits = recent.map((f) => ({ title: `${link(f.path).base} (${new Date(f.stat.mtime).toISOString().slice(0, 10)})`, linkPath: link(f.path).linkPath }));
+      let material = '';
+      for (const f of recent) {
+        const body = (await this.app.vault.cachedRead(f)).slice(0, 1200);
+        material += `## Note: ${link(f.path).base} — edited ${new Date(f.stat.mtime).toISOString().slice(0, 10)}\n${body}\n\n`;
+      }
+      return {
+        systemPrompt:
+          'The user asked what they wrote or edited recently. The plugin has already listed ' +
+          'the notes below, newest first, with the date each was last edited — you are not ' +
+          'being asked to find them, and you have no other knowledge of dates. For each note, ' +
+          'in the order given, write one line: its title in bold, then what it is about, from ' +
+          'its text. Do not add notes that are not listed.\n\n' +
+          'Be concise. Use a markdown list.\n\n' +
+          clampToTokens(material, VAULT_MATERIAL_TOKENS).text,
+        sourcePath: indexPath(),
+        sources: hits,
+        grounding: 'vault',
+        vault: { kind: 'list', hits },
+      };
+    }
+
+    const ranked = rankVaultDocs(question, docs, 80);
+    const rankedSet = new Set(ranked.map((h) => h.path));
+    const toRead = files.length <= 400 ? files : files.filter((f) => rankedSet.has(f.path));
+    const bodies = new Map<string, string>();
+    for (const f of toRead) bodies.set(f.path, (await this.app.vault.cachedRead(f)).slice(0, 20000));
+    const hits = rescoreWithBodies(question, ranked, bodies, 4);
+    const attachments = await this.readAttachments();
+    // Not the whole chat budget. At a 64k context that is 48k tokens, and
+    // five long notes filled it — a minute of prefill during which WebGPU
+    // starved the renderer and the panel showed nothing at all. Four notes,
+    // twelve hundred tokens each, as windows around the question's words
+    // rather than the note's opening, is a few seconds and says more.
+    const budget = Math.min(VAULT_MATERIAL_TOKENS, Math.max(1200, this.plugin.budget('chat') - historyTokens));
+    // Two notes with the same name in different folders would show as two
+    // identical Sources chips; the folder goes on when the name is shared.
+    const seen = new Map<string, number>();
+    for (const h of hits) seen.set(link(h.path).base, (seen.get(link(h.path).base) ?? 0) + 1);
+    const titled = (path: string) => {
+      const { base, folder, linkPath } = link(path);
+      return { title: (seen.get(base) ?? 0) > 1 && folder ? `${base} (${folder})` : base, linkPath };
+    };
+
+    if (!hits.length && !attachments.blocks) {
+      if (asksAboutOwnNotes(question)) {
+        // "What's in my vault" matches no note by its words, because it is
+        // about all of them. Hand the model the shape instead: folders with
+        // counts, and the notes touched most recently.
+        const tree = formatVaultTree(files.map((f) => f.path), { exclude: wikiDir() });
+        const recent = [...files]
+          .sort((a, b) => b.stat.mtime - a.stat.mtime)
+          .slice(0, 25)
+          .map((f) => `- ${f.basename}${f.parent && f.parent.path !== '/' ? ` (${f.parent.path})` : ''}`)
+          .join('\n');
+        return {
+          systemPrompt:
+            "The user is asking about their own Obsidian vault as a whole. You have NOT read any " +
+            'note; below is only the folder layout with note counts, and the titles of the notes ' +
+            'edited most recently. Answer from that: what the vault seems to be about, how it is ' +
+            'organised, what is recent. Name folders and titles as they appear. Do not invent ' +
+            'contents of notes you have not seen — if asked what a note says, say you would need ' +
+            'it opened or asked about by name.\n\n' +
+            'Be concise. You may use markdown.\n\n' +
+            `## Folder layout\n\`\`\`\n${tree || '(empty vault)'}\n\`\`\`\n\n` +
+            `## Recently edited notes\n${recent || '(none)'}`,
+          sourcePath: indexPath(),
+          sources: [],
+          grounding: 'vault',
+          vault: { kind: 'overview', hits: [] },
+        };
+      }
+      // Nothing in the notes. The model answers on its own — this is the
+      // Direct answer, under one line that says the notes were looked at.
+      return {
+        systemPrompt: DIRECT_PROMPT,
+        sourcePath: indexPath(),
+        sources: [],
+        ungrounded: true,
+        grounding: 'direct',
+        vault: { kind: 'none', hits: [] },
+      };
+    }
+
+    // Notes matched (or were attached). Each gets an equal share of the
+    // budget, so five short notes arrive whole and five long ones arrive
+    // as their openings — the part most likely to say what they are about.
+    const hitSources = hits.map((h) => titled(h.path));
+    const share = Math.min(
+      VAULT_NOTE_TOKENS,
+      Math.max(300, Math.floor((budget - estimateTokens(attachments.blocks)) / Math.max(1, hits.length)))
+    );
+    const terms = queryTerms(question);
+    let material = '';
+    for (const h of hits) {
+      const body = bodies.get(h.path) ?? '';
+      const src = titled(h.path);
+      // ~3.4 chars per token for Latin text; CJK is denser, and clampToTokens
+      // below catches the case where the estimate was generous.
+      const excerpt = clampToTokens(excerptAround(body, terms, share * 3), share).text;
+      material += `## Note: ${src.title} (${h.path})\n${excerpt}\n\n`;
+    }
+    material += attachments.blocks;
+    const sources = [...attachments.sources, ...hitSources];
+
+    if (looksLikeListQuery(question) && hits.length) {
+      return {
+        systemPrompt:
+          'The user asked which of their notes are about something. The plugin has already ' +
+          'searched the vault and found the notes below — you are not being asked to search, ' +
+          'and you cannot. For each note, in the order given, write one line: its title in bold, ' +
+          'then what it is about and why it fits the question, from its text. Do not add notes ' +
+          'that are not listed. Do not summarise the topic itself. If a listed note does not ' +
+          'really fit, say so in its line.\n\n' +
+          'Be concise. Use a markdown list.\n\n' +
+          material,
+        sourcePath: indexPath(),
+        sources,
+        grounding: 'vault',
+        vault: { kind: 'list', hits: hitSources },
+      };
+    }
+
+    return {
+      systemPrompt:
+        "Use ONLY the notes below, from the user's own vault, to answer the first part of this " +
+        'reply: what their notes say about the question. Quote or paraphrase what is there, name ' +
+        'the note it came from, and say plainly if the notes touch the subject without answering ' +
+        'it. Never claim a note says something it does not, and never invent detail and present ' +
+        'it as theirs. Do not add general knowledge here — that comes separately, after.\n\n' +
+        'A note is named ONLY by the title in its "## Note:" header. Headings and numbered ' +
+        'sections inside a note are parts of that note, not notes of their own — never list ' +
+        'them as if they were separate notes.\n\n' +
+        'If the user asks you to work with the material — summarise, list actions, turn into ' +
+        'questions — do that from the notes. If the request is unclear, say you did not follow ' +
+        'it rather than reporting that the notes lack something.\n\n' +
+        'Be concise. You may use markdown.\n\n' +
+        material,
+      sourcePath: indexPath(),
+      sources,
+      grounding: 'vault',
+      vault: { kind: 'both', hits: hitSources },
+    };
   }
 
   // Builds the grounding context for one question, or returns null with a
@@ -1464,21 +1703,31 @@ export class ChatView extends ItemView {
     noPageMatch?: boolean;
     /** Which body of material this answer stands on — see ChatTurnRecord. */
     grounding: string;
+    /**
+     * Vault mode's shape for this answer. `none`: nothing in the notes, the
+     * model answers alone under a line saying so. `overview`: the question
+     * was about the vault itself and nothing matched lexically, so the model
+     * is handed its folder layout and recent notes. `list`: the question
+     * wanted notes, not an answer — the hits are drawn as links first, and
+     * the model adds a line each. `both`: notes matched, so the grounded
+     * answer comes first and the model's own answer after, each labelled.
+     */
+    vault?: { kind: 'none' | 'overview' | 'list' | 'both'; hits: { title: string; linkPath: string }[] };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
     // and let Gemma answer from its own knowledge. No retrieval, no sources,
     // and the answer is marked ungrounded so the trust model stays intact.
-    if (ungrounded || this.mode === 'direct') {
+    if (ungrounded) {
       return {
-        systemPrompt:
-          "Answer the user's question from your own general knowledge. You do NOT have access to " +
-          "the user's notes or wiki here — never claim a fact came from them. If you are unsure, " +
-          'say so plainly. Be concise. You may use markdown.',
+        systemPrompt: DIRECT_PROMPT,
         sourcePath: indexPath(),
         sources: [],
         ungrounded: true,
         grounding: 'direct',
       };
+    }
+    if (this.mode === 'vault') {
+      return this.buildVaultContext(question, historyTokens);
     }
     if (this.mode === 'wiki') {
       const entries = await readIndexEntries(this.app.vault);
@@ -1713,8 +1962,83 @@ export class ChatView extends ItemView {
    * yields first. An answer is capped at 1024 output tokens, so a handful of
    * exchanges fits comfortably inside this.
    */
+  /**
+   * One model pass: open a conversation on the given prompt and history,
+   * stream the reply into `body` as plain text, then replace it with one
+   * markdown render. Returns the text and the conversation (so the caller
+   * can delete it). Shared by the ordinary answer and by the second half of
+   * a Vault answer, which is the same thing under a different prompt.
+   */
+  private async streamAnswer(
+    engine: Awaited<ReturnType<LiteRtSpikePlugin['ensureEngine']>>,
+    opts: {
+      systemPrompt: string;
+      history: { role: 'user' | 'assistant'; content: string }[];
+      question: string;
+      body: HTMLElement;
+      typing: HTMLElement;
+      sourcePath: string;
+    }
+  ): Promise<{ text: string; conversation: Conversation }> {
+    const { SamplerType } = await import('@litert-lm/core');
+    // System prompt, then the exchanges this question is a follow-up to.
+    // The material lives in the system prompt and is rebuilt every turn, so
+    // history carries only what was said — the pronouns and the "that" a
+    // follow-up depends on — never a second copy of the note.
+    const conversation = await engine.createConversation({
+      preface: {
+        messages: [
+          { role: 'system', content: opts.systemPrompt + standingInstructions(this.plugin.settings.chatInstructions) },
+          ...opts.history.map((t) => ({ role: t.role, content: t.content })),
+        ],
+      },
+      sessionConfig: {
+        samplerParams: { type: SamplerType.GREEDY },
+        maxOutputTokens: 1024,
+      },
+    });
+    this.activeConversation = conversation;
+
+    const streamTextEl = opts.body.createDiv({ cls: 'gemma4-chat-stream-text' });
+    let text = '';
+    let firstChunk = true;
+    const stream = conversation.sendMessageStreaming(opts.question);
+    const reader = stream.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const content = value?.content;
+      let chunk = '';
+      if (typeof content === 'string') {
+        chunk = content;
+      } else if (Array.isArray(content)) {
+        for (const part of content) {
+          if (part.type === 'text' && part.text) chunk += part.text;
+        }
+      }
+      if (chunk) {
+        if (firstChunk) {
+          opts.typing.remove();
+          firstChunk = false;
+        }
+        text += chunk;
+        streamTextEl.setText(text);
+        this.scrollToBottom();
+      }
+    }
+
+    // Streaming shows plain text (cheap, no flicker); the finished
+    // answer gets one proper markdown render pass.
+    opts.typing.remove();
+    streamTextEl.remove();
+    const rendered = opts.body.createDiv({ cls: 'gemma4-chat-markdown' });
+    await MarkdownRenderer.render(this.app, text, rendered, opts.sourcePath, this);
+    return { text, conversation };
+  }
+
   private groundingKey(ungrounded: boolean, wholeWiki: boolean): string {
     if (ungrounded) return 'direct';
+    if (this.mode === 'vault') return 'vault';
     if (this.mode === 'wiki') return wholeWiki ? 'wiki:all' : 'wiki';
     return `note:${this.app.workspace.getActiveFile()?.path ?? ''}`;
   }
@@ -1755,7 +2079,24 @@ export class ChatView extends ItemView {
     // shorter one.
     const history = this.historyFor(this.groundingKey(ungrounded, wholeWiki));
     const historyTokens = history.reduce((n, t) => n + estimateTokens(t.content), 0);
-    const context = await this.buildContext(question, ungrounded, wholeWiki, historyTokens);
+    // Vault mode reads the vault before it can say anything; say that it is
+    // reading. Removed as soon as the context is built, so the line never
+    // outlives the search it describes.
+    const searching =
+      this.mode === 'vault' && !ungrounded
+        ? this.messagesEl.createDiv({
+            cls: 'gemma4-chat-row gemma4-chat-row-assistant gemma4-chat-searching',
+            text: `Searching ${this.app.vault.getMarkdownFiles().length} notes…`,
+          })
+        : null;
+    this.emptyStateEl.hide();
+    this.scrollToBottom();
+    let context: Awaited<ReturnType<ChatView['buildContext']>>;
+    try {
+      context = await this.buildContext(question, ungrounded, wholeWiki, historyTokens);
+    } finally {
+      searching?.remove();
+    }
     if (!context) return;
 
     // Recorded here, not at the input box: this is the first point at which
@@ -1764,6 +2105,7 @@ export class ChatView extends ItemView {
     this.turns.push({ role: 'user', content: question, grounding: context.grounding });
 
     this.busy = true;
+    this.stopRequested = false;
     // Also tell the plugin: one engine, one operation, and a streaming answer
     // is an operation. Without this the chips stayed live through an answer.
     this.plugin.setChatBusy(true);
@@ -1780,58 +2122,42 @@ export class ChatView extends ItemView {
       const engine = await this.plugin.ensureEngine((text) => status.setText(text));
       status.remove();
 
-      const { SamplerType } = await import('@litert-lm/core');
-      // System prompt, then the exchanges this question is a follow-up to.
-      // The material lives in the system prompt and is rebuilt every turn, so
-      // history carries only what was said — the pronouns and the "that" a
-      // follow-up depends on — never a second copy of the note.
-      conversation = await engine.createConversation({
-        preface: {
-          messages: [
-            { role: 'system', content: context.systemPrompt + standingInstructions(this.plugin.settings.chatInstructions) },
-            ...history.map((t) => ({ role: t.role, content: t.content })),
-          ],
-        },
-        sessionConfig: {
-          samplerParams: { type: SamplerType.GREEDY },
-          maxOutputTokens: 1024,
-        },
-      });
-      this.activeConversation = conversation;
-
-      const streamTextEl = body.createDiv({ cls: 'gemma4-chat-stream-text' });
-      let firstChunk = true;
-      const stream = conversation.sendMessageStreaming(question);
-      const reader = stream.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const content = value?.content;
-        let chunk = '';
-        if (typeof content === 'string') {
-          chunk = content;
-        } else if (Array.isArray(content)) {
-          for (const part of content) {
-            if (part.type === 'text' && part.text) chunk += part.text;
-          }
+      // Vault mode says what it found before anything streams. Nothing: one
+      // line, so the model's own answer underneath is never mistaken for a
+      // reading of the notes. A list: the notes themselves, as links, drawn
+      // by the plugin — the model's lines follow and can be wrong, the links
+      // cannot. Both are visible while the model is still thinking.
+      if (context.vault?.kind === 'none') {
+        body.createDiv({
+          cls: 'gemma4-chat-vault-none',
+          text: 'Nothing in your notes on this — Gemma 4 E4B answers on its own.',
+        });
+      } else if (context.vault?.kind === 'list') {
+        const list = body.createDiv({ cls: 'gemma4-chat-vault-list' });
+        list.createSpan({ cls: 'gemma4-chat-vault-list-label', text: `${context.vault.hits.length} matching notes` });
+        for (const hit of context.vault.hits) {
+          const a = list.createEl('a', { cls: 'gemma4-chat-source-link', text: hit.title });
+          a.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            void this.app.workspace.openLinkText(hit.linkPath, '', false);
+          });
         }
-        if (chunk) {
-          if (firstChunk) {
-            typing.remove();
-            firstChunk = false;
-          }
-          answer += chunk;
-          streamTextEl.setText(answer);
-          this.scrollToBottom();
-        }
+      } else if (context.vault?.kind === 'both') {
+        body.createDiv({ cls: 'gemma4-chat-part-label', text: 'From your notes' });
+      } else if (context.vault?.kind === 'overview') {
+        body.createDiv({ cls: 'gemma4-chat-part-label', text: 'From the shape of your vault' });
       }
 
-      // Streaming shows plain text (cheap, no flicker); the finished
-      // answer gets one proper markdown render pass.
-      typing.remove();
-      streamTextEl.remove();
-      const rendered = body.createDiv({ cls: 'gemma4-chat-markdown' });
-      await MarkdownRenderer.render(this.app, answer, rendered, context.sourcePath, this);
+      const first = await this.streamAnswer(engine, {
+        systemPrompt: context.systemPrompt,
+        history,
+        question,
+        body,
+        typing,
+        sourcePath: context.sourcePath,
+      });
+      conversation = first.conversation;
+      answer = first.text;
 
       if (context.ungrounded) {
         // Ungrounded answer: no sources, an explicit warning label so it is
@@ -1841,9 +2167,10 @@ export class ChatView extends ItemView {
           cls: 'gemma4-chat-sources-label',
           text: '⚠ Gemma general knowledge — not from your notes',
         });
-      } else {
+      } else if (context.vault?.kind !== 'list') {
         // Deterministic source attribution: list exactly the notes/pages the
         // answer was grounded in, as clickable links — not left to the model.
+        // A list answer already drew them above the model's lines.
         const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
         sourcesRow.createSpan({ cls: 'gemma4-chat-sources-label', text: 'Sources' });
         for (const src of context.sources) {
@@ -1853,6 +2180,32 @@ export class ChatView extends ItemView {
             void this.app.workspace.openLinkText(src.linkPath, '', false);
           });
         }
+      }
+
+      // The second half of a Vault answer: the model on its own, under its
+      // own label and its own warning. A second conversation rather than a
+      // second section of the first, because a 4B model asked to keep "what
+      // the notes say" and "what I know" apart in one reply lets them bleed;
+      // two prompts with different rules cannot. The transcript carries both
+      // in one turn so a follow-up sees what was actually said.
+      if (context.vault?.kind === 'both' && !this.stopRequested) {
+        body.createDiv({ cls: 'gemma4-chat-part-label gemma4-chat-part-label-adds', text: 'Gemma 4 E4B adds' });
+        const typing2 = this.showTypingIndicator(body);
+        const second = await this.streamAnswer(engine, {
+          systemPrompt: ADDS_PROMPT,
+          history: [],
+          question,
+          body,
+          typing: typing2,
+          sourcePath: context.sourcePath,
+        });
+        conversation = second.conversation;
+        const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
+        warnRow.createSpan({
+          cls: 'gemma4-chat-sources-label',
+          text: '⚠ Gemma general knowledge — not from your notes',
+        });
+        answer = `${answer}\n\n---\n**Gemma 4 E4B adds (not from your notes):**\n\n${second.text}`;
       }
 
       this.turns.push({
@@ -1872,25 +2225,18 @@ export class ChatView extends ItemView {
       // does not mention", "is unclear". Either way the card under the answer
       // names the modes that could answer, and re-asks there in one click.
       // Default stays grounded; the escalation is explicit and per answer.
+      // Vault mode carries no card: it already searched, and what it did not
+      // find it said. The two narrower modes route to it.
       const refused = looksLikeRefusal(answer);
-      if (context.ungrounded) {
-        if (refused || asksAboutOwnNotes(question)) {
-          this.routeCard(
-            body,
-            'Direct mode answers from the model alone and never reads your notes. For a question about them:',
-            question,
-            ['wiki', 'note']
-          );
-        }
-      } else if (context.noPageMatch || refused) {
+      if (!context.vault && !context.ungrounded && (context.noPageMatch || refused)) {
         const inNote = context.grounding.startsWith('note:');
         this.routeCard(
           body,
           inNote
-            ? 'Not in this note? Your whole wiki, or the model on its own:'
-            : 'Not in your wiki? The note you have open, or the model on its own:',
+            ? 'Not in this note? The wiki it built, or every note in your vault:'
+            : 'Not in the wiki? The note you have open, or every note in your vault:',
           question,
-          inNote ? ['wiki', 'direct'] : ['note', 'direct']
+          inNote ? ['wiki', 'vault'] : ['note', 'vault']
         );
       }
 

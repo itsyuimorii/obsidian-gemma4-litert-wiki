@@ -52,7 +52,7 @@ test('a third README.md still gets its own card', () => {
 });
 
 test('two CJK-titled notes do not both collapse to untitled.md', () => {
-  const first = ask('notes/设计模式.md');
+  const first = ask('notes/設計パターン.md');
   const second = ask('notes/観察日記.md', { taken: [first] });
   assert.notEqual(first, second);
   for (const p of [first, second]) {

@@ -55,3 +55,22 @@ test('an array on disk is not an object and is replaced', () => {
   assert.deepEqual(r.data, { settingsVersion: SETTINGS_VERSION });
   assert.equal(r.changed, true);
 });
+
+test('1 -> 2 renames a saved default of direct to vault', () => {
+  const r = migrateSettings({ settingsVersion: 1, defaultMode: 'direct', wikiDir: 'x' }, [...KNOWN, 'defaultMode']);
+  assert.equal(r.data.defaultMode, 'vault');
+  assert.equal(r.data.settingsVersion, SETTINGS_VERSION);
+  assert.equal(r.changed, true);
+});
+
+test('1 -> 2 leaves note and wiki defaults alone', () => {
+  for (const mode of ['note', 'wiki']) {
+    const r = migrateSettings({ settingsVersion: 1, defaultMode: mode }, [...KNOWN, 'defaultMode']);
+    assert.equal(r.data.defaultMode, mode);
+  }
+});
+
+test('unversioned data with direct goes all the way to vault', () => {
+  const r = migrateSettings({ defaultMode: 'direct' }, [...KNOWN, 'defaultMode']);
+  assert.equal(r.data.defaultMode, 'vault');
+});

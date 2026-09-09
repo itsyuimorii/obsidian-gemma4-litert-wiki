@@ -38,7 +38,7 @@
 - 📚 **Concept pages over the clusters that emerge** — written above your notes, linking down into each one.
 - 🔍 **Gaps and contradictions surfaced** — including claims in two notes that cannot both be true.
 - 🎓 **Quizzes and flashcards from any note** — so the archive is something you revisit, not just something you kept.
-- 💬 **Or ask it anything at all** — Direct mode drops the grounding and answers from the model itself, offline and free. It is a 4B model, so it is weaker at general knowledge than anything behind an API, and it says so by carrying no sources and never filing its answers into your wiki.
+- 💬 **Or just ask, without choosing** — Vault mode is the default: every question searches your raw notes first. What they say comes with sources; then Gemma 4 E4B answers on its own, labelled as its own. Ask which notes cover something and you get the notes, as links. Nothing to ingest, nothing to set up. It is a 4B model, so its own knowledge is weaker than anything behind an API — which is why that part always wears a warning and is never filed into your wiki.
 
 Everything it writes is plain Markdown, in your vault.
 
@@ -153,12 +153,13 @@ Everything it writes is plain markdown in your vault — nothing is locked in a 
 
 <p align="center"><img src="assets/poster/poster-p02.png" alt="Wiki mode: the index open in the editor while the panel answers a question spanning four pages, each named in the Sources row." width="900"></p>
 
-Click the book-and-spark ribbon icon to open the side panel. Two grounding modes, switched with a pill toggle:
+Click the book-and-spark ribbon icon to open the side panel. Three modes, switched with a pill toggle, ordered by how much of your material is behind the answer:
 
+- **Vault** (default) — searches every raw note in your vault, lexically, by title, tags, headings and body; the wiki folder is excluded. Notes matched: the answer opens with **From your notes** and a Sources row, then **Gemma 4 E4B adds** its own answer under a warning. Nothing matched: one line says so, and the model answers on its own. Asked *which* notes cover something, it lists them as links first and the model adds a line each — the plugin finds, the model reads; a 4B model cannot search a vault and is never asked to. Asked what the vault *is*, with nothing to match, it answers from the folder layout and the most recently edited titles.
 - **This note** — answers strictly from the currently open note.
-- **Wiki** — the Karpathy Query path: reads the `gemma-wiki/index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too).
+- **Wiki** — the Karpathy Query path: reads the `gemma-wiki/index.md` catalog first, loads the top-matching ingested pages, and answers only from them (plus the catalog and recent activity log, so meta-questions like "what did I add today?" work too). Cards are compressed, so this is the mode that can hold thirty pages at once — the one for "what connects my notes", which raw notes cannot answer.
 
-Either way: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), per-message **copy / regenerate / save-as-note** actions, and a **save-conversation** button in the panel header that keeps the whole thread — the questions included, which are the half you cannot reconstruct from the answers. Both modes refuse honestly when the material doesn't answer a question about your notes, and both will explain a term your material uses instead of repeating it back at you — keeping what the material says separate from what the term means. **A question asked in the wrong mode is routed, not lost**: ask about your vault in This note or in Direct and the panel says so and offers the mode that can answer, in one click, without retyping; ask something general in a grounded mode and the refusal carries the same offer the other way. The empty panel shows three example questions of the right shape for each mode, and names the other two. A **Standing instructions** setting adds a line to every answer in every mode — a language, a length, a tone — without loosening what an answer may draw on. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (*Quiz*, *Flashcards*, *Find gaps*) against the open note.
+In every mode: answers stream in from a model running inside Obsidian's own process, every answer ends with a deterministic **Sources** row (clickable — listed by the plugin, not left to the model to cite), per-message **copy / regenerate / save-as-note** actions, and a **save-conversation** button in the panel header that keeps the whole thread — the questions included, which are the half you cannot reconstruct from the answers. Both modes refuse honestly when the material doesn't answer a question about your notes, and both will explain a term your material uses instead of repeating it back at you — keeping what the material says separate from what the term means. **A question asked in the wrong mode is routed, not lost**: ask about your vault in This note, or something general in Wiki, and the refusal carries buttons for the modes that can answer — one click re-asks there, without retyping. Vault mode carries no such card, because it already looked. The empty panel shows three example questions of the right shape for each mode, and names the other two. A **Standing instructions** setting adds a line to every answer in every mode — a language, a length, a tone — without loosening what an answer may draw on. A **+** button attaches additional notes as removable context pills; a **⚡ skills** menu runs canned single-task prompts (*Quiz*, *Flashcards*, *Find gaps*) against the open note.
 
 ## 🤔 Why this exists
 
@@ -197,7 +198,7 @@ Five honest reasons to close this tab:
 - **You work on a phone or tablet.** Desktop only, and structurally so: it needs WebGPU and ~3 GB on disk.
 - **Your machine has no WebGPU.** Integrated GPUs from the last few years are fine; a VM, a remote desktop or an old GPU usually is not. The `[Test] Check WebGPU` command tells you in one click.
 - **You cannot spare ~3 GB.** The model is downloaded once and lives in the plugin folder.
-- **You need frontier-model knowledge.** Gemma 4 E4B is a 4B model: good at reading your notes, weak at the wider world. Direct mode exists, and it is not a ChatGPT replacement.
+- **You need frontier-model knowledge.** Gemma 4 E4B is a 4B model: good at reading your notes, weak at the wider world. Vault mode answers general questions, and it is not a ChatGPT replacement.
 - **Your sources are PDFs, images or Office files.** Markdown notes only. Clip or convert first.
 
 If none of those apply, the rest of this page is for you.

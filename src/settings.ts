@@ -29,7 +29,7 @@ export interface GemmaWikiSettings {
   // they are debugging tools, not things to do with your notes.
   devCommands: boolean;
   staleDays: number;
-  defaultMode: 'note' | 'wiki' | 'direct';
+  defaultMode: 'note' | 'wiki' | 'vault';
   /** Appended to every chat system prompt; see standingInstructions in pure.ts. */
   chatInstructions: string;
   /**
@@ -79,7 +79,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   contextTokens: 64000,
   devCommands: false,
   staleDays: 30,
-  defaultMode: 'note',
+  defaultMode: 'vault',
   chatInstructions: '',
   scanQuietHours: 3,
   scanInclude: '',
@@ -158,11 +158,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           {
             name: 'Default mode',
             desc: 'Which mode a freshly opened chat panel starts in.',
-            aliases: ['this note', 'wiki mode', 'direct'],
+            aliases: ['this note', 'wiki mode', 'vault', 'direct'],
             control: {
               type: 'dropdown',
               key: 'defaultMode',
-              options: { note: 'This note', wiki: 'Wiki', direct: 'Direct' },
+              options: { vault: 'Vault', note: 'This note', wiki: 'Wiki' },
             },
           },
           {
@@ -550,13 +550,13 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       .setDesc('Which grounding mode a new chat panel opens in.')
       .addDropdown((dd) =>
         dd
+          .addOption('vault', 'Vault')
           .addOption('note', 'This note')
           .addOption('wiki', 'Wiki')
-          .addOption('direct', 'Direct')
           .setValue(this.plugin.settings.defaultMode)
           .onChange(async (v) => {
             this.plugin.settings.defaultMode =
-              v === 'wiki' ? 'wiki' : v === 'direct' ? 'direct' : 'note';
+              v === 'wiki' ? 'wiki' : v === 'note' ? 'note' : 'vault';
             await this.plugin.saveSettings();
           })
       );

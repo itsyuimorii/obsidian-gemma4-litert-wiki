@@ -24,20 +24,19 @@ test('possessive + a word for the vault is about own notes', () => {
   ]) assert.ok(asksAboutOwnNotes(q), q);
 });
 
-test('the typo and the romanisation from the field are caught', () => {
-  assert.ok(asksAboutOwnNotes('我的valut'));
-  assert.ok(asksAboutOwnNotes('wo de vault 里有什么内容'));
+test('the typo from the field is caught', () => {
   assert.ok(asksAboutOwnNotes('my valut has what'));
+  assert.ok(asksAboutOwnNotes('what is in my valut'));
 });
 
-test('CJK possessives and locatives are caught', () => {
+test('Japanese possessives and locatives are caught', () => {
   for (const q of [
-    '我的笔记里有什么',
-    '我的vault里有什么内容',
-    '筆記中提到 WebGPU 的有哪些',
-    '私のノートには何がありますか',
-    'vault 里有什么',
-    '我写过什么关于咖啡的',
+    '私のノートには何がある',
+    '私の vault には何が入っていますか',
+    'ノートの中で WebGPU に触れているのはどれ',
+    '僕のメモには何がありますか',
+    'vault には何がある',
+    'コーヒーについて私が書いたこと',
   ]) assert.ok(asksAboutOwnNotes(q), q);
 });
 
@@ -71,7 +70,7 @@ test('the three refusals from the field are caught', () => {
   assert.ok(looksLikeRefusal(
     'I do not have access to your personal files, notes, or any private "vault." Therefore, I cannot tell you what content is in your vault.'
   ));
-  assert.ok(looksLikeRefusal('I did not follow your request. "我的valut" is unclear. Could you please ask for it another way?'));
+  assert.ok(looksLikeRefusal('I did not follow your request. "my valut" is unclear. Could you please ask for it another way?'));
   assert.ok(looksLikeRefusal('The note does not mention grain shortages.'));
 });
 
@@ -83,9 +82,10 @@ test('other honest refusals are caught', () => {
     'The pages do not cover water temperature.',
     "I can't find anything about that in the note.",
     'I am unable to determine this from the text.',
-    '笔记中没有提到这个话题。',
-    '无法访问您的个人文件。',
+    'ノートにはこの話題への言及がありません。',
+    'あなたの個人ファイルにはアクセスできません。',
     'ノートには記載がありません。',
+    'その点は分かりません。',
   ]) assert.ok(looksLikeRefusal(a), a);
 });
 

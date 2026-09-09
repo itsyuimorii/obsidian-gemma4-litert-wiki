@@ -58,8 +58,8 @@ export function slugify(name: string): string {
  * It deliberately does NOT try to catch the other class. Obsidian parses `#45`
  * in note text as a tag the moment one non-numeric character follows it, and
  * CJK punctuation counts — so a note mentioning issue `#45）` grows a tag out of
- * the sentence after it, and the model can echo it back. But `45-打开对应文件`
- * and `2026-回顾` are the same shape, and any rule sharp enough to drop the
+ * the sentence after it, and the model can echo it back. But `45-該当ファイルを開く`
+ * and `2026-振り返り` are the same shape, and any rule sharp enough to drop the
  * first drops the second. Guessing there would cost real tags to catch junk
  * whose actual fix is upstream, in how the note was written.
  */
@@ -193,7 +193,7 @@ const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
  *
  * ASCII words longer than two letters minus stopwords; CJK as sliding 2-char
  * windows, because there are no word boundaries and single characters are
- * mostly particles (的/は/て). One definition, used by retrieval and by the
+ * mostly particles (は/て/の). One definition, used by retrieval and by the
  * relink pre-pass, so "related" means the same thing in both places.
  */
 export function queryTerms(text: string): string[] {
@@ -893,7 +893,7 @@ export function schemaBackupsToPrune(names: string[], keep: number): string[] {
 // ---------------------------------------------------------------------------
 
 /** The shape version this build writes. Bump when adding a migration. */
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 
 type SavedSettings = Record<string, unknown>;
 
@@ -912,6 +912,16 @@ const MIGRATIONS: Array<(data: SavedSettings, known: ReadonlySet<string>) => Sav
     for (const [k, v] of Object.entries(data)) {
       if (known.has(k) || k === 'lastThread') out[k] = v;
     }
+    return out;
+  },
+  // 1 -> 2: Direct became Vault. The mode that answered from the model alone
+  // now searches your notes first and answers from the model after, so a
+  // saved default of 'direct' means 'vault' — the same button, one row down
+  // in what it does. Ungrounded turns in a saved thread keep their 'direct'
+  // grounding: that describes the answer, which has not changed.
+  (data) => {
+    const out: SavedSettings = { ...data };
+    if (out.defaultMode === 'direct') out.defaultMode = 'vault';
     return out;
   },
 ];
@@ -1200,11 +1210,11 @@ export function standingInstructions(raw: string, max = CHAT_INSTRUCTIONS_MAX): 
 
 /**
  * Whether a question is about the user's own notes — "what's in my vault",
- * "which pages did I add", 「我的笔记里有什么」 — as opposed to about the
+ * "which pages did I add", 「私のノートには何がある」 — as opposed to about the
  * world. Lexical and deliberately narrow: it looks for a possessive next to a
- * word for the vault, or a first-person "what did I write". A question that
- * merely contains the word "vault" ("explain what an Obsidian vault is") is
- * not caught, and should not be.
+ * word for the vault, or a first-person "what did I write", in English and
+ * Japanese. A question that merely contains the word "vault" ("explain what
+ * an Obsidian vault is") is not caught, and should not be.
  *
  * Used in two places. Before sending in Direct mode, where a hit means the
  * model is about to say "I do not have access to your files" twenty seconds
@@ -1219,21 +1229,20 @@ export function asksAboutOwnNotes(question: string): boolean {
   const patterns: RegExp[] = [
     new RegExp(String.raw`\b(?:my|our|your)\s+(?:own\s+)?${NOTES}\b`, 'i'),
     new RegExp(String.raw`\b(?:in|from|across|inside|within|throughout)\s+(?:the|this)\s+(?:whole\s+|entire\s+)?${NOTES}\b`, 'i'),
-    /\bwo\s*de\b/i,
-    /(?:我|俺|私|僕|我们|我們|咱|우리|내|제)\s*的?\s*(?:vault|valut|笔记|筆記|笔记库|库|庫|wiki|ノート|ボールト|保管庫|노트)/,
-    /(?:vault|valut|wiki|笔记|筆記|ノート)\s*(?:里|裡|中|内|裡面|里面|には|の中)/,
+    /(?:私|僕|俺|自分|わたし|ぼく)\s*の\s*(?:vault|valut|wiki|ノート|メモ|ボールト|保管庫|ファイル)/,
+    /(?:vault|valut|wiki|ノート|メモ)\s*(?:には|の中|内に|の中に)/,
     /\b(?:what|which|how many)\b[^.?!]{0,40}\bI\s+(?:wrote|write|added|add|saved|save|clipped|clip|filed|file|noted|note|ingested|ingest|have)\b/i,
-    /我(?:写|寫|加|存|记|記|收藏|剪藏|保存)(?:过|了|的)/,
+    /(?:私|僕|俺|自分)(?:が|は)[^。？?]{0,24}(?:書い|保存し|追加し|クリップし|メモし)/,
   ];
   return patterns.some((p) => p.test(q));
 }
 
 /**
  * Whether an answer is the model declining rather than answering — "I do
- * not have access to your files", "the note does not mention", "is unclear".
- * Only the opening of the answer is read, because a refusal is the whole
- * answer and short, while a good answer may still carry a caveat somewhere
- * in its third paragraph.
+ * not have access to your files", "the note does not mention", "is unclear",
+ * and the Japanese equivalents. Only the opening of the answer is read,
+ * because a refusal is the whole answer and short, while a good answer may
+ * still carry a caveat somewhere in its third paragraph.
  *
  * Every mode can produce one: This note when the question was about the
  * vault, Wiki when it was about one note, Direct when it was about either.
@@ -1257,11 +1266,303 @@ export function looksLikeRefusal(answer: string): boolean {
     /\bnot\s+in\s+(?:your|the|this)\s+(?:wiki|note|notes|material)\b/i,
     /\b(?:personal|private)\s+(?:files|notes|vault|data|documents)\b/i,
     /\bplease\s+(?:ask|rephrase|clarify|provide)\b/i,
-    /无法(?:访问|訪問|获取|獲取|查看|找到|回答|确定|確定)/,
-    /没有(?:提到|提及|包含|相关|相關|找到|涉及)/,
-    /(?:不清楚|不明确|不明確|无法理解|無法理解)/,
     /(?:アクセス|参照|確認)(?:でき|出来)ません/,
-    /(?:記載|言及)(?:が|は)(?:ありません|されていません)/,
+    /(?:記載|言及|情報)(?:が|は)(?:ありません|されていません|見当たりません)/,
+    /(?:分かりません|わかりません|不明です|見つかりません|判断できません)/,
   ];
   return patterns.some((p) => p.test(head));
+}
+
+// ---------------------------------------------------------------------------
+// Vault search — the retrieval behind Vault mode
+// ---------------------------------------------------------------------------
+
+/** What the metadata cache knows about a note without reading it. */
+export interface VaultDoc {
+  path: string;
+  title: string;
+  tags: string[];
+  headings: string[];
+}
+
+export interface VaultHit {
+  path: string;
+  score: number;
+}
+
+/**
+ * The score a note needs before Vault mode treats it as a match. Body terms
+ * are weighted by rarity (see rescoreWithBodies): a term in one note of four
+ * hundred scores two on a single mention, a term in a tenth of them scores
+ * about one, and a term in more than half of them scores nothing. One is
+ * therefore "a word this vault does not use everywhere, found here" — the
+ * point at which "your notes say something about this" stops being a
+ * stretch. A title or tag hit is three and always clears it.
+ */
+export const VAULT_MATCH_MIN = 1;
+
+/**
+ * Rank every note in the vault against a question from metadata alone —
+ * title, tags, headings — which the metadata cache holds for the whole vault
+ * without a single file read. A term in the title or a tag is worth more than
+ * one in a heading, because a note called "coffee" is about coffee and a note
+ * with a heading mentioning it might be about anything.
+ *
+ * Returns only notes that scored, best first, at most `max`. The body pass
+ * (`rescoreWithBodies`) refines the top of this list.
+ */
+export function rankVaultDocs(question: string, docs: readonly VaultDoc[], max = 60): VaultHit[] {
+  const terms = queryTerms(question);
+  // Two-letter tokens are dropped by queryTerms, rightly — "is", "of", "an"
+  // — but "js", "ai", "go" are how people tag things. Matched exactly against
+  // tags only, never as substrings, so "of" cannot find "#coffee".
+  const short = shortTerms(question);
+  if (!terms.length && !short.length) return [];
+  const hits: VaultHit[] = [];
+  for (const d of docs) {
+    const title = d.title.toLowerCase();
+    const tags = d.tags.map((t) => t.toLowerCase().replace(/^#/, ''));
+    const headings = d.headings.join(' ').toLowerCase();
+    let score = 0;
+    for (const t of terms) {
+      if (title.includes(t)) score += 3;
+      else if (tags.some((tag) => tag.includes(t))) score += 3;
+      else if (headings.includes(t)) score += 1;
+    }
+    for (const t of short) if (tags.includes(t)) score += 3;
+    if (score > 0) hits.push({ path: d.path, score });
+  }
+  hits.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+  return hits.slice(0, max);
+}
+
+/**
+ * Two-letter function words. STOPWORDS never needed them, because queryTerms
+ * drops everything under three letters; shortTerms keeps two-letter tokens
+ * for "js" and "ai", so it has to drop "is" and "my" itself.
+ */
+const SHORT_STOP = new Set([
+  'am', 'an', 'as', 'at', 'be', 'by', 'do', 'go', 'he', 'if', 'in', 'is', 'it', 'me', 'my',
+  'no', 'of', 'ok', 'on', 'or', 'so', 'to', 'up', 'us', 'vs', 'we', 're', 'im', 'id',
+]);
+
+/** Two-letter ASCII tokens, matched as whole words: "js", "ai", "c#". */
+export function shortTerms(question: string): string[] {
+  return [...new Set(
+    question
+      .toLowerCase()
+      .split(/[^a-z0-9#+]+/)
+      .filter((t) => t.length === 2 && /^[a-z0-9+#]+$/.test(t) && !SHORT_STOP.has(t))
+  )];
+}
+
+function countIn(hay: string, term: string, whole: boolean, cap = 3): number {
+  if (whole) {
+    const re = new RegExp(`(?<![a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`, 'g');
+    let n = 0;
+    while (n < cap && re.exec(hay)) n++;
+    return n;
+  }
+  let n = 0;
+  let i = hay.indexOf(term);
+  while (i !== -1 && n < cap) {
+    n++;
+    i = hay.indexOf(term, i + term.length);
+  }
+  return n;
+}
+
+/**
+ * Add what the bodies say, weighted by how rare each term is in this vault.
+ *
+ * Plain counts failed on the first real vault: a question in a language
+ * without word spaces splits into two-character pieces, most of which are
+ * the language's connective tissue and occur in nearly every note. The
+ * longest notes then won every query, whatever it asked. A term found in
+ * most of the vault's notes says nothing about which of them is meant; a
+ * term found in two of them says a great deal. So each term's contribution
+ * is scaled by log((N+1)/df) / log(N+1): one for a term unique to one note,
+ * falling to zero for a term in more than half of them. Language-agnostic,
+ * and computed from the bodies at hand — no stoplist to maintain.
+ *
+ * Per term: (1 + occurrences, capped at three) × weight, so a rare term
+ * once is worth two, and a note repeating a common word forty times gains
+ * nothing on one that uses three rare words once each. Metadata scores in
+ * `prior` (title, tag, heading) are added unweighted. Notes whose bodies
+ * are identical — the same file kept in two folders — count once, the
+ * first path kept.
+ */
+export function rescoreWithBodies(
+  question: string,
+  prior: readonly VaultHit[],
+  bodies: ReadonlyMap<string, string>,
+  max = 5
+): VaultHit[] {
+  const long = queryTerms(question);
+  const short = shortTerms(question);
+  if (!long.length && !short.length) return [];
+  const priorScore = new Map<string, number>(prior.map((h) => [h.path, h.score]));
+
+  // One entry per distinct body; a duplicate keeps only the first path.
+  const seenBody = new Map<string, string>();
+  const docs: [string, string][] = [];
+  for (const [path, body] of bodies) {
+    const key = body.trim();
+    if (seenBody.has(key)) continue;
+    seenBody.set(key, path);
+    docs.push([path, key.toLowerCase()]);
+  }
+  const n = docs.length;
+  if (!n) {
+    return [...priorScore.entries()]
+      .map(([path, score]) => ({ path, score }))
+      .filter((h) => h.score >= VAULT_MATCH_MIN)
+      .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+      .slice(0, max);
+  }
+
+  const terms: { t: string; whole: boolean }[] = [
+    ...long.map((t) => ({ t, whole: false })),
+    ...short.map((t) => ({ t, whole: true })),
+  ];
+  const counts = new Map<string, number[]>();
+  const df = new Array<number>(terms.length).fill(0);
+  for (const [path, hay] of docs) {
+    const row = terms.map(({ t, whole }) => countIn(hay, t, whole));
+    row.forEach((c, i) => { if (c > 0) df[i]++; });
+    counts.set(path, row);
+  }
+  // A term in more than half the notes is this vault's own stopword — a
+  // connective piece, a word the vault is about as a whole — and says
+  // nothing about which note is meant.
+  const weight = df.map((d) => (d === 0 || d / n > 0.5 ? 0 : Math.log((n + 1) / d) / Math.log(n + 1)));
+
+  const scored: VaultHit[] = [];
+  const bodyPaths = new Set(docs.map(([p]) => p));
+  for (const [path, row] of counts) {
+    let score = priorScore.get(path) ?? 0;
+    row.forEach((c, i) => { if (c > 0) score += (1 + c) * weight[i]; });
+    if (score >= VAULT_MATCH_MIN) scored.push({ path, score });
+  }
+  // Metadata-only hits whose bodies were not read (large vaults) still count.
+  for (const [path, score] of priorScore) {
+    if (!bodyPaths.has(path) && !bodies.has(path) && score >= VAULT_MATCH_MIN) scored.push({ path, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, max);
+}
+
+/**
+ * Whether a question asks for what was written recently — "what did I
+ * write this week", 「最近書いたノートは」. The answer is the plugin's own
+ * list of the most recently edited notes; the model is not asked to know
+ * dates it was never told. A time word alone is not enough ("latest version
+ * of Node"): a word for notes or writing has to be there too.
+ */
+export function looksLikeRecentQuery(question: string): boolean {
+  const q = question.trim();
+  if (!q) return false;
+  const time = /\b(?:recent|recently|lately|latest|newest|last\s+(?:few\s+)?(?:days?|weeks?|months?)|this\s+(?:week|month)|today|yesterday)\b/i;
+  const notes = /\b(?:notes?|files?|pages?|entries|wrote|write|written|writing|edit|edited|editing|add|added|adding|work|worked|working|touch|touched)\b/i;
+  const timeJa = /(?:最近|今週|先週|今月|今日|昨日|この頃|ここ数日|直近)/;
+  const notesJa = /(?:ノート|メモ|書い|編集|追加|作業|触っ)/;
+  return (time.test(q) && notes.test(q)) || (timeJa.test(q) && notesJa.test(q));
+}
+
+/**
+ * Whether a question asks for a list of notes rather than an answer — "which
+ * of my notes mention X", 「JS に関するノートはどれ」. The answer to one of these
+ * is the plugin's search result drawn as links, with the model adding a line
+ * per note; the model is not asked to find anything, because it cannot.
+ */
+export function looksLikeListQuery(question: string): boolean {
+  const q = question.trim();
+  if (!q) return false;
+  const patterns: RegExp[] = [
+    /\b(?:which|what)\s+(?:of\s+my\s+)?(?:notes?|files?|pages?|articles?|documents?|entries)\b/i,
+    /\b(?:list|show|find|search|locate)\b[^.?!]{0,30}\b(?:notes?|files?|pages?|articles?|documents?)\b/i,
+    /\b(?:notes?|files?|articles?)\s+(?:do\s+i\s+have|have\s+i\s+got|are\s+there|exist)\b/i,
+    /\bhow\s+many\s+(?:notes?|files?|pages?|articles?)\b/i,
+    /(?:どの|どんな|どれ)\s*(?:ノート|記事|ファイル|メモ)/,
+    /(?:ノート|記事|ファイル|メモ)(?:の一覧|を一覧|をリスト|を探して|を検索|はどれ|を見つけて)/,
+    /(?:何件|いくつ)の?(?:ノート|記事|ファイル|メモ)/,
+  ];
+  return patterns.some((p) => p.test(q));
+}
+
+/**
+ * The part of a note worth sending: windows around where the question's
+ * terms occur, merged and joined with ellipses, capped in characters. The
+ * alternative — the first N tokens of the note — sends the introduction of a
+ * long note whose one mention of the subject is in paragraph nine, and the
+ * model then summarises the introduction. Falls back to the opening when no
+ * term is found (an attached note, or a title-only match).
+ */
+export function excerptAround(body: string, terms: readonly string[], maxChars: number, radius = 350): string {
+  const text = body.trim();
+  if (text.length <= maxChars) return text;
+  const hay = text.toLowerCase();
+  const spans: [number, number][] = [];
+  for (const t of terms) {
+    if (!t) continue;
+    let i = hay.indexOf(t);
+    let n = 0;
+    while (i !== -1 && n < 4) {
+      spans.push([Math.max(0, i - radius), Math.min(text.length, i + t.length + radius)]);
+      n++;
+      i = hay.indexOf(t, i + t.length);
+    }
+  }
+  if (!spans.length) return `${text.slice(0, maxChars).trimEnd()}…`;
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const sp of spans) {
+    const last = merged[merged.length - 1];
+    if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]);
+    else merged.push([sp[0], sp[1]]);
+  }
+  let out = '';
+  for (const [a, b] of merged) {
+    const piece = text.slice(a, b).trim();
+    const sep = out ? '\n…\n' : a > 0 ? '…' : '';
+    if (out.length + sep.length + piece.length > maxChars) {
+      const room = maxChars - out.length - sep.length;
+      if (room > 80) out += sep + piece.slice(0, room).trimEnd() + '…';
+      break;
+    }
+    out += sep + piece;
+  }
+  return out || `${text.slice(0, maxChars).trimEnd()}…`;
+}
+
+/**
+ * Three example questions for the empty Vault panel, made from this vault:
+ * its commonest tags, with the newest title as a fallback, and the question
+ * that lists what was edited recently. Examples about coffee
+ * were fine in the demo vault and wrong in every other one — a question the
+ * panel suggests should be one this vault can answer. Falls back to generic
+ * wording, never to an invented subject, when the vault is bare.
+ *
+ * `tags` are counted; the most frequent two are used, '#' stripped. Tags
+ * longer than 24 characters or with a slash (nested) are skipped, since they
+ * read badly inside a sentence.
+ */
+export function pickVaultExamples(tags: readonly string[], recentTitles: readonly string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const raw of tags) {
+    const t = raw.replace(/^#/, '').trim();
+    if (!t || t.length > 24 || t.includes('/')) continue;
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+  const recent = recentTitles.find((t) => t.trim().length > 0 && t.trim().length <= 60)?.trim();
+  const first = top[0] ? `What have I written about ${top[0]}?` : 'What have I written about recently?';
+  const second = top[1]
+    ? `Which of my notes mention ${top[1]}?`
+    : recent
+      ? `Which of my notes are about ${recent}?`
+      : "What's in my vault?";
+  const third = 'Which notes did I edit recently?';
+  return [first, second, third];
 }

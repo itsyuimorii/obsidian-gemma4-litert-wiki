@@ -11,7 +11,7 @@ import { isUsableTag, safeFileName, slugify } from '../src/pure.ts';
 
 test('slugify keeps letters from every script', () => {
   // The twelve samples that used to collapse to the same string.
-  assert.equal(slugify('设计模式'), '设计模式');
+  assert.equal(slugify('設計パターン'), '設計パターン');
   assert.equal(slugify('デザイン'), 'デザイン');
   assert.equal(slugify('디자인'), '디자인');
   assert.equal(slugify('Дизайн'), 'дизайн');
@@ -47,7 +47,7 @@ test('slugify never returns the empty string', () => {
 });
 
 test('slugify is idempotent', () => {
-  for (const s of ['LLM Eval', 'डिज़ाइन', '设计 模式', 'résumé', '']) {
+  for (const s of ['LLM Eval', 'डिज़ाइन', '設計 パターン', 'résumé', '']) {
     assert.equal(slugify(slugify(s)), slugify(s), s);
   }
 });
@@ -61,7 +61,7 @@ test('isUsableTag rejects a slug that is only digits and hyphens', () => {
 test('isUsableTag keeps a tag that merely starts with digits', () => {
   // The line the rule deliberately does not cross: these have the same shape
   // as the junk above, and a rule sharp enough to drop `#45）` drops these too.
-  for (const real of ['45-打开对应文件', '2026-回顾', 'llm-eval', '3d-graphics']) {
+  for (const real of ['45-該当ファイルを開く', '2026-振り返り', 'llm-eval', '3d-graphics']) {
     assert.equal(isUsableTag(real), true, real);
   }
 });

@@ -350,6 +350,53 @@
   cursor: default;
 }
 
+/* Vault mode's parts. The one line that says nothing matched, the list of
+   matching notes drawn before the model speaks, and the two labels that keep
+   "from your notes" and "Gemma 4 E4B adds" from reading as one answer. */
+.gemma4-chat-searching {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 6px 12px;
+}
+
+.gemma4-chat-vault-none {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 4px 0 8px;
+  border-bottom: 1px dashed var(--background-modifier-border);
+  margin-bottom: 8px;
+}
+
+.gemma4-chat-vault-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--background-modifier-border);
+}
+
+.gemma4-chat-vault-list-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.gemma4-chat-part-label {
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  margin: 2px 0 6px;
+}
+
+.gemma4-chat-part-label-adds {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
 /* The route card: "wrong mode" said in one line, then the modes that could
    answer as buttons. Shares the hatch's dashed, quiet styling — it is the
    same idea widened from one button to a sentence and two or three. */
