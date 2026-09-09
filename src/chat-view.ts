@@ -11,6 +11,7 @@ import {
   rescoreWithBodies,
   standingInstructions,
   stripLeadingRefusal,
+  VAULT_MATCH_MIN,
   vaultHistoryText,
   weightedTerms,
   type VaultDoc,
@@ -1628,7 +1629,17 @@ export class ChatView extends ItemView {
     const toRead = files.length <= 400 ? files : files.filter((f) => rankedSet.has(f.path));
     const bodies = new Map<string, string>();
     for (const f of toRead) bodies.set(f.path, (await this.app.vault.cachedRead(f)).slice(0, 20000));
-    const hits = dedupeByName(rescoreWithBodies(question, ranked, bodies, 8)).slice(0, 4);
+    // A list question asks for every note that names the subject, so the
+    // bar is only "a subject term is in it"; an answer question keeps the
+    // rarity threshold, since one mention of a common word is not material.
+    const listQuestion = looksLikeListQuery(question);
+    const allHits = dedupeByName(rescoreWithBodies(question, ranked, bodies, 12, listQuestion ? 0.05 : VAULT_MATCH_MIN));
+    const about = allHits.filter((h) => h.tier === 'about');
+    const mentions = allHits.filter((h) => h.tier === 'mentions');
+    // The notes read are the ones ABOUT the subject; a note that names it
+    // once in an example sentence is listed under the answer, not read into
+    // it. A list question lists both, labelled.
+    const hits = about.slice(0, 4);
     const attachments = await this.readAttachments();
     // Not the whole chat budget. At a 64k context that is 48k tokens, and
     // five long notes filled it — a minute of prefill during which WebGPU
@@ -1639,32 +1650,33 @@ export class ChatView extends ItemView {
     // Two notes with the same name in different folders would show as two
     // identical Sources chips; the folder goes on when the name is shared.
     const seen = new Map<string, number>();
-    for (const h of hits) seen.set(link(h.path).base, (seen.get(link(h.path).base) ?? 0) + 1);
+    for (const h of allHits) seen.set(link(h.path).base, (seen.get(link(h.path).base) ?? 0) + 1);
     const titled = (path: string) => {
       const { base, folder, linkPath } = link(path);
       return { title: (seen.get(base) ?? 0) > 1 && folder ? `${base} (${folder})` : base, linkPath };
     };
 
-    if (!hits.length && !attachments.blocks) {
+    if (!hits.length && !attachments.blocks && !(listQuestion && mentions.length)) {
       // "What's in my vault" matches no note by its words, because it is
       // about all of them. Hand the model the shape instead.
       if (asksAboutOwnNotes(question)) return overview();
-      // Nothing in the notes. The model answers on its own — this is the
-      // Direct answer, under one line that says the notes were looked at.
+      // Nothing in the notes is ABOUT this. The model answers on its own,
+      // under one line that says so — and names the notes that mention it
+      // in passing, as links, so nothing found is hidden.
       return {
         systemPrompt: DIRECT_PROMPT,
         sourcePath: indexPath(),
         sources: [],
         ungrounded: true,
         grounding: 'direct',
-        vault: { kind: 'none', hits: [] },
+        vault: { kind: 'none', hits: mentions.slice(0, 6).map((h) => ({ ...titled(h.path), tier: 'mentions' as const })) },
       };
     }
 
     // Notes matched (or were attached). Each gets an equal share of the
     // budget, so five short notes arrive whole and five long ones arrive
     // as their openings — the part most likely to say what they are about.
-    const hitSources = hits.map((h) => titled(h.path));
+    const hitSources = hits.map((h) => ({ ...titled(h.path), tier: h.tier }));
     const share = Math.min(
       VAULT_NOTE_TOKENS,
       Math.max(300, Math.floor((budget - estimateTokens(attachments.blocks)) / Math.max(1, hits.length)))
@@ -1687,21 +1699,34 @@ export class ChatView extends ItemView {
     material += attachments.blocks;
     const sources = [...attachments.sources, ...hitSources];
 
-    if (looksLikeListQuery(question) && hits.length) {
+    if (listQuestion && allHits.length) {
+      // Every hit, about first, each labelled; the model gets an excerpt of
+      // each and writes one line, told which tier the plugin put it in.
+      const listed = [...about, ...mentions].slice(0, 8);
+      let listMaterial = '';
+      for (const h of listed) {
+        const body = bodies.get(h.path) ?? '';
+        const src = titled(h.path);
+        const excerpt = clampToTokens(excerptAround(body, terms, 600 * 3), 600).text;
+        listMaterial += `## Note: ${src.title} (${h.path}) — ${h.tier === 'about' ? 'ABOUT the subject' : 'MENTIONS it in passing'}\n${excerpt}\n\n`;
+      }
+      const listed2 = listed.map((h) => ({ ...titled(h.path), tier: h.tier }));
       return {
         systemPrompt:
           'The user asked which of their notes are about something. The plugin has already ' +
           'searched the vault and found the notes below — you are not being asked to search, ' +
-          'and you cannot. For each note, in the order given, write one line: its title in bold, ' +
-          'then what it is about and why it fits the question, from its text. Do not add notes ' +
-          'that are not listed. Do not summarise the topic itself. If a listed note does not ' +
-          'really fit, say so in its line.\n\n' +
+          'and you cannot. Each is marked ABOUT (the subject is in its title, tags or headings, or ' +
+          'named repeatedly) or MENTIONS (named once or twice, often in passing). For each note, in ' +
+          'the order given, write one line: its title in bold, then what the note itself is about ' +
+          'and where the subject comes up in it, from its text. A MENTIONS note is usually about ' +
+          'something else; say what, and how the subject appears. Do not add notes that are not ' +
+          'listed. Do not summarise the subject itself.\n\n' +
           'Be concise. Use a markdown list.\n\n' +
-          material,
+          listMaterial,
         sourcePath: indexPath(),
-        sources,
+        sources: listed2,
         grounding: 'vault',
-        vault: { kind: 'list', hits: hitSources },
+        vault: { kind: 'list', hits: listed2 },
       };
     }
 
@@ -1756,7 +1781,10 @@ export class ChatView extends ItemView {
      * the model adds a line each. `both`: notes matched, so the grounded
      * answer comes first and the model's own answer after, each labelled.
      */
-    vault?: { kind: 'none' | 'overview' | 'list' | 'both'; hits: { title: string; linkPath: string }[] };
+    vault?: {
+      kind: 'none' | 'overview' | 'list' | 'both';
+      hits: { title: string; linkPath: string; tier?: 'about' | 'mentions' }[];
+    };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
     // and let Gemma answer from its own knowledge. No retrieval, no sources,
@@ -2183,15 +2211,39 @@ export class ChatView extends ItemView {
       // by the plugin — the model's lines follow and can be wrong, the links
       // cannot. Both are visible while the model is still thinking.
       if (context.vault?.kind === 'none') {
-        body.createDiv({
-          cls: 'gemma4-chat-vault-none',
-          text: 'Nothing in your notes on this — Gemma 4 E4B answers on its own.',
-        });
+        const none = body.createDiv({ cls: 'gemma4-chat-vault-none' });
+        const passing = context.vault.hits;
+        if (passing.length) {
+          none.appendText(
+            `Nothing in your notes is about this — ${passing.length} mention${passing.length === 1 ? 's' : ''} it in passing: `
+          );
+          passing.forEach((hit, i) => {
+            if (i > 0) none.appendText(', ');
+            const a = none.createEl('a', { cls: 'gemma4-chat-source-link', text: hit.title });
+            a.addEventListener('click', (evt) => {
+              evt.preventDefault();
+              void this.app.workspace.openLinkText(hit.linkPath, '', false);
+            });
+          });
+          none.appendText('. Gemma 4 E4B answers on its own.');
+        } else {
+          none.setText('Nothing in your notes on this — Gemma 4 E4B answers on its own.');
+        }
       } else if (context.vault?.kind === 'list') {
         const list = body.createDiv({ cls: 'gemma4-chat-vault-list' });
-        list.createSpan({ cls: 'gemma4-chat-vault-list-label', text: `${context.vault.hits.length} matching notes` });
-        for (const hit of context.vault.hits) {
-          const a = list.createEl('a', { cls: 'gemma4-chat-source-link', text: hit.title });
+        const hits = context.vault.hits;
+        const nAbout = hits.filter((h) => h.tier === 'about').length;
+        const nMention = hits.length - nAbout;
+        list.createSpan({
+          cls: 'gemma4-chat-vault-list-label',
+          text: `${nAbout} about · ${nMention} mention${nMention === 1 ? 's' : ''} it`,
+        });
+        for (const hit of hits) {
+          const a = list.createEl('a', {
+            cls: `gemma4-chat-source-link${hit.tier === 'mentions' ? ' gemma4-chat-source-mention' : ''}`,
+            text: hit.title,
+          });
+          a.setAttribute('aria-label', hit.tier === 'about' ? 'About the subject' : 'Mentions it in passing');
           a.addEventListener('click', (evt) => {
             evt.preventDefault();
             void this.app.workspace.openLinkText(hit.linkPath, '', false);

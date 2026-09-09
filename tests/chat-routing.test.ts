@@ -134,3 +134,8 @@ test('a refusal in the first sentence of a run-on paragraph is dropped', () => {
   const out = stripLeadingRefusal('I cannot see your notes. Coffee is a beverage made from roasted seeds, brewed hot or cold, and drunk worldwide.');
   assert.ok(out.startsWith('Coffee is a beverage'), out);
 });
+
+test('Chinese refusals are caught again', () => {
+  for (const a of ['笔记中没有提到这个话题。', '无法访问您的个人文件。', '根据您提供的笔记内容，没有明确提到"js"这个词汇的笔记。'])
+    assert.ok(looksLikeRefusal(a), a);
+});

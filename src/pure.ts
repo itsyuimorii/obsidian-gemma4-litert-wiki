@@ -173,6 +173,7 @@ export function pickCardPath(q: CardPathQuery): string {
 // "what's the common mistake between X and Y" was retrieving pages that
 // merely contained "common" and "between".
 const STOPWORDS = new Set([
+  // English
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'your', 'with', 'can',
   'what', 'which', 'when', 'where', 'why', 'how', 'does', 'did', 'from',
   'have', 'has', 'had', 'this', 'that', 'these', 'those', 'will', 'would',
@@ -180,31 +181,170 @@ const STOPWORDS = new Set([
   'they', 'there', 'their', 'make', 'made', 'between', 'common', 'more',
   'most', 'some', 'such', 'only', 'also', 'very', 'just', 'been', 'was',
   'were', 'its', 'out', 'use', 'using', 'used', 'note', 'notes', 'talk',
-  'talking', 'say', 'says', 'tell', 'show',
+  'talking', 'say', 'says', 'tell', 'show', 'any', 'all', 'own', 'mine',
+  // French
+  'les', 'des', 'une', 'est', 'que', 'qui', 'pour', 'dans', 'sur', 'avec',
+  'ces', 'cette', 'aux', 'pas', 'plus', 'mes', 'mon', 'quelles', 'quels',
+  'quelle', 'quel', 'parlent', 'parle', 'sont', 'vous', 'nous', 'leur',
+  // German
+  'der', 'die', 'das', 'und', 'ist', 'ein', 'eine', 'nicht', 'mit', 'von',
+  'auf', 'für', 'den', 'dem', 'des', 'welche', 'welcher', 'welches', 'meine',
+  'meinen', 'meiner', 'notiz', 'notizen', 'erwähnen', 'erwähnt', 'über',
+  'sind', 'ich', 'sie', 'wir', 'ihre',
+  // Spanish
+  'los', 'las', 'del', 'una', 'por', 'para', 'con', 'mis', 'qué', 'cuáles',
+  'cuál', 'nota', 'notas', 'hablan', 'habla', 'sobre', 'son', 'está', 'están',
+  'como', 'cómo', 'donde', 'dónde', 'este', 'esta', 'estos', 'estas', 'ese',
+  'esa', 'esos', 'esas', 'muy', 'también', 'pero', 'porque',
 ]);
 
-// Kanji/kana/fullwidth ranges — CJK has no spaces, so a whitespace/ASCII
-// tokenizer drops it entirely and a Chinese or Japanese question matched
-// zero pages (issue #23).
-const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
+// Words that carry an instruction rather than a subject — the scaffolding
+// of "draft a short outline for X" around X. Left in, they drove retrieval:
+// "outline" at weight 0.81 outranked the subject the outline was for, and
+// the notes that came back were the ones that used the word outline.
+const INSTRUCTION_STOP = new Set([
+  // English
+  'draft', 'outline', 'short', 'brief', 'list', 'write', 'explain', 'explains',
+  'summarise', 'summarize', 'summary', 'describe', 'find', 'give', 'create',
+  'plain', 'terms', 'please', 'help', 'need', 'want', 'rewrite', 'clearer',
+  'keeping', 'meaning', 'mention', 'mentions', 'mentioned', 'cover', 'covers',
+  'written', 'wrote', 'edit', 'edited', 'recently', 'recent', 'cite', 'answer',
+  'question', 'questions', 'ask', 'asked', 'know', 'think', 'read', 'look',
+  // French
+  'rédige', 'rédiger', 'explique', 'expliquer', 'résume', 'résumer', 'liste',
+  'lister', 'montre', 'montrer', 'écris', 'écrire', 'décris', 'décrire',
+  'trouve', 'trouver', 'donne', 'donner', 'plan', 'court', 'courte', 'brève',
+  // German
+  'schreibe', 'schreiben', 'erkläre', 'erklären', 'fasse', 'zusammen',
+  'zusammenfassen', 'zeige', 'zeigen', 'liste', 'finde', 'finden', 'gib',
+  'geben', 'erstelle', 'erstellen', 'kurz', 'kurze', 'kurzen', 'gliederung',
+  'entwurf', 'beschreibe', 'beschreiben',
+  // Spanish
+  'escribe', 'escribir', 'explica', 'explicar', 'resume', 'resumir', 'lista',
+  'listar', 'muestra', 'mostrar', 'encuentra', 'encontrar', 'describe',
+  'describir', 'crea', 'crear', 'esquema', 'borrador', 'corto', 'corta',
+  'breve', 'dame', 'haz', 'hacer',
+]);
+
+// Chinese and Japanese function words and question scaffolding. The
+// segmenter returns these as tokens of their own, which is what makes a
+// stoplist possible at all: the sliding bigrams they replaced produced
+// "记提" out of "笔记|提到", a non-word that occurred in one note and so
+// outweighed the subject of the question sevenfold.
+const CJK_STOP = new Set([
+  // Chinese particles, pronouns, determiners, classifiers
+  '的', '了', '是', '在', '我', '你', '他', '她', '它', '们', '我们', '你们',
+  '他们', '我的', '你的', '吗', '呢', '吧', '啊', '和', '与', '或', '或者', '把',
+  '被', '让', '给', '对', '从', '到', '有', '没', '没有', '不', '也', '都',
+  '就', '这', '那', '这个', '那个', '这些', '那些', '很', '会', '要', '能',
+  '可以', '以', '等', '及', '以及', '上', '下', '中', '里', '内', '外', '为',
+  '什么', '怎么', '怎样', '如何', '为什么', '哪', '哪些', '哪个', '哪几',
+  '几', '篇', '个', '些', '一', '一下', '一个', '一些', '关于', '提到',
+  '提及', '笔记', '文章', '文件', '内容', '写', '写过', '写了', '写的',
+  '写下', '写一个', '写一篇', '记录', '记', '记过', '帮我', '请', '解释',
+  '总结', '列出', '列一下', '找', '找出', '找一下', '找找', '说明', '大纲',
+  '草稿', '简短', '简单', '介绍', '告诉', '看看', '想', '知道', '有哪些', '帮',
+  '都有', '所有', '全部', '关联', '之间', '最近', '最新', '新',
+  // Japanese particles, copulas, auxiliaries, question scaffolding
+  'は', 'の', 'が', 'を', 'に', 'で', 'と', 'も', 'へ', 'や', 'か', 'ね',
+  'よ', 'な', 'て', 'た', 'だ', 'し', 'ます', 'です', 'でし', 'ある', 'いる',
+  'する', 'なる', 'なり', 'こと', 'もの', 'ため', 'たび', 'とは', 'には',
+  'では', 'から', 'まで', 'より', 'など', 'これ', 'それ', 'あれ', 'この',
+  'その', 'あの', 'どの', 'どれ', 'どんな', '何', 'なに', 'なん', '私',
+  '僕', '俺', '自分', 'ノート', 'メモ', '記事', 'ファイル', '書い', '書いた',
+  '書く', '教え', '教えて', 'まとめ', 'まとめて', '説明', '作っ', '作って',
+  '作成', '一覧', '見せ', '見せて', '探し', '探して', 'について', 'に関する',
+  '関する', 'ください', 'くださ', 'お願い', '最近', '今週', '先週',
+]);
+
+const CJK_CHAR = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]/;
+const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
+
+// Word segmentation from ICU, which Chromium (so Obsidian) and Node both
+// carry: dictionary-based for Chinese, Japanese and Thai, rule-based
+// elsewhere, no dependency and no locale to guess. Built once.
+const SEGMENTER: Intl.Segmenter | null =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? new Intl.Segmenter(undefined, { granularity: 'word' })
+    : null;
 
 /**
  * The terms a piece of text contributes to a lexical match.
  *
- * ASCII words longer than two letters minus stopwords; CJK as sliding 2-char
- * windows, because there are no word boundaries and single characters are
- * mostly particles (は/て/の). One definition, used by retrieval and by the
- * relink pre-pass, so "related" means the same thing in both places.
+ * Words, as ICU segments them, lower-cased. Latin-script tokens shorter than
+ * three letters are dropped (two-letter tokens are handled by shortTerms,
+ * as whole words), and so are stopwords in six languages and the words that
+ * carry an instruction rather than a subject. Chinese and Japanese tokens
+ * are real words, not sliding bigrams: a bigram straddling a word boundary
+ * is a non-word, occurs in one note by accident, and under rarity
+ * weighting becomes the heaviest term in the question. A French elision
+ * (l'extraction) is split so the noun survives. Without a segmenter the old
+ * bigram tokenizer stands in.
+ *
+ * One definition, used by retrieval, by the relink pre-pass and by Vault
+ * search, so "related" means the same thing everywhere.
  */
 export function queryTerms(text: string): string[] {
   const q = text.toLowerCase();
-  const ascii = q.split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
-  const cjk: string[] = [];
-  for (const run of q.match(CJK_RUN) ?? []) {
-    if (run.length === 1) cjk.push(run);
-    else for (let i = 0; i < run.length - 1; i++) cjk.push(run.slice(i, i + 2));
+  const out: string[] = [];
+  const keepLatin = (t: string) => t.length > 2 && !STOPWORDS.has(t) && !INSTRUCTION_STOP.has(t);
+  if (!SEGMENTER) {
+    for (const t of q.split(/[^\p{L}\p{N}]+/u)) if (t && !CJK_CHAR.test(t) && keepLatin(t)) out.push(t);
+    for (const run of q.match(CJK_RUN) ?? []) {
+      if (run.length === 1) out.push(run);
+      else for (let i = 0; i < run.length - 1; i++) out.push(run.slice(i, i + 2));
+    }
+    return [...new Set(out)];
   }
-  return [...new Set([...ascii, ...cjk])];
+  // ICU's dictionary does not know every word — 闭包 (closure) comes back
+  // as 闭 + 包. Consecutive single-character Chinese tokens that survived
+  // the stoplist are re-joined into one term, since two lone characters in
+  // a row are far more often one unknown word than two known ones. A lone
+  // single character stays as it is (猫 is a word).
+  let run: string[] = [];
+  const flush = () => {
+    if (run.length) out.push(run.join(''));
+    run = [];
+  };
+  for (const seg of SEGMENTER.segment(q)) {
+    if (!seg.isWordLike) {
+      flush();
+      continue;
+    }
+    for (const piece of seg.segment.split(/['’]/)) {
+      const t = piece.trim();
+      if (!t) continue;
+      if (CJK_CHAR.test(t)) {
+        if (CJK_STOP.has(t)) {
+          flush();
+        } else if (t.length === 1 && /[㐀-鿿]/.test(t)) {
+          run.push(t);
+        } else {
+          flush();
+          out.push(t);
+        }
+      } else {
+        flush();
+        if (keepLatin(t)) out.push(t);
+      }
+    }
+  }
+  flush();
+  return [...new Set(out)];
+}
+
+/**
+ * The part of a question that names its subject. A chip fills the box with
+ * "Draft a short outline for: " and the user completes it; everything
+ * before the colon is the instruction and must not drive retrieval. A
+ * question without such a prefix is its own subject — the instruction
+ * stoplist does the rest there.
+ */
+export function subjectOf(question: string): string {
+  const m = /^([^:：\n]{1,80})[:：]\s*(\S[\s\S]*)$/.exec(question.trim());
+  if (!m) return question.trim();
+  const prefixWords = m[1].trim().split(/\s+/).length;
+  return prefixWords <= 8 ? m[2].trim() : question.trim();
 }
 
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
@@ -1231,6 +1371,10 @@ export function asksAboutOwnNotes(question: string): boolean {
     new RegExp(String.raw`\b(?:in|from|across|inside|within|throughout)\s+(?:the|this)\s+(?:whole\s+|entire\s+)?${NOTES}\b`, 'i'),
     /(?:私|僕|俺|自分|わたし|ぼく)\s*の\s*(?:vault|valut|wiki|ノート|メモ|ボールト|保管庫|ファイル)/,
     /(?:vault|valut|wiki|ノート|メモ)\s*(?:には|の中|内に|の中に)/,
+    /(?:我|俺|咱|我们|我們)\s*的?\s*(?:vault|valut|笔记|筆記|笔记库|库|庫|wiki|文件|文章)/,
+    /(?:vault|valut|wiki|笔记|筆記)\s*(?:里|裡|中|内|里面|裡面)/,
+    /我(?:写|寫|加|存|记|記|收藏|剪藏|保存)(?:过|了|的)/,
+    /\bwo\s*de\b/i,
     /\b(?:what|which|how many)\b[^.?!]{0,40}\bI\s+(?:wrote|write|added|add|saved|save|clipped|clip|filed|file|noted|note|ingested|ingest|have)\b/i,
     /(?:私|僕|俺|自分)(?:が|は)[^。？?]{0,24}(?:書い|保存し|追加し|クリップし|メモし)/,
   ];
@@ -1269,6 +1413,9 @@ export function looksLikeRefusal(answer: string): boolean {
     /(?:アクセス|参照|確認)(?:でき|出来)ません/,
     /(?:記載|言及|情報)(?:が|は)(?:ありません|されていません|見当たりません)/,
     /(?:分かりません|わかりません|不明です|見つかりません|判断できません)/,
+    /无法(?:访问|訪問|获取|獲取|查看|找到|回答|确定|確定)/,
+    /没有(?:提到|提及|包含|相关|相關|找到|涉及|明确)/,
+    /(?:不清楚|不明确|不明確|无法理解|無法理解)/,
   ];
   return patterns.some((p) => p.test(head));
 }
@@ -1288,6 +1435,14 @@ export interface VaultDoc {
 export interface VaultHit {
   path: string;
   score: number;
+  /**
+   * `about`: the subject is in the title, a tag or a heading, or the body
+   * names it three times or more. `mentions`: the body names it once or
+   * twice. The difference between a note on coffee and a note that says
+   * "coffee's on me" in an example sentence — which lexical search alone
+   * cannot tell, and the panel must.
+   */
+  tier: 'about' | 'mentions';
 }
 
 /**
@@ -1301,6 +1456,11 @@ export interface VaultHit {
  */
 export const VAULT_MATCH_MIN = 1;
 
+/** Ranking is by score alone; the tier is what the panel says about each hit, not where it sorts. */
+function byScore(a: VaultHit, b: VaultHit): number {
+  return b.score - a.score || a.path.localeCompare(b.path);
+}
+
 /**
  * Rank every note in the vault against a question from metadata alone —
  * title, tags, headings — which the metadata cache holds for the whole vault
@@ -1312,11 +1472,12 @@ export const VAULT_MATCH_MIN = 1;
  * (`rescoreWithBodies`) refines the top of this list.
  */
 export function rankVaultDocs(question: string, docs: readonly VaultDoc[], max = 60): VaultHit[] {
-  const terms = queryTerms(question);
+  const subject = subjectOf(question);
+  const terms = queryTerms(subject);
   // Two-letter tokens are dropped by queryTerms, rightly — "is", "of", "an"
   // — but "js", "ai", "go" are how people tag things. Matched exactly against
   // tags only, never as substrings, so "of" cannot find "#coffee".
-  const short = shortTerms(question);
+  const short = shortTerms(subject);
   if (!terms.length && !short.length) return [];
   const hits: VaultHit[] = [];
   for (const d of docs) {
@@ -1330,7 +1491,7 @@ export function rankVaultDocs(question: string, docs: readonly VaultDoc[], max =
       else if (headings.includes(t)) score += 1;
     }
     for (const t of short) if (tags.includes(t)) score += 3;
-    if (score > 0) hits.push({ path: d.path, score });
+    if (score > 0) hits.push({ path: d.path, score, tier: 'about' });
   }
   hits.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
   return hits.slice(0, max);
@@ -1342,8 +1503,13 @@ export function rankVaultDocs(question: string, docs: readonly VaultDoc[], max =
  * for "js" and "ai", so it has to drop "is" and "my" itself.
  */
 const SHORT_STOP = new Set([
+  // English
   'am', 'an', 'as', 'at', 'be', 'by', 'do', 'go', 'he', 'if', 'in', 'is', 'it', 'me', 'my',
   'no', 'of', 'ok', 'on', 'or', 'so', 'to', 'up', 'us', 'vs', 'we', 're', 'im', 'id',
+  // French, Spanish, German
+  'de', 'la', 'le', 'du', 'un', 'en', 'et', 'ou', 'où', 'ne', 'se', 'si', 'ce', 'ça', 'au',
+  'es', 'el', 'al', 'lo', 'os', 'ni', 'su', 'tu', 'te', 'ya', 'da', 'zu', 'ob', 'ja', 'wo',
+  'er', 'um', 'ab', 'im',
 ]);
 
 /** Two-letter ASCII tokens, matched as whole words: "js", "ai", "c#". */
@@ -1416,18 +1582,19 @@ function distinctDocs(bodies: ReadonlyMap<string, string>): [string, string][] {
 
 /**
  * The question's terms, each weighted by how rare it is across `bodies`:
- * log((N+1)/df) / log(N+1), so one for a term unique to one note, falling
- * to zero for a term in more than half of them — this vault's own stopword,
- * a connective piece or a word the vault is about as a whole. Language-
- * agnostic, computed from the bodies at hand, no list to maintain. Used by
+ * log((N+1)/df) / log(N+1), so one for a term unique to one note, decaying
+ * towards zero for a term in nearly all of them — a word the vault is about
+ * as a whole. Language-agnostic, computed from the bodies at hand. Only the
+ * subject of the question contributes (see subjectOf). Used by
  * the ranking and by the excerpting, which must agree on which words
  * matter: ranking a note up for "coffee" and then sending the model the
  * paragraphs around "about" and "what" was how a matched note came back
  * as "does not mention coffee".
  */
 export function weightedTerms(question: string, bodies: ReadonlyMap<string, string>): WeightedTerm[] {
-  const long = queryTerms(question);
-  const short = shortTerms(question);
+  const subject = subjectOf(question);
+  const long = queryTerms(subject);
+  const short = shortTerms(subject);
   const terms: WeightedTerm[] = [
     ...long.map((t) => ({ t, whole: false, weight: 0 })),
     ...short.map((t) => ({ t, whole: true, weight: 0 })),
@@ -1438,7 +1605,11 @@ export function weightedTerms(question: string, bodies: ReadonlyMap<string, stri
   for (const w of terms) {
     let df = 0;
     for (const [, hay] of docs) if (countIn(hay, w.t, w.whole, 1) > 0) df++;
-    w.weight = df === 0 || df / n > 0.5 ? 0 : Math.log((n + 1) / df) / Math.log(n + 1);
+    // A smooth decay, not a cliff at half the vault: this vault had two of
+    // its own core subjects sitting at 50.5% and 50.8% and unsearchable,
+    // while near-identical neighbours at 45% survived. At half the notes a
+    // term is now worth about 0.12; at all of them, next to nothing.
+    w.weight = df === 0 ? 0 : Math.log((n + 1) / df) / Math.log(n + 1);
   }
   return terms;
 }
@@ -1447,7 +1618,8 @@ export function rescoreWithBodies(
   question: string,
   prior: readonly VaultHit[],
   bodies: ReadonlyMap<string, string>,
-  max = 5
+  max = 5,
+  min = VAULT_MATCH_MIN
 ): VaultHit[] {
   const terms = weightedTerms(question, bodies);
   if (!terms.length) return [];
@@ -1455,8 +1627,8 @@ export function rescoreWithBodies(
   const docs = distinctDocs(bodies);
   if (!docs.length) {
     return [...priorScore.entries()]
-      .map(([path, score]) => ({ path, score }))
-      .filter((h) => h.score >= VAULT_MATCH_MIN)
+      .map(([path, score]) => ({ path, score, tier: 'about' as const }))
+      .filter((h) => h.score >= min)
       .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
       .slice(0, max);
   }
@@ -1464,21 +1636,32 @@ export function rescoreWithBodies(
   const scored: VaultHit[] = [];
   const bodyPaths = new Set(docs.map(([p]) => p));
   for (const [path, hay] of docs) {
-    let score = priorScore.get(path) ?? 0;
+    const fromMetadata = priorScore.get(path) ?? 0;
+    let score = fromMetadata;
+    let dense = false;
     for (const w of terms) {
       if (w.weight === 0) continue;
       const c = countIn(hay, w.t, w.whole);
       if (c > 0) score += (1 + c) * w.weight;
+      // "About" by body alone means the subject keeps coming up, relative to
+      // the note's length: three mentions in a two-page note, not three in
+      // a twenty-page one that used it as an example. At least three, and
+      // at least one per thousand characters, of a term that carries real
+      // weight in this vault.
+      if (c >= 3 && w.weight >= 0.2) {
+        const all = countIn(hay, w.t, w.whole, 50);
+        if (all / Math.max(1, hay.length / 1000) >= 1) dense = true;
+      }
     }
-    if (score >= VAULT_MATCH_MIN) scored.push({ path, score });
+    if (score >= min) {
+      scored.push({ path, score, tier: fromMetadata > 0 || dense ? 'about' : 'mentions' });
+    }
   }
   // Metadata-only hits whose bodies were not read (large vaults) still count.
   for (const [path, score] of priorScore) {
-    if (!bodyPaths.has(path) && !bodies.has(path) && score >= VAULT_MATCH_MIN) scored.push({ path, score });
+    if (!bodyPaths.has(path) && !bodies.has(path) && score >= min) scored.push({ path, score, tier: 'about' });
   }
-  return scored
-    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
-    .slice(0, max);
+  return scored.sort(byScore).slice(0, max);
 }
 
 /**
@@ -1495,7 +1678,9 @@ export function looksLikeRecentQuery(question: string): boolean {
   const notes = /\b(?:notes?|files?|pages?|entries|wrote|write|written|writing|edit|edited|editing|add|added|adding|work|worked|working|touch|touched)\b/i;
   const timeJa = /(?:最近|今週|先週|今月|今日|昨日|この頃|ここ数日|直近)/;
   const notesJa = /(?:ノート|メモ|書い|編集|追加|作業|触っ)/;
-  return (time.test(q) && notes.test(q)) || (timeJa.test(q) && notesJa.test(q));
+  const timeZh = /(?:最近|这周|这星期|本周|上周|这个月|今天|昨天|这几天|近期)/;
+  const notesZh = /(?:笔记|文章|文件|写|编辑|改|加|新增|做)/;
+  return (time.test(q) && notes.test(q)) || (timeJa.test(q) && notesJa.test(q)) || (timeZh.test(q) && notesZh.test(q));
 }
 
 /**
@@ -1515,6 +1700,8 @@ export function looksLikeListQuery(question: string): boolean {
     /(?:どの|どんな|どれ)\s*(?:ノート|記事|ファイル|メモ)/,
     /(?:ノート|記事|ファイル|メモ)(?:の一覧|を一覧|をリスト|を探して|を検索|はどれ|を見つけて)/,
     /(?:何件|いくつ)の?(?:ノート|記事|ファイル|メモ)/,
+    /(?:哪些|哪几篇|哪几个|哪一篇|有几篇|有多少篇|列出|列一下|找一下|找找|找出|搜一下|搜索)/,
+    /(?:笔记|筆記|文章|文件|页面|頁面)(?:有哪些|都有什么|都有啥|有什么|提到)/,
   ];
   return patterns.some((p) => p.test(q));
 }
@@ -1603,7 +1790,8 @@ export function looksLikeCollectionQuery(question: string): boolean {
   if (!q) return false;
   const en = /\b(?:connect|connects|connections|connected|in\s+common|common\s+threads?|themes?|patterns?|across\s+(?:my|all|the)\s+(?:notes|vault|pages|cards)|overall|big\s+picture|overview\s+of\s+(?:my|all)|missing|gaps?|still\s+open|unanswered|contradict|contradictions?|disagree|inconsistent|what\s+did\s+i\s+add|added\s+this\s+week|what\s+have\s+i\s+been\s+(?:writing|working))\b/i;
   const ja = /(?:つながり|関連|共通|全体|傾向|テーマ|パターン|足りない|抜け|欠け|矛盾|食い違|今週追加|追加したもの)/;
-  return en.test(q) || ja.test(q);
+  const zh = /(?:联系|關聯|关联|共同|主题|主題|整体|整體|全局|规律|模式|缺|少了|没写完|未完成|矛盾|冲突|衝突|不一致|这周加|本周加|新增了)/;
+  return en.test(q) || ja.test(q) || zh.test(q);
 }
 
 /**

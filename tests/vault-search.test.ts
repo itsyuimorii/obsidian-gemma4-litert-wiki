@@ -9,9 +9,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { asksAboutOwnNotes } from '../src/pure.ts';
 import {
   dedupeByName,
   excerptAround,
+  queryTerms,
+  subjectOf,
   looksLikeListQuery,
   looksLikeCollectionQuery,
   looksLikeRecentQuery,
@@ -273,10 +276,10 @@ test('questions about a subject are not collection questions', () => {
 
 test('two hits with the same note name keep only the first', () => {
   const hits = dedupeByName([
-    { path: 'a/Bulkhead.md', score: 5 },
-    { path: 'b/Bulkhead.md', score: 4.5 },
-    { path: 'a/CSV batch.md', score: 3 },
-    { path: 'z/csv batch.md', score: 2 },
+    { path: 'a/Bulkhead.md', score: 5, tier: 'about' },
+    { path: 'b/Bulkhead.md', score: 4.5, tier: 'about' },
+    { path: 'a/CSV batch.md', score: 3, tier: 'mentions' },
+    { path: 'z/csv batch.md', score: 2, tier: 'mentions' },
   ]);
   assert.deepEqual(hits.map((h) => h.path), ['a/Bulkhead.md', 'a/CSV batch.md']);
 });
@@ -318,4 +321,113 @@ test('a whole-word term drives the excerpt too', () => {
   const body = 'x '.repeat(300) + 'The build writes main.js and a js helper. ' + 'y '.repeat(300);
   const out = excerptAround(body, [{ t: 'js', whole: true }], 200, 60);
   assert.ok(out.includes('js helper'));
+});
+
+// --- tokenizer: six languages, real words ------------------------------------
+
+test('Chinese and Japanese are segmented into words, not sliding bigrams', () => {
+  const zh = queryTerms('哪几篇笔记提到 js');
+  assert.ok(!zh.includes('记提'), JSON.stringify(zh));
+  assert.ok(!zh.includes('哪几'), JSON.stringify(zh));
+  assert.deepEqual(queryTerms('我关于 coffee 写过什么'), ['coffee']);
+  const ja = queryTerms('プロンプトの接頭辞が変わるたびに無効になります');
+  assert.ok(ja.includes('プロンプト') && !ja.includes('の') && !ja.includes('ます'), JSON.stringify(ja));
+});
+
+test('French, German and Spanish keep their nouns and drop their function words', () => {
+  assert.deepEqual(queryTerms("Quelles notes parlent de l'extraction du café ?"), ['extraction', 'café']);
+  assert.deepEqual(queryTerms('Welche Notizen erwähnen die Kaffeeextraktion?'), ['kaffeeextraktion']);
+  assert.deepEqual(queryTerms('¿Qué notas hablan de la extracción del café?'), ['extracción', 'café']);
+});
+
+test('instruction words never become search terms', () => {
+  assert.deepEqual(queryTerms('Draft a short outline for coffee'), ['coffee']);
+  assert.deepEqual(queryTerms('explain in plain terms what a kv cache is'), ['cache']);
+  assert.deepEqual(queryTerms('帮我找一下关于闭包的笔记'), ['闭包']);
+});
+
+test('the subject of a chip-filled question is what follows the colon', () => {
+  assert.equal(subjectOf('Draft a short outline for: coffe'), 'coffe');
+  assert.equal(subjectOf('Which of my notes are about: coffee'), 'coffee');
+  assert.equal(subjectOf('Explain, in plain terms: what a KV cache is'), 'what a KV cache is');
+  assert.equal(subjectOf('what did I write about coffee'), 'what did I write about coffee');
+  // A colon deep inside prose is not a chip prefix.
+  const prose = 'The note says one thing and then the other and finally, after all that, this: nothing';
+  assert.equal(subjectOf(prose), prose);
+});
+
+test('a chip-filled instruction retrieves by its subject only', () => {
+  const bodies = new Map([
+    ['outline.md', 'A short outline is a draft. Draft the outline, then a short draft again.'],
+    ['coffee.md', 'Tried a new coffee. The grind was coarse.'],
+    ['other.md', 'Nothing here.'],
+  ]);
+  const hits = rescoreWithBodies('Draft a short outline for: coffee', [], bodies);
+  assert.deepEqual(hits.map((h) => h.path), ['coffee.md']);
+});
+
+// --- tiers: about versus mentions ---------------------------------------------
+
+test('a title or tag hit is about; one body mention is mentions; three is about', () => {
+  const docs: VaultDoc[] = [
+    { path: 'coffee/guide.md', title: 'coffee guide', tags: [], headings: [] },
+    { path: 'daily/1.md', title: '2026-09-01', tags: [], headings: [] },
+    { path: 'daily/2.md', title: '2026-09-02', tags: [], headings: [] },
+    { path: 'daily/3.md', title: '2026-09-03', tags: [], headings: [] },
+  ];
+  const bodies = new Map([
+    ['coffee/guide.md', 'Grind, water, time.'],
+    ['daily/1.md', "Coffee's on me, she said, and that was that."],
+    ['daily/2.md', 'coffee in the morning, coffee at noon, coffee at night.'],
+    ['daily/3.md', 'A day without anything to report.'],
+  ]);
+  const hits = rescoreWithBodies('coffee', rankVaultDocs('coffee', docs), bodies);
+  const tier = Object.fromEntries(hits.map((h) => [h.path, h.tier]));
+  assert.equal(tier['coffee/guide.md'], 'about');
+  assert.equal(tier['daily/1.md'], 'mentions');
+  assert.equal(tier['daily/2.md'], 'about');
+  assert.equal(tier['daily/3.md'], undefined);
+});
+
+test('the decay has no cliff: a term in half the notes still counts a little', () => {
+  const bodies = new Map<string, string>();
+  for (let i = 0; i < 10; i++) bodies.set(`n${i}.md`, i < 6 ? `design design design ${i}` : `other ${i}`);
+  const wt = weightedTerms('design', bodies);
+  assert.ok(wt[0].weight > 0 && wt[0].weight < 0.3, String(wt[0].weight));
+});
+
+// --- Chinese question shapes ----------------------------------------------------
+
+test('Chinese list, recent, collection and own-notes questions are recognised', () => {
+  assert.ok(looksLikeListQuery('哪几篇笔记提到 js'));
+  assert.ok(looksLikeListQuery('我的 JS 笔记有哪些'));
+  assert.ok(looksLikeRecentQuery('我最近写了哪些笔记'));
+  assert.ok(looksLikeCollectionQuery('我的笔记之间有什么联系'));
+  assert.ok(asksAboutOwnNotes('我的 vault 里有什么'));
+  assert.ok(asksAboutOwnNotes('wo de vault 里有什么内容'));
+});
+
+test('three mentions in a long note are still mentions; three in a short one are about', () => {
+  const long = ('Long note about something else. '.repeat(120)) + ' coffee coffee coffee ' + ('More about something else. '.repeat(120));
+  const short = 'Coffee today. Coffee grind was coarse. Coffee again tomorrow.';
+  const bodies = new Map([['long.md', long], ['short.md', short], ['x.md', 'tea'], ['y.md', 'water']]);
+  const tier = Object.fromEntries(rescoreWithBodies('coffee', [], bodies).map((h) => [h.path, h.tier]));
+  assert.equal(tier['long.md'], 'mentions');
+  assert.equal(tier['short.md'], 'about');
+});
+
+test('a list question can lower the bar to any mention of the subject', () => {
+  const bodies = new Map<string, string>();
+  for (let i = 0; i < 20; i++) bodies.set(`n${i}.md`, i < 12 ? `uses js once: main.js ${i}` : `nothing ${i}`);
+  // js is in 60% of notes: light weight, below the answer threshold …
+  assert.equal(rescoreWithBodies('which notes mention js', [], bodies, 12).length, 0);
+  // … but a list question asks for exactly those notes.
+  assert.equal(rescoreWithBodies('which notes mention js', [], bodies, 12, 0.05).length, 12);
+});
+
+test('French and Spanish two-letter function words are not search terms', () => {
+  assert.deepEqual(queryTerms('quelles notes parlent de design'), ['design']);
+  const bodies = new Map([['a.md', 'de la de la design'], ['b.md', 'de de de']]);
+  const wt = weightedTerms('quelles notes parlent de design', bodies);
+  assert.ok(!wt.some((w) => w.t === 'de'));
 });
