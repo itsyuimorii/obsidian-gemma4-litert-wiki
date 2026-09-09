@@ -19,6 +19,7 @@ import {
   rescoreWithBodies,
   VAULT_MATCH_MIN,
   vaultHistoryText,
+  weightedTerms,
   type VaultDoc,
 } from '../src/pure.ts';
 
@@ -295,4 +296,26 @@ test('a list answer goes back as one line that names no note', () => {
 test('other shapes keep their content', () => {
   assert.equal(vaultHistoryText('none', 'x'), undefined);
   assert.equal(vaultHistoryText('overview', 'x'), undefined);
+});
+
+// --- excerpting follows the weights ----------------------------------------
+
+test('the rare word late in a note wins the budget over a common word on line one', () => {
+  // "about" on every line from the top; "coffee" once, far down.
+  const filler = 'This line is about something or other and nothing more. '.repeat(40);
+  const body = filler + 'Finally: the one paragraph about coffee, grind size and the shot.' + ' Tail. '.repeat(20);
+  const bodies = new Map([['a.md', body], ['b.md', 'about about about'], ['c.md', 'about this and that']]);
+  const wt = weightedTerms('what did I write about coffee', bodies)
+    .filter((w) => w.weight > 0)
+    .sort((a, b) => b.weight - a.weight)
+    .map(({ t, whole }) => ({ t, whole }));
+  assert.equal(wt[0]?.t, 'coffee', JSON.stringify(wt));
+  const out = excerptAround(body, wt, 400, 120);
+  assert.ok(out.includes('paragraph about coffee'), out.slice(0, 120));
+});
+
+test('a whole-word term drives the excerpt too', () => {
+  const body = 'x '.repeat(300) + 'The build writes main.js and a js helper. ' + 'y '.repeat(300);
+  const out = excerptAround(body, [{ t: 'js', whole: true }], 200, 60);
+  assert.ok(out.includes('js helper'));
 });

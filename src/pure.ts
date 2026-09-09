@@ -1392,28 +1392,68 @@ function countIn(hay: string, term: string, whole: boolean, cap = 3): number {
  * are identical — the same file kept in two folders — count once, the
  * first path kept.
  */
+/** A query term with the weight this vault gives it. See weightedTerms. */
+export interface WeightedTerm {
+  t: string;
+  /** Match as a whole word (two-letter tokens) rather than as a substring. */
+  whole: boolean;
+  /** 1 for a term unique to one note, 0 for one in more than half of them. */
+  weight: number;
+}
+
+/** One entry per distinct body, lower-cased; a duplicate keeps only the first path. */
+function distinctDocs(bodies: ReadonlyMap<string, string>): [string, string][] {
+  const seen = new Set<string>();
+  const docs: [string, string][] = [];
+  for (const [path, body] of bodies) {
+    const key = body.trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    docs.push([path, key.toLowerCase()]);
+  }
+  return docs;
+}
+
+/**
+ * The question's terms, each weighted by how rare it is across `bodies`:
+ * log((N+1)/df) / log(N+1), so one for a term unique to one note, falling
+ * to zero for a term in more than half of them — this vault's own stopword,
+ * a connective piece or a word the vault is about as a whole. Language-
+ * agnostic, computed from the bodies at hand, no list to maintain. Used by
+ * the ranking and by the excerpting, which must agree on which words
+ * matter: ranking a note up for "coffee" and then sending the model the
+ * paragraphs around "about" and "what" was how a matched note came back
+ * as "does not mention coffee".
+ */
+export function weightedTerms(question: string, bodies: ReadonlyMap<string, string>): WeightedTerm[] {
+  const long = queryTerms(question);
+  const short = shortTerms(question);
+  const terms: WeightedTerm[] = [
+    ...long.map((t) => ({ t, whole: false, weight: 0 })),
+    ...short.map((t) => ({ t, whole: true, weight: 0 })),
+  ];
+  const docs = distinctDocs(bodies);
+  const n = docs.length;
+  if (!n) return terms.map((w) => ({ ...w, weight: 1 }));
+  for (const w of terms) {
+    let df = 0;
+    for (const [, hay] of docs) if (countIn(hay, w.t, w.whole, 1) > 0) df++;
+    w.weight = df === 0 || df / n > 0.5 ? 0 : Math.log((n + 1) / df) / Math.log(n + 1);
+  }
+  return terms;
+}
+
 export function rescoreWithBodies(
   question: string,
   prior: readonly VaultHit[],
   bodies: ReadonlyMap<string, string>,
   max = 5
 ): VaultHit[] {
-  const long = queryTerms(question);
-  const short = shortTerms(question);
-  if (!long.length && !short.length) return [];
+  const terms = weightedTerms(question, bodies);
+  if (!terms.length) return [];
   const priorScore = new Map<string, number>(prior.map((h) => [h.path, h.score]));
-
-  // One entry per distinct body; a duplicate keeps only the first path.
-  const seenBody = new Map<string, string>();
-  const docs: [string, string][] = [];
-  for (const [path, body] of bodies) {
-    const key = body.trim();
-    if (seenBody.has(key)) continue;
-    seenBody.set(key, path);
-    docs.push([path, key.toLowerCase()]);
-  }
-  const n = docs.length;
-  if (!n) {
+  const docs = distinctDocs(bodies);
+  if (!docs.length) {
     return [...priorScore.entries()]
       .map(([path, score]) => ({ path, score }))
       .filter((h) => h.score >= VAULT_MATCH_MIN)
@@ -1421,27 +1461,15 @@ export function rescoreWithBodies(
       .slice(0, max);
   }
 
-  const terms: { t: string; whole: boolean }[] = [
-    ...long.map((t) => ({ t, whole: false })),
-    ...short.map((t) => ({ t, whole: true })),
-  ];
-  const counts = new Map<string, number[]>();
-  const df = new Array<number>(terms.length).fill(0);
-  for (const [path, hay] of docs) {
-    const row = terms.map(({ t, whole }) => countIn(hay, t, whole));
-    row.forEach((c, i) => { if (c > 0) df[i]++; });
-    counts.set(path, row);
-  }
-  // A term in more than half the notes is this vault's own stopword — a
-  // connective piece, a word the vault is about as a whole — and says
-  // nothing about which note is meant.
-  const weight = df.map((d) => (d === 0 || d / n > 0.5 ? 0 : Math.log((n + 1) / d) / Math.log(n + 1)));
-
   const scored: VaultHit[] = [];
   const bodyPaths = new Set(docs.map(([p]) => p));
-  for (const [path, row] of counts) {
+  for (const [path, hay] of docs) {
     let score = priorScore.get(path) ?? 0;
-    row.forEach((c, i) => { if (c > 0) score += (1 + c) * weight[i]; });
+    for (const w of terms) {
+      if (w.weight === 0) continue;
+      const c = countIn(hay, w.t, w.whole);
+      if (c > 0) score += (1 + c) * w.weight;
+    }
     if (score >= VAULT_MATCH_MIN) scored.push({ path, score });
   }
   // Metadata-only hits whose bodies were not read (large vaults) still count.
@@ -1493,25 +1521,55 @@ export function looksLikeListQuery(question: string): boolean {
 
 /**
  * The part of a note worth sending: windows around where the question's
- * terms occur, merged and joined with ellipses, capped in characters. The
- * alternative — the first N tokens of the note — sends the introduction of a
- * long note whose one mention of the subject is in paragraph nine, and the
- * model then summarises the introduction. Falls back to the opening when no
- * term is found (an attached note, or a title-only match).
+ * terms occur, merged and joined with ellipses, capped in characters.
+ *
+ * Terms are taken in the order given, which the caller makes heaviest
+ * first, and each term's windows are added only while the cap allows —
+ * so the paragraphs around the rare word that got this note ranked are
+ * what arrive, and the paragraphs around a word found in every note are
+ * what get left out. Taking windows in document order instead let a
+ * connective piece that appears on line one spend the whole budget before
+ * the one mention of the subject on line ninety. A plain string is a
+ * substring term; `{ t, whole: true }` matches as a whole word.
+ *
+ * Falls back to the opening when no term is found (an attached note, or a
+ * title-only match).
  */
-export function excerptAround(body: string, terms: readonly string[], maxChars: number, radius = 350): string {
+export function excerptAround(
+  body: string,
+  terms: readonly (string | { t: string; whole: boolean })[],
+  maxChars: number,
+  radius = 350
+): string {
   const text = body.trim();
   if (text.length <= maxChars) return text;
   const hay = text.toLowerCase();
   const spans: [number, number][] = [];
-  for (const t of terms) {
+  let budget = maxChars;
+  for (const term of terms) {
+    const t = typeof term === 'string' ? term : term.t;
+    const whole = typeof term === 'string' ? false : term.whole;
     if (!t) continue;
-    let i = hay.indexOf(t);
     let n = 0;
-    while (i !== -1 && n < 4) {
-      spans.push([Math.max(0, i - radius), Math.min(text.length, i + t.length + radius)]);
+    let i = -1;
+    const re = whole ? new RegExp(`(?<![a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`, 'g') : null;
+    for (;;) {
+      if (re) {
+        const m = re.exec(hay);
+        i = m ? m.index : -1;
+      } else {
+        i = hay.indexOf(t, i + 1);
+      }
+      if (i === -1 || n >= 4) break;
+      const a = Math.max(0, i - radius);
+      const b = Math.min(text.length, i + t.length + radius);
+      // Only what this window adds beyond windows already taken counts.
+      const covered = spans.reduce((acc, [x, y]) => acc + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0);
+      const cost = b - a - covered;
+      if (cost > budget) break;
+      budget -= cost;
+      spans.push([a, b]);
       n++;
-      i = hay.indexOf(t, i + t.length);
     }
   }
   if (!spans.length) return `${text.slice(0, maxChars).trimEnd()}…`;
@@ -1526,13 +1584,9 @@ export function excerptAround(body: string, terms: readonly string[], maxChars: 
   for (const [a, b] of merged) {
     const piece = text.slice(a, b).trim();
     const sep = out ? '\n…\n' : a > 0 ? '…' : '';
-    if (out.length + sep.length + piece.length > maxChars) {
-      const room = maxChars - out.length - sep.length;
-      if (room > 80) out += sep + piece.slice(0, room).trimEnd() + '…';
-      break;
-    }
     out += sep + piece;
   }
+  if (out.length > maxChars) out = `${out.slice(0, maxChars).trimEnd()}…`;
   return out || `${text.slice(0, maxChars).trimEnd()}…`;
 }
 

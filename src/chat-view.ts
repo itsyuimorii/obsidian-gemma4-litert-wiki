@@ -7,12 +7,12 @@ import {
   looksLikeListQuery,
   looksLikeRecentQuery,
   looksLikeRefusal,
-  queryTerms,
   rankVaultDocs,
   rescoreWithBodies,
   standingInstructions,
   stripLeadingRefusal,
   vaultHistoryText,
+  weightedTerms,
   type VaultDoc,
 } from './pure';
 import {
@@ -1669,7 +1669,12 @@ export class ChatView extends ItemView {
       VAULT_NOTE_TOKENS,
       Math.max(300, Math.floor((budget - estimateTokens(attachments.blocks)) / Math.max(1, hits.length)))
     );
-    const terms = queryTerms(question);
+    // The same weights the ranking used, heaviest first: the excerpt of a
+    // note is the text around the words that got it here.
+    const terms = weightedTerms(question, bodies)
+      .filter((w) => w.weight > 0)
+      .sort((a, b) => b.weight - a.weight)
+      .map(({ t, whole }) => ({ t, whole }));
     let material = '';
     for (const h of hits) {
       const body = bodies.get(h.path) ?? '';
