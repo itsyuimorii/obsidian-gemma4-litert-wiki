@@ -12,6 +12,7 @@ import {
   rescoreWithBodies,
   standingInstructions,
   stripLeadingRefusal,
+  vaultHistoryText,
   type VaultDoc,
 } from './pure';
 import {
@@ -2098,10 +2099,10 @@ export class ChatView extends ItemView {
     for (let i = this.turns.length - 1; i >= 0; i--) {
       const t = this.turns[i];
       if (t.grounding !== grounding) continue;
-      const cost = estimateTokens(t.content);
+      const cost = estimateTokens(t.historyText ?? t.content);
       if (spent + cost > ceiling) break;
       spent += cost;
-      picked.unshift({ role: t.role, content: t.content });
+      picked.unshift({ role: t.role, content: t.historyText ?? t.content });
     }
     // Never open on an assistant turn: a leading answer with no question in
     // front of it reads as something the user said.
@@ -2230,6 +2231,7 @@ export class ChatView extends ItemView {
       // the notes say" and "what I know" apart in one reply lets them bleed;
       // two prompts with different rules cannot. The transcript carries both
       // in one turn so a follow-up sees what was actually said.
+      const groundedPart = answer;
       if (context.vault?.kind === 'both' && !this.stopRequested) {
         body.createDiv({ cls: 'gemma4-chat-part-label gemma4-chat-part-label-adds', text: 'Gemma 4 E4B adds' });
         const typing2 = this.showTypingIndicator(body);
@@ -2261,6 +2263,7 @@ export class ChatView extends ItemView {
         content: answer,
         sources: context.ungrounded ? [] : context.sources,
         grounding: context.grounding,
+        historyText: context.vault ? vaultHistoryText(context.vault.kind, groundedPart) : undefined,
       });
       void this.persistThread();
       // Ungrounded answers can't be saved to the wiki — filing model guesses

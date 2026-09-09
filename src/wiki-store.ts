@@ -1422,6 +1422,16 @@ export interface ChatTurnRecord {
    * confidently about the wrong one.
    */
   grounding?: string;
+  /**
+   * What this turn contributes to the model's history, when that is not
+   * `content`. A Vault answer is shown as two parts — the notes, then the
+   * model on its own under a heading — and the model, handed that whole
+   * thing as its own earlier reply, reproduces the heading and the second
+   * part inside its next first part. Only the first part goes back. A list
+   * of notes goes back as one line, so the names in it do not surface as
+   * "material" in a later answer about something else.
+   */
+  historyText?: string;
 }
 
 

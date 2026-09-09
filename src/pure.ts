@@ -1594,3 +1594,19 @@ export function dedupeByName(hits: readonly VaultHit[]): VaultHit[] {
   }
   return out;
 }
+
+/**
+ * What a Vault answer feeds back into the conversation history. See
+ * ChatTurnRecord.historyText. `kind` is the answer's shape; `grounded` is
+ * the first part, before the model's own addition.
+ */
+export function vaultHistoryText(kind: 'none' | 'overview' | 'list' | 'both', grounded: string): string | undefined {
+  switch (kind) {
+    case 'both':
+      return grounded;
+    case 'list':
+      return '(A list of matching notes was shown here, with one line each.)';
+    default:
+      return undefined;
+  }
+}

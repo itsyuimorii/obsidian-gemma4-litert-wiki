@@ -18,6 +18,7 @@ import {
   rankVaultDocs,
   rescoreWithBodies,
   VAULT_MATCH_MIN,
+  vaultHistoryText,
   type VaultDoc,
 } from '../src/pure.ts';
 
@@ -277,4 +278,21 @@ test('two hits with the same note name keep only the first', () => {
     { path: 'z/csv batch.md', score: 2 },
   ]);
   assert.deepEqual(hits.map((h) => h.path), ['a/Bulkhead.md', 'a/CSV batch.md']);
+});
+
+// --- vaultHistoryText --------------------------------------------------------
+
+test('only the grounded part of a two-part answer goes back into history', () => {
+  const grounded = 'Your notes say X.';
+  assert.equal(vaultHistoryText('both', grounded), grounded);
+});
+
+test('a list answer goes back as one line that names no note', () => {
+  const t = vaultHistoryText('list', '- **W01** about closures\n- **Blind 75** algorithms');
+  assert.ok(t && !/W01|Blind/.test(t));
+});
+
+test('other shapes keep their content', () => {
+  assert.equal(vaultHistoryText('none', 'x'), undefined);
+  assert.equal(vaultHistoryText('overview', 'x'), undefined);
 });
