@@ -4,39 +4,85 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
-## Unreleased
+## 1.0.16 — 2026-09-09
 
-- **Vault search that knows a phrase from its words.** A two- or
-  three-word subject — *system design*, *React Native* — is looked for
-  whole; its words apart rank a note but never make it *about* the
-  subject, so a résumé with "system" in one line and "design" in another
-  stays a mention. The model's expansions are kept whole too: a one-word
-  Chinese or Japanese name is one term, a multi-word English one is a
-  phrase. An expansion makes a note *about* the subject only when the note
-  also names the subject as typed, or when the expansion is rare enough in
-  the vault to mean nothing else.
-- **About means the title or a tag, exactly.** A tag *react-native* is no
-  longer the word *react*; a heading ranks a note but is one section of a
-  note about something else. Body scores are divided by the square root of
-  the note's length, so the two longest work logs in a vault stop leading
-  every list.
-- **French, German and Spanish** list questions (*quelles notes*, *welche
+Vault mode, corrected. 1.0.15 made it the plugin's headline and its
+default; this is what a first session in it actually runs into.
+
+- **The question is understood before the vault is searched.** Lexical
+  search finds the word it is given: *js* found `main.js` and missed the
+  note on closures that never spells out JavaScript. The subject now goes
+  to the model first, in one short cached call, which answers what it is
+  and what it covers — javascript, ecmascript, closures, and the Chinese
+  and Japanese names. The search runs on your words plus those, yours
+  weighing more, and the line under the question says what it is looking
+  for. An expansion term matches as a whole word, so *web* is not
+  *WebView*, and a word the vault uses everywhere cannot promote a note on
+  its own.
+- **The Sources row is the notes this answer used.** A two-part answer fed
+  its own second half back as history, so *Gemma 4 E4B adds* appeared
+  twice — once written by the model above the Sources row and once by the
+  plugin below it — and notes named in an earlier list resurfaced as
+  material for a later question they had nothing to do with. A turn now
+  carries what it feeds back separately from what it shows.
+- **The excerpt is the text around the words that got the note ranked.**
+  Ranking weighted terms by rarity and excerpting did not, so a connective
+  piece on line one spent the whole budget before the one mention of the
+  subject on line ninety, and a note ranked up for *coffee* reached the
+  model without the word in it — which the model then reported, truthfully,
+  as not mentioning coffee. One weighting serves both now.
+- **Notes first, then Gemma 4 E4B, always.** A list of matching notes ended
+  at the list; it now carries the model's own answer about the subject
+  under it, as the two-part answer does. Asked what you wrote about
+  something no note is about, the answer is where it comes up in the ones
+  that mention it, then the model's own answer — not a plea that it cannot
+  see your files, which is what a 4B model says when handed the question as
+  typed.
+- **A question about the collection gets the collection.** Asked what
+  connects your notes, Vault used to retrieve the notes containing the word
+  *connects*. It now answers from the folder layout and recent titles,
+  labelled as that, and points at Wiki, where the cards can hold enough to
+  answer properly. Hits are deduplicated by note name, so a vault that
+  keeps the same note in two folders shows it once.
+- **Search that reads words, not fragments.** Sliding two-character pieces
+  of a Chinese question produced non-words that occurred in one note by
+  accident and, under rarity weighting, became the heaviest term in the
+  question. Words now come from `Intl.Segmenter`, with stoplists in
+  English, French, German, Spanish, Chinese and Japanese, an instruction
+  stoplist in the same six, elisions split, and lone Chinese characters
+  rejoined. A chip-filled question retrieves by what follows its colon. The
+  rarity decay is smooth, so a term in half the vault is worth a little
+  rather than nothing.
+- **A phrase is looked for whole.** A two- or three-word subject —
+  *system design*, *React Native* — is one term. Its words apart rank a
+  note but never make it *about* the subject, so a résumé with "system" in
+  one line and "design" in another stays a mention. The model's expansions
+  are kept whole too: a one-word Chinese or Japanese name is one term, a
+  multi-word English one is a phrase.
+- **About means the title or a tag, exactly.** Each hit is labelled *about*
+  or *mentions*, and only the *about* notes are read into the answer. A tag
+  `react-native` is no longer the word *react*; a heading ranks a note but
+  is one section of a note about something else. Body scores are divided by
+  the square root of the note's length, so the two longest work logs in a
+  vault stop leading every list.
+- **French, German and Spanish.** List questions (*quelles notes*, *welche
   Notizen*, *qué notas*) are drawn as links like the English and Japanese
   ones, and *mes notes* / *meine Notizen* / *mis notas* are read as being
-  about the vault.
-- **The panel opens on This note.** Vault and Wiki are one pill away. A
+  about your vault.
+- **The panel opens on This note.** The note already in front of you is a
+  lighter first move than a search across everything, and it is the one
+  answer you can check at a glance. Vault and Wiki are one pill away. A
   saved default of *vault* goes back to *note*, because 1.0.15 wrote that
-  value into every install that had said *direct* — it was this plugin's
+  value into every install that had said *direct*: it was this plugin's
   choice, not a person's. A saved *note* or *wiki* is untouched.
 - **Every screen names the wiki folder and calls each mode one thing.**
-  Wiki mode's own screen says it reads the cards in `gemma-wiki/`, in its
-  title, in what it is good for and in the input placeholder. Wiki mode
+  Wiki mode's own screen says it reads the cards in `gemma-wiki/` — in its
+  title, in what it is good for, and in the input placeholder. Wiki mode
   used to describe Vault as "a note as you wrote it, filed or not" while
-  This note called it "any note in your vault": one sentence per mode now,
-  wherever it is pointed at from. The mode name in those sentences is an
-  underlined word in the accent colour rather than a third pill on a screen
-  that already has two rows of buttons, and it no longer wraps away from
-  its arrow.
+  This note called it "any note in your vault"; there is one sentence per
+  mode now, wherever it is pointed at from. The mode name in those
+  sentences is an underlined word in the accent colour instead of a third
+  pill on a screen that already carries two rows of buttons.
 
 ## 1.0.15 — 2026-09-09
 
