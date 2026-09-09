@@ -1471,13 +1471,21 @@ function byScore(a: VaultHit, b: VaultHit): number {
  * Returns only notes that scored, best first, at most `max`. The body pass
  * (`rescoreWithBodies`) refines the top of this list.
  */
-export function rankVaultDocs(question: string, docs: readonly VaultDoc[], max = 60): VaultHit[] {
+export function rankVaultDocs(
+  question: string,
+  docs: readonly VaultDoc[],
+  max = 60,
+  extra: readonly string[] = []
+): VaultHit[] {
   const subject = subjectOf(question);
-  const terms = queryTerms(subject);
+  const own = queryTerms(subject);
+  const ownShort = shortTerms(subject);
+  const more = expansionTerms(extra, new Set([...own, ...ownShort]));
+  const terms = [...own, ...more.filter((m) => !m.whole).map((m) => m.t)];
   // Two-letter tokens are dropped by queryTerms, rightly — "is", "of", "an"
   // — but "js", "ai", "go" are how people tag things. Matched exactly against
   // tags only, never as substrings, so "of" cannot find "#coffee".
-  const short = shortTerms(subject);
+  const short = [...ownShort, ...more.filter((m) => m.whole).map((m) => m.t)];
   if (!terms.length && !short.length) return [];
   const hits: VaultHit[] = [];
   for (const d of docs) {
@@ -1563,8 +1571,28 @@ export interface WeightedTerm {
   t: string;
   /** Match as a whole word (two-letter tokens) rather than as a substring. */
   whole: boolean;
-  /** 1 for a term unique to one note, 0 for one in more than half of them. */
+  /** 1 for a term unique to one note, decaying towards 0 for one in all of them. */
   weight: number;
+  /** From the model's expansion of the subject, not from the question itself. */
+  expanded?: boolean;
+}
+
+/** How much an expansion term counts relative to a word the user typed. */
+const EXPANSION_WEIGHT = 0.7;
+
+/**
+ * Turn the expansion terms into the same shape as the question's own:
+ * long ones as substrings, two-letter Latin ones as whole words, the
+ * stoplists applied, anything already in the question dropped.
+ */
+function expansionTerms(extra: readonly string[], own: ReadonlySet<string>): { t: string; whole: boolean }[] {
+  const out: { t: string; whole: boolean }[] = [];
+  const seen = new Set<string>();
+  for (const raw of extra) {
+    for (const t of queryTerms(raw)) if (!own.has(t) && !seen.has(t)) { seen.add(t); out.push({ t, whole: false }); }
+    for (const t of shortTerms(raw)) if (!own.has(t) && !seen.has(t)) { seen.add(t); out.push({ t, whole: true }); }
+  }
+  return out;
 }
 
 /** One entry per distinct body, lower-cased; a duplicate keeps only the first path. */
@@ -1591,13 +1619,19 @@ function distinctDocs(bodies: ReadonlyMap<string, string>): [string, string][] {
  * paragraphs around "about" and "what" was how a matched note came back
  * as "does not mention coffee".
  */
-export function weightedTerms(question: string, bodies: ReadonlyMap<string, string>): WeightedTerm[] {
+export function weightedTerms(
+  question: string,
+  bodies: ReadonlyMap<string, string>,
+  extra: readonly string[] = []
+): WeightedTerm[] {
   const subject = subjectOf(question);
   const long = queryTerms(subject);
   const short = shortTerms(subject);
+  const more = expansionTerms(extra, new Set([...long, ...short]));
   const terms: WeightedTerm[] = [
     ...long.map((t) => ({ t, whole: false, weight: 0 })),
     ...short.map((t) => ({ t, whole: true, weight: 0 })),
+    ...more.map(({ t, whole }) => ({ t, whole, weight: 0, expanded: true })),
   ];
   const docs = distinctDocs(bodies);
   const n = docs.length;
@@ -1610,6 +1644,7 @@ export function weightedTerms(question: string, bodies: ReadonlyMap<string, stri
     // while near-identical neighbours at 45% survived. At half the notes a
     // term is now worth about 0.12; at all of them, next to nothing.
     w.weight = df === 0 ? 0 : Math.log((n + 1) / df) / Math.log(n + 1);
+    if (w.expanded) w.weight *= EXPANSION_WEIGHT;
   }
   return terms;
 }
@@ -1619,9 +1654,10 @@ export function rescoreWithBodies(
   prior: readonly VaultHit[],
   bodies: ReadonlyMap<string, string>,
   max = 5,
-  min = VAULT_MATCH_MIN
+  min = VAULT_MATCH_MIN,
+  extra: readonly string[] = []
 ): VaultHit[] {
-  const terms = weightedTerms(question, bodies);
+  const terms = weightedTerms(question, bodies, extra);
   if (!terms.length) return [];
   const priorScore = new Map<string, number>(prior.map((h) => [h.path, h.score]));
   const docs = distinctDocs(bodies);
@@ -1851,4 +1887,33 @@ export function vaultHistoryText(kind: 'none' | 'overview' | 'list' | 'both', gr
     default:
       return undefined;
   }
+}
+
+/**
+ * The model's expansion of a search subject, parsed: one keyword per line,
+ * bullets and numbering stripped, at most eight, none longer than thirty
+ * characters, nothing that is only a stopword, nothing already in the
+ * subject. The model is asked for the full name of an abbreviation, the
+ * synonyms, the main sub-topics and the Chinese and Japanese names — so
+ * "js" reaches the note about closures that never spells out JavaScript.
+ * Anything else it says is dropped: a sentence is not a keyword.
+ */
+export function parseExpansion(raw: string, subject: string): string[] {
+  const own = new Set([...queryTerms(subject), ...shortTerms(subject)]);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const line of raw.split(/\n|[,，;；、]/)) {
+    const k = line.replace(/^[\s\-*•·\d.)\]]+/, '').replace(/[.。:：]+$/, '').trim().toLowerCase();
+    if (!k || k.length > 30 || k.length < 2) continue;
+    if (/\s.*\s.*\s.*\s/.test(k)) continue; // five words or more is a sentence
+    const terms = [...queryTerms(k), ...shortTerms(k)];
+    if (!terms.length) continue;
+    if (terms.every((t) => own.has(t))) continue;
+    const key = terms.join(' ');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(k);
+    if (out.length >= 8) break;
+  }
+  return out;
 }

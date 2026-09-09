@@ -7,10 +7,12 @@ import {
   looksLikeListQuery,
   looksLikeRecentQuery,
   looksLikeRefusal,
+  parseExpansion,
   rankVaultDocs,
   rescoreWithBodies,
   standingInstructions,
   stripLeadingRefusal,
+  subjectOf,
   VAULT_MATCH_MIN,
   vaultHistoryText,
   weightedTerms,
@@ -30,6 +32,7 @@ import {
   normalizePath,
 } from 'obsidian';
 import type { Conversation } from '@litert-lm/core';
+import { textOf } from './model-output';
 import type LiteRtSpikePlugin from './main';
 import {
   appendLog,
@@ -302,6 +305,34 @@ const ADDS_PROMPT =
 const VAULT_MATERIAL_TOKENS = 4800;
 const VAULT_NOTE_TOKENS = 1200;
 
+/**
+ * The subject of a search, expanded by the model before the search runs.
+ * Lexical search finds the word it is given; "js" finds main.js and misses
+ * the note on closures that never spells out JavaScript. Asked first what
+ * "js" is and what it covers, the model hands back javascript, ecmascript,
+ * closures, 闭包, 作用域 — and the search finds the notes that are about it.
+ */
+const EXPAND_PROMPT =
+  'You expand a search subject into keywords for finding notes in a personal vault. Reply with ' +
+  'up to 8 keywords, one per line, and nothing else: the full name of any abbreviation, close ' +
+  'synonyms, the two or three most common sub-topics, and the usual Chinese and Japanese names ' +
+  'when the subject is technical. Single words or short phrases only. No numbering, no ' +
+  'explanations, no sentences.';
+
+/**
+ * Nothing in the notes is about the subject: the model answers on its own,
+ * under a line that has already said so and named the passing mentions.
+ * Saying it again — "I do not have access to your notes" — is what the
+ * old prompt produced for "what did I write about coffee", and it read as
+ * a malfunction under a line listing six notes.
+ */
+const NONE_PROMPT =
+  "The user's own notes have already been searched: nothing in them is about the subject of " +
+  'this question, and that has already been said to the user. Answer from your own general ' +
+  'knowledge about the SUBJECT. Never say you lack access to notes or files, and never ' +
+  'refuse on those grounds. If the question is phrased as being about the notes ("what did I ' +
+  'write about X"), answer about X itself. Be concise. You may use markdown.';
+
 /** The model on its own: no notes, and it must not pretend otherwise. */
 const DIRECT_PROMPT =
   "Answer the user's question from your own general knowledge. You do NOT have access to " +
@@ -372,6 +403,10 @@ export class ChatView extends ItemView {
   private modeButtons: { note: HTMLElement; wiki: HTMLElement; vault: HTMLElement } | null = null;
   /** Set by Stop; a two-part Vault answer checks it before starting part two. */
   private stopRequested = false;
+  /** The "Searching N notes…" line, while a Vault search runs; the expansion is written into it. */
+  private searchingEl: HTMLElement | null = null;
+  /** Subject → the model's expansion, so a repeated subject costs no second call. */
+  private expansions = new Map<string, string[]>();
   private expandButton!: HTMLButtonElement;
   private inputExpanded = false;
   private suggestionRow!: HTMLElement;
@@ -1530,6 +1565,39 @@ export class ChatView extends ItemView {
   }
 
   /**
+   * Ask the model what a subject is and what it covers, before searching for
+   * it. One short call, greedy, cached per subject. Skipped for a subject
+   * that is already specific (five or more words and not short) and on any
+   * failure, in which case the search runs on the typed words alone.
+   */
+  private async expandSubject(subject: string): Promise<string[]> {
+    const key = subject.trim().toLowerCase();
+    const cached = this.expansions.get(key);
+    if (cached) return cached;
+    if (!key || ([...key.matchAll(/\S+/g)].length >= 5 && key.length > 24)) return [];
+    let terms: string[] = [];
+    let conversation: Conversation | undefined;
+    try {
+      const engine = await this.plugin.ensureEngine(() => undefined);
+      const { SamplerType } = await import('@litert-lm/core');
+      conversation = await engine.createConversation({
+        preface: { messages: [{ role: 'system', content: EXPAND_PROMPT }] },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 96 },
+      });
+      this.activeConversation = conversation;
+      const message = await conversation.sendMessage(subject);
+      terms = parseExpansion(textOf(message.content), subject);
+    } catch (err) {
+      console.warn('[gemma-litert-wiki] subject expansion skipped', err);
+      terms = [];
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+    this.expansions.set(key, terms);
+    return terms;
+  }
+
+  /**
    * Vault mode: search every raw note first, then decide what the answer is
    * made of. This is what every "chat with your vault" is underneath — the
    * plugin finds the few notes that matter, the model reads those — and the
@@ -1624,7 +1692,16 @@ export class ChatView extends ItemView {
     };
     if (looksLikeCollectionQuery(question)) return overview();
 
-    const ranked = rankVaultDocs(question, docs, 80);
+    // What the subject IS, from the model, before what the notes SAY. The
+    // line that said "Searching N notes…" now says what it is searching
+    // for, so the reading the model gave the question is visible.
+    const subject = subjectOf(question);
+    const extra = await this.expandSubject(subject);
+    if (this.searchingEl) {
+      const shown = [subject, ...extra].slice(0, 7).join(', ');
+      this.searchingEl.setText(`Searching ${files.length} notes for: ${shown}${extra.length > 6 ? '…' : ''}`);
+    }
+    const ranked = rankVaultDocs(question, docs, 80, extra);
     const rankedSet = new Set(ranked.map((h) => h.path));
     const toRead = files.length <= 400 ? files : files.filter((f) => rankedSet.has(f.path));
     const bodies = new Map<string, string>();
@@ -1633,7 +1710,7 @@ export class ChatView extends ItemView {
     // bar is only "a subject term is in it"; an answer question keeps the
     // rarity threshold, since one mention of a common word is not material.
     const listQuestion = looksLikeListQuery(question);
-    const allHits = dedupeByName(rescoreWithBodies(question, ranked, bodies, 12, listQuestion ? 0.05 : VAULT_MATCH_MIN));
+    const allHits = dedupeByName(rescoreWithBodies(question, ranked, bodies, 12, listQuestion ? 0.05 : VAULT_MATCH_MIN, extra));
     const about = allHits.filter((h) => h.tier === 'about');
     const mentions = allHits.filter((h) => h.tier === 'mentions');
     // The notes read are the ones ABOUT the subject; a note that names it
@@ -1656,15 +1733,22 @@ export class ChatView extends ItemView {
       return { title: (seen.get(base) ?? 0) > 1 && folder ? `${base} (${folder})` : base, linkPath };
     };
 
-    if (!hits.length && !attachments.blocks && !(listQuestion && mentions.length)) {
+    // "What did I write about coffee" when nothing is about coffee and six
+    // notes mention it: the answer is where it comes up in those six, one
+    // line each — a list, followed by the model's own answer about coffee.
+    // Asking the model the question as typed produced "I do not have access
+    // to your notes" under a line that had just listed the notes.
+    const aboutOwn = asksAboutOwnNotes(question);
+    const asList = listQuestion || (aboutOwn && !hits.length && mentions.length > 0);
+    if (!hits.length && !attachments.blocks && !(asList && mentions.length)) {
       // "What's in my vault" matches no note by its words, because it is
       // about all of them. Hand the model the shape instead.
-      if (asksAboutOwnNotes(question)) return overview();
+      if (aboutOwn) return overview();
       // Nothing in the notes is ABOUT this. The model answers on its own,
       // under one line that says so — and names the notes that mention it
       // in passing, as links, so nothing found is hidden.
       return {
-        systemPrompt: DIRECT_PROMPT,
+        systemPrompt: NONE_PROMPT,
         sourcePath: indexPath(),
         sources: [],
         ungrounded: true,
@@ -1683,7 +1767,7 @@ export class ChatView extends ItemView {
     );
     // The same weights the ranking used, heaviest first: the excerpt of a
     // note is the text around the words that got it here.
-    const terms = weightedTerms(question, bodies)
+    const terms = weightedTerms(question, bodies, extra)
       .filter((w) => w.weight > 0)
       .sort((a, b) => b.weight - a.weight)
       .map(({ t, whole }) => ({ t, whole }));
@@ -1699,7 +1783,7 @@ export class ChatView extends ItemView {
     material += attachments.blocks;
     const sources = [...attachments.sources, ...hitSources];
 
-    if (listQuestion && allHits.length) {
+    if (asList && allHits.length) {
       // Every hit, about first, each labelled; the model gets an excerpt of
       // each and writes one line, told which tier the plugin put it in.
       const listed = [...about, ...mentions].slice(0, 8);
@@ -1726,7 +1810,7 @@ export class ChatView extends ItemView {
         sourcePath: indexPath(),
         sources: listed2,
         grounding: 'vault',
-        vault: { kind: 'list', hits: listed2 },
+        vault: { kind: 'list', hits: listed2, adds: aboutOwn && !listQuestion },
       };
     }
 
@@ -1784,6 +1868,8 @@ export class ChatView extends ItemView {
     vault?: {
       kind: 'none' | 'overview' | 'list' | 'both';
       hits: { title: string; linkPath: string; tier?: 'about' | 'mentions' }[];
+      /** Run the model's own answer after the grounded one (a list that stood in for "what did I write about X"). */
+      adds?: boolean;
     };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
@@ -2172,6 +2258,7 @@ export class ChatView extends ItemView {
             text: `Searching ${this.app.vault.getMarkdownFiles().length} notes…`,
           })
         : null;
+    this.searchingEl = searching;
     this.emptyStateEl.hide();
     this.scrollToBottom();
     let context: Awaited<ReturnType<ChatView['buildContext']>>;
@@ -2179,6 +2266,7 @@ export class ChatView extends ItemView {
       context = await this.buildContext(question, ungrounded, wholeWiki, historyTokens);
     } finally {
       searching?.remove();
+      this.searchingEl = null;
     }
     if (!context) return;
 
@@ -2262,6 +2350,7 @@ export class ChatView extends ItemView {
         body,
         typing,
         sourcePath: context.sourcePath,
+        finalText: context.vault?.kind === 'none' ? stripLeadingRefusal : undefined,
       });
       conversation = first.conversation;
       answer = first.text;
@@ -2296,7 +2385,7 @@ export class ChatView extends ItemView {
       // two prompts with different rules cannot. The transcript carries both
       // in one turn so a follow-up sees what was actually said.
       const groundedPart = answer;
-      if (context.vault?.kind === 'both' && !this.stopRequested) {
+      if ((context.vault?.kind === 'both' || context.vault?.adds) && !this.stopRequested) {
         body.createDiv({ cls: 'gemma4-chat-part-label gemma4-chat-part-label-adds', text: 'Gemma 4 E4B adds' });
         const typing2 = this.showTypingIndicator(body);
         // The question is reframed, not forwarded: asked "what did I write

@@ -13,6 +13,7 @@ import { asksAboutOwnNotes } from '../src/pure.ts';
 import {
   dedupeByName,
   excerptAround,
+  parseExpansion,
   queryTerms,
   subjectOf,
   looksLikeListQuery,
@@ -430,4 +431,35 @@ test('French and Spanish two-letter function words are not search terms', () => 
   const bodies = new Map([['a.md', 'de la de la design'], ['b.md', 'de de de']]);
   const wt = weightedTerms('quelles notes parlent de design', bodies);
   assert.ok(!wt.some((w) => w.t === 'de'));
+});
+
+// --- expansion --------------------------------------------------------------------
+
+test('the model expansion is parsed into keywords and nothing else', () => {
+  const raw = 'JavaScript\n- ECMAScript\n2. closures\n* 闭包\n作用域, prototype\nJavaScript is a programming language used for the web.\njs\n\nnode.js';
+  const out = parseExpansion(raw, 'js');
+  assert.deepEqual(out, ['javascript', 'ecmascript', 'closures', '闭包', '作用域', 'prototype', 'node.js']);
+});
+
+test('expansion terms find the note that never spells out the abbreviation', () => {
+  const docs: VaultDoc[] = [
+    { path: 'w01.md', title: 'W01 执行上下文、作用域、闭包', tags: [], headings: [] },
+    { path: 'build.md', title: 'build notes', tags: [], headings: [] },
+  ];
+  const bodies = new Map([
+    ['w01.md', '闭包是函数和它的词法作用域的组合。'],
+    ['build.md', 'The build writes main.js to dist.'],
+  ]);
+  const extra = ['javascript', '闭包', '作用域'];
+  const hits = rescoreWithBodies('哪几篇笔记提到 js', rankVaultDocs('哪几篇笔记提到 js', docs, 60, extra), bodies, 5, 0.05, extra);
+  assert.equal(hits[0]?.path, 'w01.md');
+  assert.equal(hits[0]?.tier, 'about');
+});
+
+test('an expansion term weighs less than a typed one', () => {
+  const bodies = new Map([['a.md', 'closures everywhere'], ['b.md', 'javascript everywhere'], ['c.md', 'tea']]);
+  const wt = weightedTerms('javascript', bodies, ['closures']);
+  const typed = wt.find((w) => w.t === 'javascript')!;
+  const grown = wt.find((w) => w.t === 'closures')!;
+  assert.ok(grown.expanded && grown.weight < typed.weight);
 });
