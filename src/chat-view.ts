@@ -1,4 +1,4 @@
-import { formatVaultTree } from './pure';
+import { formatVaultTree, standingInstructions } from './pure';
 import {
   App,
   FuzzySuggestModal,
@@ -1668,7 +1668,7 @@ export class ChatView extends ItemView {
       conversation = await engine.createConversation({
         preface: {
           messages: [
-            { role: 'system', content: context.systemPrompt },
+            { role: 'system', content: context.systemPrompt + standingInstructions(this.plugin.settings.chatInstructions) },
             ...history.map((t) => ({ role: t.role, content: t.content })),
           ],
         },
