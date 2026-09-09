@@ -30,6 +30,8 @@ export interface GemmaWikiSettings {
   devCommands: boolean;
   staleDays: number;
   defaultMode: 'note' | 'wiki' | 'direct';
+  /** Appended to every chat system prompt; see standingInstructions in pure.ts. */
+  chatInstructions: string;
   /**
    * The last chat thread, so closing the panel does not discard it (#100).
    *
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   devCommands: false,
   staleDays: 30,
   defaultMode: 'note',
+  chatInstructions: '',
   scanQuietHours: 3,
   scanInclude: '',
   scanExclude: '',
@@ -160,6 +163,20 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
               type: 'dropdown',
               key: 'defaultMode',
               options: { note: 'This note', wiki: 'Wiki', direct: 'Direct' },
+            },
+          },
+          {
+            name: 'Standing instructions',
+            desc:
+              'Added to every answer in every mode — a language, a length, a tone, a format. ' +
+              'They shape how an answer is written, not what it may draw on: a grounded mode still ' +
+              'answers only from your material. Up to 2,000 characters.',
+            aliases: ['system prompt', 'custom instructions', 'language', 'persona'],
+            control: {
+              type: 'textarea',
+              key: 'chatInstructions',
+              rows: 3,
+              placeholder: 'Answer in Japanese. Keep answers under 150 words.',
             },
           },
         ],

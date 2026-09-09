@@ -1162,3 +1162,34 @@ export function suggestRelated(
   );
   return out.slice(0, max);
 }
+
+// ---------------------------------------------------------------------------
+// Standing instructions for chat
+// ---------------------------------------------------------------------------
+
+/** Longest standing-instruction text the prompt will carry, in characters. */
+export const CHAT_INSTRUCTIONS_MAX = 2000;
+
+/**
+ * The block appended to every chat system prompt when the user has written
+ * standing instructions in settings — "answer in Japanese", "keep it under
+ * 150 words", "use British spelling".
+ *
+ * It goes after the mode's own rules and says so, so a grounding rule and an
+ * instruction that pull in opposite directions resolve in favour of the
+ * grounding: an instruction can change how an answer is written, not what it
+ * is allowed to stand on. Empty or whitespace-only text yields an empty string
+ * so the prompt is untouched. Text over the cap is cut and the cut is marked,
+ * so a pasted essay does not silently lose its ending.
+ */
+export function standingInstructions(raw: string, max = CHAT_INSTRUCTIONS_MAX): string {
+  const text = raw.trim();
+  if (!text) return '';
+  const body = text.length > max ? `${text.slice(0, max).trimEnd()} […cut at ${max} characters]` : text;
+  return (
+    '\n\nThe user has set standing instructions for every answer. Follow them for tone, ' +
+    'language, length and format; where they conflict with the rules above about what ' +
+    'material an answer may draw on, the rules above win.\n' +
+    body
+  );
+}
