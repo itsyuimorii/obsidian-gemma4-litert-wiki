@@ -4,6 +4,46 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.15 — 2026-09-09
+
+Chat can finally read your vault. Direct becomes Vault, and it is the
+default.
+
+- **Vault mode.** Every question searches every note in your vault as
+  written — titles, tags, headings, then the bodies of the likely ones —
+  and the answer's shape follows from what was found. Notes matched: what
+  they say first, under *From your notes* with a Sources row, then the
+  model's own answer under *Gemma 4 E4B adds* with the usual warning, each
+  from its own conversation so the two never bleed. Nothing matched: one
+  line says so, and the model answers alone. Asked *which* notes cover
+  something, it lists them as links before the model speaks; asked what you
+  edited recently, it answers from file dates; asked what the vault is, with
+  nothing to match, it answers from the folder layout. The wiki folder is
+  excluded — that layer has its own mode.
+- **Search that survives a real vault.** Terms are weighted by how rare they
+  are in your notes, so the connective pieces a question splits into — most
+  of every note in a language without word spaces — count for nothing and
+  the longest note no longer wins every query. Two-letter tokens like `js`
+  match as whole words. Identical files in two folders count once. Each
+  note contributes the text around the question's words, capped, so five
+  long notes no longer mean a minute of prefill during which the panel
+  showed nothing.
+- **Three modes that look like three things.** The chip under the title
+  says what each reads and how much of it there is — *Your notes · 379
+  files*, *gemma-wiki/ · 12 cards, 2 concept pages*, or *empty*. The chip
+  rows differ in shape; Wiki gains *Added this week?*. The Sources row is
+  labelled *Notes* or *Cards*. The empty panel says what the mode reads,
+  what it is good for, and which question belongs in the other two. A
+  collection-shaped question asked in Vault — what connects, what is
+  missing — gets its answer and a line pointing at Wiki, or at Scan a
+  folder when nothing is filed yet.
+- **A question in the wrong mode is routed, not refused.** Under an answer
+  that retrieval could not ground or the model declined, buttons re-ask it
+  in the modes that can answer, without retyping.
+- **Standing instructions and the README** from 1.0.14 are unchanged. A
+  saved default of *direct* becomes *vault*. The pills read This note ·
+  Vault · Wiki.
+
 ## 1.0.14 — 2026-09-09
 
 One setting that reaches every answer, and a README that says who this is
