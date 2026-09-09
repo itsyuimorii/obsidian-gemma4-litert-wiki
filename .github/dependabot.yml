@@ -1,0 +1,25 @@
+# Two things drift if nobody watches them: the SHA-pinned actions in the
+# workflows, and the dev dependencies. Weekly, grouped, so an update is one PR
+# to look at rather than five. The plugin itself has no runtime dependencies
+# beyond @litert-lm/core, and that one is pinned on purpose — its version is
+# compiled into the bundle and the CDN path must match it exactly.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # Bumping the runtime is a release decision, not a chore: build.js bakes
+      # this version into the CDN URL the plugin fetches its WASM from.
+      - dependency-name: "@litert-lm/core"

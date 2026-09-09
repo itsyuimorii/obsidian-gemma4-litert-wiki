@@ -1,0 +1,26 @@
+name: Something it should do
+description: A feature, a change, or a case the plugin handles badly.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation, not the solution — what you had open, what you wanted from it.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today?
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you want instead?
+  - type: markdown
+    attributes:
+      value: |
+        Two things this plugin will not do, so you know before writing: it will not modify
+        your own notes without showing you the result first, and it will not file anything
+        into the wiki that did not come from a note you wrote. Requests that need either
+        will be closed with a pointer to why.
