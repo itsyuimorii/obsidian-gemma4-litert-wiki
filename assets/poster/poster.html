@@ -41,6 +41,54 @@
     font: 600 12px/1 var(--mono); letter-spacing: .14em; color: var(--green);
     background: var(--green-bg); border: 1px solid #CDEBDA; border-radius: 999px; padding: 10px 17px;
   }
+  /* Cover: copy runs the full width and the app window sits small at the
+     bottom right. The other posters make one point each; this one carries
+     the whole first paragraph, so it needs the room. */
+  .poster.cover { height: 670px; }
+  .poster.cover .copy { width: 1160px; max-width: 1160px !important; top: 64px; gap: 18px; }
+  .poster.cover h1 { font-size: 40px; max-width: 1100px; }
+  .poster.cover .sub { font-size: 19px; line-height: 1.55; max-width: 1040px; }
+  .pills { display: flex; gap: 10px; flex-wrap: wrap; }
+  .coverart { position: absolute; right: 48px; bottom: -118px; width: 796px; height: 648px;
+    transform: scale(.62); transform-origin: right bottom; }
+  /* Dark cover: the tour site's ground (#0C0916), text held to a narrow
+     column on the left so it reads as a caption rather than a wall, and the
+     app window given the room instead — the window is the thing people
+     recognise, so it should be the thing they see first. */
+  /* The tour's own values, not an approximation of them: --violet #A78BFA,
+     --text-main #EBE8F5, --text-muted #8F87AD, --text-dim #6A6386, the ground
+     #0C0916, and .meta's 9.5px mono chips with 1.3px tracking. Type is a step
+     down from the tour's 40px h1 because this is a 1200px card, not a page.
+     Both columns are vertically centred against each other. */
+  .poster.coverdark { width: 1200px; height: 900px; background: #0C0916; color: #EBE8F5;
+    display: flex; align-items: center; justify-content: center; gap: 30px;
+    padding: 0 40px 0 76px; box-sizing: border-box; }
+  .poster.coverdark .floor { display: none; }
+  .poster.coverdark .copy { position: static; width: 452px; max-width: 452px !important;
+    flex: none; gap: 14px; }
+  .deckline { display: flex; align-items: center; gap: 8px;
+    font: 400 10px/1.5 var(--mono); letter-spacing: 2.6px; text-transform: uppercase; color: #A78BFA; }
+  .deckline::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #A78BFA;
+    box-shadow: 0 0 6px rgba(139,109,255,.55); }
+  .poster.coverdark .eyebrow { color: #6A6386; font: 400 10px/1.5 var(--mono); letter-spacing: 2.6px; }
+  .poster.coverdark h1 { font-size: 27px; font-weight: 600; letter-spacing: -.6px; line-height: 1.16; color: #fff; }
+  .poster.coverdark h1 .pay { color: #A78BFA; }
+  .poster.coverdark .sub { font-size: 12.5px; line-height: 1.72; color: #8F87AD;
+    display: flex; flex-direction: column; gap: 9px; }
+  .poster.coverdark .sub b { color: #EBE8F5; font-weight: 500; }
+  .poster.coverdark .pills { gap: 8px; margin-top: 10px; }
+  .poster.coverdark .pill { font: 400 8.5px/1 var(--mono); letter-spacing: 1.2px; padding: 6px 11px;
+    color: #6A6386; border: 1px solid rgba(167,139,250,.17); background: transparent; border-radius: 999px; }
+  .poster.coverdark .pill::before { display: none; }
+  .poster.coverdark .pill:first-child { color: #A78BFA; border-color: rgba(167,139,250,.35);
+    background: rgba(124,92,255,.16); }
+  .darkart { position: static; flex: none; width: 796px; height: 648px;
+    transform: scale(.755); transform-origin: center center;
+    /* scale() leaves the 796px box in the flow, so the row centres a slot far
+       wider than the picture inside it. Reclaim both sides symmetrically, and
+       nudge back by the leftover so the pair sits on the card's own axis. */
+    margin: 0 -98px;
+    border-radius: 12px; box-shadow: 0 30px 90px rgba(0,0,0,.6); }
   .pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 
   /* ---------------- Obsidian window ---------------- */
@@ -436,17 +484,44 @@ const POSTERS = [
           <div class="row" style="background:#fff"><span class="box tick">✓</span><div><div class="rt">No telemetry, no analytics, no account</div><div class="rd">Two one-time downloads — model and WASM runtime — then nothing.</div></div></div>
         </div>
       </div>` },
+  { id: 'cover', cls: 'cover', tag: 'cover', width: 1160, eyebrow: 'Gemma 4 E4B LLM Wiki · Obsidian plugin',
+    h1: `Gemma 4 E4B runs inside Obsidian's own process, <span class="pay">and builds Andrej Karpathy's living LLM wiki from your&nbsp;notes.</span>`,
+    sub: `LiteRT-LM and WebGPU do it in the renderer, so there is no API key, no account, no Ollama and no server to keep running — free, and after one model download nothing leaves your machine. The wiki it writes is cards, an index, concept pages, tags, links and provenance checks, all plain Markdown you can edit. Then chat with one note or your whole vault, grounded in what you actually wrote — plus quizzes and flashcards.`,
+    chips: ['In the community store', 'Free &amp; open source', 'Offline after one download'],
+    art: `<div class="coverart">${win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE,
+      dock: panel({ mode: 'note', ph: 'Ask about this note… (Enter to send)',
+        attach: `<span class="plus">+</span><span class="att">espresso basics <span class="x">✕</span></span>`,
+        msgs: `<div class="mq">Why does grind size change extraction?</div>
+          <div class="ma">Finer grounds expose more surface, so water extracts faster — too fine and you cross into bitterness. <b>Your note pins the target window at 18–22%</b>, adjusting grind first.</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span></div>
+          <div class="mq">So why does that taste bitter?</div>
+          <div class="ma">Past that window you pull the compounds that come out last — the dry, astringent ones. Your note calls this <b>over-extraction</b>, not "too strong".</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span><span class="chip">espresso basics</span></div>` }) })}</div>` },
+  { id: 'cover-dark', deck: 'Recording deck · 23 scenes', cls: 'coverdark', tag: 'cover · dark', width: 430, eyebrow: 'Gemma 4 E4B LLM Wiki · Obsidian plugin',
+    h1: `Gemma 4 E4B runs inside Obsidian's own process, <span class="pay">and builds Andrej Karpathy's living LLM wiki from your&nbsp;notes.</span>`,
+    sub: `<span class="p">LiteRT-LM + WebGPU run the model directly in Obsidian's renderer — <b>no API key, no account, no Ollama, no server</b>. Free and local: after the one-time model download, <b>nothing leaves your machine</b>.</span><span class="p">The wiki is <b>plain Markdown you can edit</b>: cards, indexes, concept pages, tags, links, and provenance checks.</span><span class="p">Then <b>chat</b> with one note or your whole vault, grounded in what you actually wrote — plus quizzes and flashcards.</span>`,
+    chips: ['In the community store', 'Free &amp; open source', 'Offline after one download'],
+    art: `<div class="darkart">${win({ title: 'grind size and extraction', tab: 'grind size and extraction', body: NOTE,
+      dock: panel({ mode: 'note', ph: 'Ask about this note… (Enter to send)',
+        attach: `<span class="plus">+</span><span class="att">espresso basics <span class="x">✕</span></span>`,
+        msgs: `<div class="mq">Why does grind size change extraction?</div>
+          <div class="ma">Finer grounds expose more surface, so water extracts faster — too fine and you cross into bitterness. <b>Your note pins the target window at 18–22%</b>, adjusting grind first.</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span></div>
+          <div class="mq">So why does that taste bitter?</div>
+          <div class="ma">Past that window you pull the compounds that come out last — the dry, astringent ones. Your note calls this <b>over-extraction</b>, not "too strong".</div>
+          <div class="msrc"><span class="lbl">SOURCES</span><span class="chip">grind size</span><span class="chip">espresso basics</span></div>` }) })}</div>` },
 ];
 
 document.getElementById('sheet').innerHTML = POSTERS.map((p) => `
   <div class="tag">${p.id} · ${p.tag}</div>
-  <div class="poster" id="${p.id}">
+  <div class="poster ${p.cls ?? ''}" id="${p.id}">
     <div class="floor"></div>
     <div class="copy" style="max-width:${p.width}px">
+      ${p.deck ? `<div class="deckline">${p.deck}</div>` : ''}
       <div class="eyebrow">${p.eyebrow}</div>
       <h1>${p.h1}</h1>
       <p class="sub">${p.sub}</p>
-      <span class="pill">${p.pill}</span>
+      ${p.chips ? `<div class="pills">${p.chips.map((c) => `<span class="pill">${c}</span>`).join('')}</div>` : `<span class="pill">${p.pill}</span>`}
     </div>
     ${p.art}
   </div>`).join('');

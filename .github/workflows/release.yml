@@ -21,9 +21,9 @@ jobs:
     name: build + verify + publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # 24, not 20, because `npm test` runs tests/*.test.ts straight from
           # source using Node's own type stripping. That is what keeps the
@@ -69,7 +69,7 @@ jobs:
       # rebuild proves the bytes match the source, the attestation proves who
       # built them.
       - name: Attest release assets
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: 'main.js, styles.css'
 
@@ -84,7 +84,7 @@ jobs:
               echo
               echo '### Install'
               echo
-              echo 'Community store: search for **Gemma 4 LiteRT Wiki**.'
+              echo 'Community store: search for **Gemma 4 E4B LLM Wiki**.'
               echo 'Manual: drop `main.js`, `manifest.json` and `styles.css` into'
               echo '`<vault>/.obsidian/plugins/gemma-litert-wiki/`.'
               echo

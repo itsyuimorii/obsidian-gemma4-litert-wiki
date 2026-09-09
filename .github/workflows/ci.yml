@@ -10,8 +10,8 @@ jobs:
     name: build + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # 24, not 20, because `npm test` runs tests/*.test.ts straight from
           # source using Node's own type stripping. That is what keeps the
@@ -32,7 +32,7 @@ jobs:
         run: npm test
       # The community store's own rule set (eslint-plugin-obsidianmd), run
       # before a release instead of read in a report after one. The warning
-      # budget is exactly the five that point at issue #106; a sixth fails.
+      # budget is the four that remain after #106; a fifth fails.
       - name: Store lint (eslint-plugin-obsidianmd)
         run: npm run lint
       - name: Release requirements (manifest, versions.json, LICENSE)

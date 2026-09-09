@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: See what it does before installing
+    url: https://gemma-wiki-demo.vercel.app/tour.html
+    about: Every feature, most important first, no install needed.
+  - name: Community store listing
+    url: https://community.obsidian.md/plugins/gemma-litert-wiki
+    about: Current version, review status, and the install button.
