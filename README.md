@@ -22,7 +22,7 @@
   <a href="https://github.com/google-ai-edge/LiteRT-LM"><img src="https://img.shields.io/badge/runtime-LiteRT--LM-7b6cd9?style=flat" alt="Runtime: LiteRT-LM"></a>
   <img src="https://img.shields.io/badge/GPU-WebGPU-7b6cd9?style=flat&logo=webgpu&logoColor=white" alt="GPU: WebGPU">
   <img src="https://img.shields.io/badge/API%20key-none-7b6cd9?style=flat" alt="No API key">
-  <a href="tests"><img src="https://img.shields.io/badge/tests-169-7b6cd9?style=flat" alt="169 tests"></a>
+  <a href="tests"><img src="https://img.shields.io/badge/tests-254-7b6cd9?style=flat" alt="254 tests"></a>
 </p>
 
 <p align="center"> <a href="https://community.obsidian.md/plugins/gemma-litert-wiki"><b>⬇ Install from the community store</b></a><br> <a href="https://gemma-wiki-demo.vercel.app/tour.html"><b>▶ See what it does</b></a> · <a href="https://gemma-wiki-demo.vercel.app"><b>Step through the demo</b></a> — nothing to install. </p>
@@ -56,6 +56,7 @@ After the one-time downloads — the ~3 GB model and the WASM runtime, both unde
 - [💬 Chat with your notes — entirely offline](#-chat-with-your-notes--entirely-offline)
 - [🤔 Why this exists](#-why-this-exists)
 - [🔌 How this differs from other AI plugins](#-how-this-differs-from-other-ai-plugins)
+- [🚫 Not for you if](#-not-for-you-if)
 - [📋 Requirements](#-requirements)
 - [🔁 What to run when](#-what-to-run-when)
 - [⌨️ Current commands](#️-current-commands)
@@ -93,7 +94,7 @@ From there: chat grounded in one note or in the whole wiki, quiz yourself on eit
 
 Everything it writes is plain markdown in your vault — nothing is locked in a database, and nothing needs another plugin to read it back. Its own configuration is notes too: **your tag vocabulary and naming rules live in `schema.md`**, where you can edit them by hand and the plugin will obey; **every operation is appended to `log.md`**, so you can always see what it did and when; and **dropping a markdown file into `skills/` adds a command of your own** to the ⚡ menu.
 
-> **Status: 1.0.9, [in the community plugin store](https://community.obsidian.md/plugins/gemma-litert-wiki).** The full Karpathy loop is implemented and running; benchmarks below are from real use.
+> **Status: 1.0.13, [in the community plugin store](https://community.obsidian.md/plugins/gemma-litert-wiki).** The full Karpathy loop is implemented and running; benchmarks below are from real use.
 
 **The Karpathy loop** — raw notes stay read-only; the plugin maintains a separate `gemma-wiki/` layer:
 
@@ -183,9 +184,23 @@ The first row is the only one this project can claim and the others cannot. Most
 | **What it can read** | Markdown notes. | Markdown, and commonly PDFs, images and Office documents as well — through providers that take files directly, or a conversion backend. |
 | **Interface language** | English. This README is also in Japanese; the plugin's interface is not translated. | Often many. Eleven-language interfaces exist in this category. |
 | **What it costs to run** | ~3 GB of disk, once. | Free against a local daemon; per-token against a cloud provider. |
+| **Index on disk** | None. The wiki is plain Markdown in your vault: nothing is embedded, nothing is rebuilt when you open a note, nothing has to be regenerated on a second machine. | Commonly a separate embedding index — hundreds of megabytes per few thousand notes, rebuilt per device, and a second one if you run two such plugins. |
+| **Paid tier** | None. MIT, every feature, no account. | Free tiers with paid features are common in this category. |
 | **The one moving part** | No inference API and nothing to configure — but the WebGPU runtime can only be handed multi-gigabyte weights over HTTP, so the plugin runs a loopback server on an ephemeral port to feed itself the model and runtime bytes off your own disk. It binds `127.0.0.1`, carries no inference endpoint, and lives only while the plugin is loaded. | `localhost:11434`, or a vendor's HTTPS endpoint — an address you configure, and on the cloud side a place your notes are sent. |
 
 None of this says local-in-renderer is *better*. Gemma 4 E4B inside Obsidian is weaker than a frontier model behind an API, reads fewer kinds of file, speaks fewer languages, and will never run on your phone. What it buys is that there is nothing else to install, nothing to keep alive, and nothing leaving the machine after the first download — and that only matters if the output holds up. Establishing that honestly, including where the approach is weaker, is what the benchmarks below are for.
+
+## 🚫 Not for you if
+
+Five honest reasons to close this tab:
+
+- **You work on a phone or tablet.** Desktop only, and structurally so: it needs WebGPU and ~3 GB on disk.
+- **Your machine has no WebGPU.** Integrated GPUs from the last few years are fine; a VM, a remote desktop or an old GPU usually is not. The `[Test] Check WebGPU` command tells you in one click.
+- **You cannot spare ~3 GB.** The model is downloaded once and lives in the plugin folder.
+- **You need frontier-model knowledge.** Gemma 4 E4B is a 4B model: good at reading your notes, weak at the wider world. Direct mode exists, and it is not a ChatGPT replacement.
+- **Your sources are PDFs, images or Office files.** Markdown notes only. Clip or convert first.
+
+If none of those apply, the rest of this page is for you.
 
 ## 📋 Requirements
 
@@ -223,6 +238,8 @@ Sixteen commands, four habits. Everything else is occasional.
 Chat needs no schedule — it reads whatever the wiki holds. And the two
 commands that write into your own notes, **Improve** and **Suggest tags &
 links**, are run on one note when you want them, never as routine.
+
+If you use [Obsidian Web Clipper](https://obsidian.md/clipper), its `Clippings` folder appears in the scan dialog like any other folder; tick it once and every clip after that becomes a card on the next scan.
 
 <p align="center"><img src="assets/poster/poster-p10.png" alt="The Tidy dialog listing four repairs with two ticked and a Run 2 of these button." width="900"></p>
 
