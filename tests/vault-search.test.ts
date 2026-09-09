@@ -53,8 +53,8 @@ test('a heading hit scores, but low', () => {
   const hits = rankVaultDocs('KV cache', DOCS);
   assert.equal(hits.length, 1);
   assert.equal(hits[0].path, 'dev/litert on device.md');
-  // "kv" is two letters and queryTerms drops it; "cache" in a heading is 1.
-  assert.equal(hits[0].score, 1);
+  // "cache" in a heading is 1; "kv" is a two-letter token, matched as a whole word in the heading, 1 more.
+  assert.equal(hits[0].score, 2);
 });
 
 test('nothing matches, nothing is returned', () => {
@@ -462,4 +462,26 @@ test('an expansion term weighs less than a typed one', () => {
   const typed = wt.find((w) => w.t === 'javascript')!;
   const grown = wt.find((w) => w.t === 'closures')!;
   assert.ok(grown.expanded && grown.weight < typed.weight);
+});
+
+test('a generic expansion term in a title does not make the note about the subject', () => {
+  const docs: VaultDoc[] = [
+    { path: 'webview.md', title: 'WebView architecture decision', tags: [], headings: [] },
+    { path: 'w01.md', title: 'W01 执行上下文、作用域、闭包', tags: [], headings: [] },
+    { path: 'a.md', title: 'web notes a', tags: [], headings: [] },
+    { path: 'b.md', title: 'web notes b', tags: [], headings: [] },
+  ];
+  const bodies = new Map([
+    ['webview.md', 'The WebView cannot talk to the native app directly. Bridge required.'],
+    ['w01.md', '闭包是函数和它的词法作用域的组合。'],
+    ['a.md', 'web web web'],
+    ['b.md', 'web again'],
+  ]);
+  const extra = ['web', '闭包'];
+  const hits = rescoreWithBodies('javascript', rankVaultDocs('javascript', docs, 60, extra), bodies, 8, 0.05, extra);
+  const tier = Object.fromEntries(hits.map((h) => [h.path, h.tier]));
+  // "web" is a substring of WebView, but expansion terms match whole words; and it is common here.
+  assert.notEqual(tier['webview.md'], 'about');
+  // 闭包 is rare here, and in the title.
+  assert.equal(tier['w01.md'], 'about');
 });

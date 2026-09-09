@@ -1443,6 +1443,10 @@ export interface VaultHit {
    * cannot tell, and the panel must.
    */
   tier: 'about' | 'mentions';
+  /** Typed terms found in the title, tags or headings. */
+  metaTyped?: string[];
+  /** Expansion terms found there. They promote a note to "about" only when rare in this vault. */
+  metaExpanded?: string[];
 }
 
 /**
@@ -1481,25 +1485,36 @@ export function rankVaultDocs(
   const own = queryTerms(subject);
   const ownShort = shortTerms(subject);
   const more = expansionTerms(extra, new Set([...own, ...ownShort]));
-  const terms = [...own, ...more.filter((m) => !m.whole).map((m) => m.t)];
-  // Two-letter tokens are dropped by queryTerms, rightly — "is", "of", "an"
-  // — but "js", "ai", "go" are how people tag things. Matched exactly against
-  // tags only, never as substrings, so "of" cannot find "#coffee".
-  const short = [...ownShort, ...more.filter((m) => m.whole).map((m) => m.t)];
-  if (!terms.length && !short.length) return [];
+  const typed: { t: string; whole: boolean }[] = [
+    ...own.map((t) => ({ t, whole: false })),
+    ...ownShort.map((t) => ({ t, whole: true })),
+  ];
+  if (!typed.length && !more.length) return [];
+  const has = (hay: string, t: string, whole: boolean) => countIn(hay, t, whole, 1) > 0;
   const hits: VaultHit[] = [];
   for (const d of docs) {
     const title = d.title.toLowerCase();
     const tags = d.tags.map((t) => t.toLowerCase().replace(/^#/, ''));
+    const tagText = tags.join(' ');
     const headings = d.headings.join(' ').toLowerCase();
     let score = 0;
-    for (const t of terms) {
-      if (title.includes(t)) score += 3;
-      else if (tags.some((tag) => tag.includes(t))) score += 3;
-      else if (headings.includes(t)) score += 1;
+    const metaTyped: string[] = [];
+    const metaExpanded: string[] = [];
+    for (const { t, whole } of typed) {
+      let s = 0;
+      if (has(title, t, whole)) s = 3;
+      else if (whole ? tags.includes(t) : has(tagText, t, false)) s = 3;
+      else if (has(headings, t, whole)) s = 1;
+      if (s) { score += s; metaTyped.push(t); }
     }
-    for (const t of short) if (tags.includes(t)) score += 3;
-    if (score > 0) hits.push({ path: d.path, score, tier: 'about' });
+    for (const { t, whole } of more) {
+      let s = 0;
+      if (has(title, t, whole)) s = 3;
+      else if (whole ? tags.includes(t) : has(tagText, t, false)) s = 3;
+      else if (has(headings, t, whole)) s = 1;
+      if (s) { score += s * EXPANSION_WEIGHT; metaExpanded.push(t); }
+    }
+    if (score > 0) hits.push({ path: d.path, score, tier: 'about', metaTyped, metaExpanded });
   }
   hits.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
   return hits.slice(0, max);
@@ -1589,7 +1604,11 @@ function expansionTerms(extra: readonly string[], own: ReadonlySet<string>): { t
   const out: { t: string; whole: boolean }[] = [];
   const seen = new Set<string>();
   for (const raw of extra) {
-    for (const t of queryTerms(raw)) if (!own.has(t) && !seen.has(t)) { seen.add(t); out.push({ t, whole: false }); }
+    // A Latin expansion term matches as a whole word: the model offered
+    // "web" for javascript, and as a substring it found every WebView note
+    // in the vault. Chinese and Japanese terms have no word boundaries and
+    // stay substrings.
+    for (const t of queryTerms(raw)) if (!own.has(t) && !seen.has(t)) { seen.add(t); out.push({ t, whole: !CJK_CHAR.test(t) }); }
     for (const t of shortTerms(raw)) if (!own.has(t) && !seen.has(t)) { seen.add(t); out.push({ t, whole: true }); }
   }
   return out;
@@ -1660,6 +1679,8 @@ export function rescoreWithBodies(
   const terms = weightedTerms(question, bodies, extra);
   if (!terms.length) return [];
   const priorScore = new Map<string, number>(prior.map((h) => [h.path, h.score]));
+  const priorHit = new Map<string, VaultHit>(prior.map((h) => [h.path, h]));
+  const weightOf = new Map<string, number>(terms.map((w) => [w.t, w.weight]));
   const docs = distinctDocs(bodies);
   if (!docs.length) {
     return [...priorScore.entries()]
@@ -1673,6 +1694,7 @@ export function rescoreWithBodies(
   const bodyPaths = new Set(docs.map(([p]) => p));
   for (const [path, hay] of docs) {
     const fromMetadata = priorScore.get(path) ?? 0;
+    const meta = priorHit.get(path);
     let score = fromMetadata;
     let dense = false;
     for (const w of terms) {
@@ -1683,14 +1705,23 @@ export function rescoreWithBodies(
       // the note's length: three mentions in a two-page note, not three in
       // a twenty-page one that used it as an example. At least three, and
       // at least one per thousand characters, of a term that carries real
-      // weight in this vault.
-      if (c >= 3 && w.weight >= 0.2) {
+      // weight in this vault — a typed term, or an expansion term that is
+      // rare enough here to mean the subject and not "web".
+      if (c >= 3 && w.weight >= (w.expanded ? 0.3 : 0.2)) {
         const all = countIn(hay, w.t, w.whole, 50);
         if (all / Math.max(1, hay.length / 1000) >= 1) dense = true;
       }
     }
+    // A typed term in the title, tags or headings makes a note about the
+    // subject. An expansion term there does too, unless it is one the vault
+    // uses nearly everywhere (weight under 0.15): whole-word matching has
+    // already kept "web" out of WebView, so what reaches here is 闭包 in a
+    // title called 闭包 — the subject, in a vault that is largely about it.
+    const metaAbout =
+      (meta?.metaTyped?.length ?? 0) > 0 ||
+      (meta?.metaExpanded ?? []).some((t) => (weightOf.get(t) ?? 0) >= 0.15);
     if (score >= min) {
-      scored.push({ path, score, tier: fromMetadata > 0 || dense ? 'about' : 'mentions' });
+      scored.push({ path, score, tier: metaAbout || dense ? 'about' : 'mentions' });
     }
   }
   // Metadata-only hits whose bodies were not read (large vaults) still count.

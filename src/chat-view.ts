@@ -315,8 +315,10 @@ const VAULT_NOTE_TOKENS = 1200;
 const EXPAND_PROMPT =
   'You expand a search subject into keywords for finding notes in a personal vault. Reply with ' +
   'up to 8 keywords, one per line, and nothing else: the full name of any abbreviation, close ' +
-  'synonyms, the two or three most common sub-topics, and the usual Chinese and Japanese names ' +
-  'when the subject is technical. Single words or short phrases only. No numbering, no ' +
+  'synonyms, the two or three most specific sub-topics, and the usual Chinese and Japanese names ' +
+  'when the subject is technical. Every keyword must be one that would appear in a note ABOUT ' +
+  'the subject and rarely in notes about other things — never generic words like web, app, ' +
+  'code, data, system, tool. Single words or short phrases only. No numbering, no ' +
   'explanations, no sentences.';
 
 /**
