@@ -350,6 +350,30 @@
   cursor: default;
 }
 
+/* The route card: "wrong mode" said in one line, then the modes that could
+   answer as buttons. Shares the hatch's dashed, quiet styling — it is the
+   same idea widened from one button to a sentence and two or three. */
+.gemma4-chat-route-text {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.gemma4-chat-route-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* A route card that stands on its own row (the Direct precheck), not under
+   an answer: give it the answer's left inset so it aligns with the thread. */
+.gemma4-chat-messages > .gemma4-chat-route {
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 10px;
+}
+
 /* ---------- Spinner (replaces bouncing dots) ---------- */
 
 .gemma4-chat-spinner {
@@ -455,6 +479,71 @@
   padding: 5px 12px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+/* Example questions in the empty panel: one click asks them. Left-aligned
+   and quiet, because they are examples of a shape, not the plugin's own
+   suggestions (those are the chips under the input). */
+.gemma4-chat-empty-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 2px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.gemma4-chat-empty-example {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.gemma4-chat-empty-example::before {
+  content: '“';
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+
+.gemma4-chat-empty-example::after {
+  content: '”';
+  color: var(--text-faint);
+  margin-left: 2px;
+}
+
+.gemma4-chat-empty-example:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* The sentence that names the other two modes. The mode names are buttons
+   that switch, styled as the pills under the input are styled, so the two
+   read as the same control. */
+.gemma4-chat-empty-guide {
+  margin-top: 12px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.gemma4-chat-empty-guide-mode {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.gemma4-chat-empty-guide-mode:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
 }
 
 /* ---------- Input area ---------- */
