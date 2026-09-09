@@ -299,6 +299,17 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
+.gemma4-chat-sources-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.gemma4-chat-sources-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
 .gemma4-chat-sources-label {
   font-size: 10px;
   font-weight: 500;
@@ -528,53 +539,26 @@
   cursor: pointer;
 }
 
-/* Example questions in the empty panel: one click asks them. Left-aligned
-   and quiet, because they are examples of a shape, not the plugin's own
-   suggestions (those are the chips under the input). */
-.gemma4-chat-empty-examples {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 10px 0 2px;
-  width: 100%;
-  max-width: 320px;
-}
-
-.gemma4-chat-empty-example {
-  background: transparent;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-normal);
-  text-align: left;
-  cursor: pointer;
-  box-shadow: none;
-}
-
-.gemma4-chat-empty-example::before {
-  content: '“';
-  color: var(--text-faint);
-  margin-right: 2px;
-}
-
-.gemma4-chat-empty-example::after {
-  content: '”';
-  color: var(--text-faint);
-  margin-left: 2px;
-}
-
-.gemma4-chat-empty-example:hover {
-  background: var(--background-modifier-hover);
-}
-
-/* The sentence that names the other two modes. The mode names are buttons
-   that switch, styled as the pills under the input are styled, so the two
-   read as the same control. */
+/* The lines that name the other two modes, one each: the question that
+   belongs there, then the pill. The mode names are buttons that switch,
+   styled as the pills under the input are styled, so the two read as the
+   same control. */
 .gemma4-chat-empty-guide {
   margin-top: 12px;
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.gemma4-chat-empty-guide-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .gemma4-chat-empty-guide-mode {

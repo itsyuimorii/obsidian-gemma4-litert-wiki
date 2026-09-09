@@ -12,8 +12,8 @@ import assert from 'node:assert/strict';
 import {
   excerptAround,
   looksLikeListQuery,
+  looksLikeCollectionQuery,
   looksLikeRecentQuery,
-  pickVaultExamples,
   rankVaultDocs,
   rescoreWithBodies,
   VAULT_MATCH_MIN,
@@ -241,33 +241,27 @@ test('the character cap is respected even with many hits', () => {
   assert.ok(out.length <= 1001, String(out.length));
 });
 
-// --- pickVaultExamples -----------------------------------------------------
+// --- looksLikeCollectionQuery ----------------------------------------------
 
-test('examples come from the commonest tags and the newest title', () => {
-  const ex = pickVaultExamples(['#js', '#js', '#ai', '#js', '#ai', '#coffee'], ['litert on device', 'older']);
-  assert.deepEqual(ex, [
-    'What have I written about js?',
-    'Which of my notes mention ai?',
-    'Which notes did I edit recently?',
-  ]);
+test('questions about the collection, not about a subject in it', () => {
+  for (const q of [
+    'What connects my notes?',
+    'what themes come up across my vault',
+    'what am I missing',
+    'which questions are still open',
+    'do any of my notes contradict each other',
+    'what did I add this week',
+    'ノート同士のつながりは',
+    '全体としてどんなテーマがある',
+  ]) assert.ok(looksLikeCollectionQuery(q), q);
 });
 
-test('with one tag the second example falls back to the newest title', () => {
-  const ex = pickVaultExamples(['#coffee'], ['grind size']);
-  assert.equal(ex[1], 'Which of my notes are about grind size?');
-});
-
-test('a bare vault gets generic wording, never an invented subject', () => {
-  const ex = pickVaultExamples([], []);
-  assert.deepEqual(ex, [
-    'What have I written about recently?',
-    "What's in my vault?",
-    'Which notes did I edit recently?',
-  ]);
-  for (const e of ex) assert.ok(!/coffee|webgpu|kv cache/i.test(e));
-});
-
-test('nested and very long tags are skipped', () => {
-  const ex = pickVaultExamples(['#project/alpha', '#' + 'x'.repeat(30), '#ok'], []);
-  assert.equal(ex[0], 'What have I written about ok?');
+test('questions about a subject are not collection questions', () => {
+  for (const q of [
+    'what have I written about coffee',
+    'which of my notes mention WebGPU',
+    'explain closures',
+    'summarise the note on grind size',
+    '',
+  ]) assert.equal(looksLikeCollectionQuery(q), false, q);
 });

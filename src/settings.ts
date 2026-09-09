@@ -162,7 +162,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             control: {
               type: 'dropdown',
               key: 'defaultMode',
-              options: { vault: 'Vault', note: 'This note', wiki: 'Wiki' },
+              options: { note: 'This note', vault: 'Vault', wiki: 'Wiki' },
             },
           },
           {
@@ -550,8 +550,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       .setDesc('Which grounding mode a new chat panel opens in.')
       .addDropdown((dd) =>
         dd
-          .addOption('vault', 'Vault')
           .addOption('note', 'This note')
+          .addOption('vault', 'Vault')
           .addOption('wiki', 'Wiki')
           .setValue(this.plugin.settings.defaultMode)
           .onChange(async (v) => {

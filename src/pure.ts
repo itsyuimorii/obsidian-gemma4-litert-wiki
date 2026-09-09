@@ -1536,33 +1536,18 @@ export function excerptAround(body: string, terms: readonly string[], maxChars: 
   return out || `${text.slice(0, maxChars).trimEnd()}…`;
 }
 
+
 /**
- * Three example questions for the empty Vault panel, made from this vault:
- * its commonest tags, with the newest title as a fallback, and the question
- * that lists what was edited recently. Examples about coffee
- * were fine in the demo vault and wrong in every other one — a question the
- * panel suggests should be one this vault can answer. Falls back to generic
- * wording, never to an invented subject, when the vault is bare.
- *
- * `tags` are counted; the most frequent two are used, '#' stripped. Tags
- * longer than 24 characters or with a slash (nested) are skipped, since they
- * read badly inside a sentence.
+ * Whether a question is about the collection rather than about a subject in
+ * it — "what connects my notes", "what am I missing", "what did I add this
+ * week", 「ノート同士のつながりは」. Vault mode can only answer such a question
+ * from the four raw notes it can hold, which is shallow; the cards can hold
+ * fifty. A hit means the answer should say so and point at Wiki.
  */
-export function pickVaultExamples(tags: readonly string[], recentTitles: readonly string[]): string[] {
-  const counts = new Map<string, number>();
-  for (const raw of tags) {
-    const t = raw.replace(/^#/, '').trim();
-    if (!t || t.length > 24 || t.includes('/')) continue;
-    counts.set(t, (counts.get(t) ?? 0) + 1);
-  }
-  const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
-  const recent = recentTitles.find((t) => t.trim().length > 0 && t.trim().length <= 60)?.trim();
-  const first = top[0] ? `What have I written about ${top[0]}?` : 'What have I written about recently?';
-  const second = top[1]
-    ? `Which of my notes mention ${top[1]}?`
-    : recent
-      ? `Which of my notes are about ${recent}?`
-      : "What's in my vault?";
-  const third = 'Which notes did I edit recently?';
-  return [first, second, third];
+export function looksLikeCollectionQuery(question: string): boolean {
+  const q = question.trim();
+  if (!q) return false;
+  const en = /\b(?:connect|connects|connections|connected|in\s+common|common\s+threads?|themes?|patterns?|across\s+(?:my|all|the)\s+(?:notes|vault|pages|cards)|overall|big\s+picture|overview\s+of\s+(?:my|all)|missing|gaps?|still\s+open|unanswered|contradict|contradictions?|disagree|inconsistent|what\s+did\s+i\s+add|added\s+this\s+week|what\s+have\s+i\s+been\s+(?:writing|working))\b/i;
+  const ja = /(?:つながり|関連|共通|全体|傾向|テーマ|パターン|足りない|抜け|欠け|矛盾|食い違|今週追加|追加したもの)/;
+  return en.test(q) || ja.test(q);
 }

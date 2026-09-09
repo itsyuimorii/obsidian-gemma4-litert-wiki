@@ -2,10 +2,10 @@ import {
   asksAboutOwnNotes,
   excerptAround,
   formatVaultTree,
+  looksLikeCollectionQuery,
   looksLikeListQuery,
   looksLikeRecentQuery,
   looksLikeRefusal,
-  pickVaultExamples,
   queryTerms,
   rankVaultDocs,
   rescoreWithBodies,
@@ -35,6 +35,7 @@ import {
   rebuildChatsIndex,
   wikiChatsDir,
   wikiSourcesDir,
+  wikiConceptsDir,
   clampToTokens,
   estimateTokens,
   fmOf,
@@ -263,6 +264,14 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
         'matters. Cite the pages.',
       wholeWiki: true,
     },
+    {
+      // The activity log rides along with every wiki answer, so "this week"
+      // is answerable here and nowhere else. It is also the third question
+      // whose shape says what this mode is: about the collection, over time.
+      label: 'Added this week?',
+      ask: 'What did I add to the wiki this week? List the pages and what each is about. Cite the pages.',
+      wholeWiki: true,
+    },
   ];
 }
 
@@ -296,44 +305,44 @@ const DIRECT_PROMPT =
   'say so plainly. Be concise. You may use markdown.';
 
 /**
- * What each mode is for, said in the empty panel: a title, one line, three
- * example questions of the right shape, and the other two modes by name and
- * purpose. This is the text a first question is judged against — most bad
- * first questions are good questions in the wrong mode.
+ * What each mode is for, said in the empty panel: what it reads, what it is
+ * good for, and — for the other two modes — the question that belongs there
+ * instead. The three read three different things, and the pills alone do
+ * not say which; this is the sentence that does, at the moment it is
+ * needed. The wiki folder is named as the folder, not as "the wiki", so
+ * that a reader who has never heard the word knows where to look.
  */
 const MODE_GUIDE: Record<
   ChatMode,
-  { title: string; hint: string; examples: string[]; others: [ChatMode, string, string][] }
+  { title: string; reads: string; goodFor: string; others: [ChatMode, string, string][] }
 > = {
   note: {
     title: 'Ask about the open note',
-    hint: 'Answers come from the note in front of you, inside Obsidian — nothing leaves your machine.',
-    examples: ['What is the main argument here?', 'List the action items in this note', 'Explain the terms this note uses'],
+    reads: 'Reads only the note you have open, as you wrote it.',
+    goodFor: 'Good for: what this note says, a summary, the action items, a term it uses.',
     others: [
-      ['wiki', 'Wiki', 'Across the wiki it built'],
-      ['vault', 'Vault', 'Anything else'],
-    ],
-  },
-  wiki: {
-    title: 'Ask your wiki',
-    hint: 'Answers come from the pages you have filed, and list which ones they read.',
-    examples: ['What is in my wiki?', 'What did I add this week?', 'Which pages disagree with each other?'],
-    others: [
-      ['note', 'This note', 'About one note'],
-      ['vault', 'Vault', 'Anything else'],
+      ['vault', 'Vault', 'For any note in your vault, or anything general'],
+      ['wiki', 'Wiki', 'For what connects your notes, once cards exist'],
     ],
   },
   vault: {
     title: 'Ask anything',
-    hint:
-      'Your notes are searched first. What they say comes with sources; then Gemma 4 E4B ' +
-      'answers on its own, marked as its own.',
-    // Replaced at render time by pickVaultExamples, from this vault's own
-    // tags and titles; these are the shape only.
-    examples: ['What have I written about …?', 'Which of my notes mention …?', 'Explain, in plain terms: …'],
+    reads:
+      'Searches every note in your vault as written; then Gemma 4 E4B adds its own answer, ' +
+      'marked as its own.',
+    goodFor: 'Good for: finding a note, what you wrote about something, anything general.',
     others: [
-      ['note', 'This note', 'Only the note you have open'],
-      ['wiki', 'Wiki', 'Across the wiki it built'],
+      ['note', 'This note', 'For only the note you have open'],
+      ['wiki', 'Wiki', 'For what connects, what is missing, what you added — across the cards'],
+    ],
+  },
+  wiki: {
+    title: 'Ask your wiki',
+    reads: '',
+    goodFor: 'Good for: what connects my notes, what is still open, what did I add this week.',
+    others: [
+      ['vault', 'Vault', 'For a note as you wrote it, or one not filed yet'],
+      ['note', 'This note', 'For only the note you have open'],
     ],
   },
 };
@@ -403,19 +412,6 @@ export class ChatView extends ItemView {
     return { blocks, sources };
   }
 
-  /** Example questions for the Vault panel, from this vault's tags and titles. */
-  private vaultExamples(): string[] {
-    const prefix = `${wikiDir()}/`;
-    const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix));
-    const tags: string[] = [];
-    for (const f of files) {
-      const cache = this.app.metadataCache.getFileCache(f);
-      if (cache) tags.push(...(getAllTags(cache) ?? []));
-    }
-    const recent = [...files].sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 5).map((f) => f.basename);
-    return pickVaultExamples(tags, recent);
-  }
-
   private buildEmptyState() {
     this.emptyStateEl = this.messagesEl.createDiv({ cls: 'gemma4-chat-empty' });
     void this.renderEmptyState();
@@ -446,6 +442,9 @@ export class ChatView extends ItemView {
     } catch {
       empty = this.wikiEmpty;
     }
+    // The chip carries live counts, so it follows every re-read; the rest
+    // only redraws when the empty/non-empty answer flips.
+    this.updateNoteChip();
     if (empty === this.wikiEmpty) return;
     this.wikiEmpty = empty;
     this.renderSuggestions();
@@ -468,42 +467,36 @@ export class ChatView extends ItemView {
       el.createDiv({
         cls: 'gemma4-chat-empty-hint',
         text:
-          'Wiki mode answers from pages you have filed here, and nothing is filed yet. ' +
-          'Press Scan a folder below to fill it.',
+          `Wiki mode reads only the pages in your ${wikiDir()}/ folder — the cards and concept ` +
+          'pages this plugin builds from your notes. Nothing is there yet.',
       });
       el.createDiv({
         cls: 'gemma4-chat-empty-hint',
-        text:
-          'Or switch to This note above and ask about the note you have open right now — that ' +
-          'needs no setup at all.',
+        text: 'Press Scan a folder below to build it, or switch to Vault to search your notes as they are.',
       });
       return;
     }
 
     const guide = MODE_GUIDE[this.mode];
     el.createDiv({ cls: 'gemma4-chat-empty-title', text: guide.title });
-    el.createDiv({ cls: 'gemma4-chat-empty-hint', text: guide.hint });
+    // The wiki line names the folder, which is a setting, so it is built here.
+    const reads =
+      this.mode === 'wiki'
+        ? `Reads only ${wikiDir()}/ — the cards and concept pages built from your notes and reviewed by you.`
+        : guide.reads;
+    el.createDiv({ cls: 'gemma4-chat-empty-hint', text: reads });
+    el.createDiv({ cls: 'gemma4-chat-empty-hint', text: guide.goodFor });
 
-    // Three example questions, each one click from being asked. They are
-    // the shape of question this mode is FOR, which the title alone cannot
-    // say: "Ask your wiki" is not enough to stop someone asking it what a
-    // KV cache is.
-    const examples = el.createDiv({ cls: 'gemma4-chat-empty-examples' });
-    for (const ex of this.mode === 'vault' ? this.vaultExamples() : guide.examples) {
-      const btn = examples.createEl('button', { cls: 'gemma4-chat-empty-example', text: ex });
-      btn.addEventListener('click', () => void this.handleSend({ text: ex, wholeWiki: this.mode === 'wiki' && asksAboutOwnNotes(ex) }));
-    }
-
-    // And the other two modes, by name and by what they are for, as buttons.
-    // The pills under the input are the same switch; this is the sentence
-    // that explains them, at the moment it is needed.
-    const line = el.createDiv({ cls: 'gemma4-chat-empty-guide' });
-    guide.others.forEach(([mode, label, what], i) => {
-      if (i > 0) line.appendText(' · ');
+    // The other two modes, one line each: the question that belongs there,
+    // then the pill. The pills under the input are the same switch; this
+    // is the sentence that explains them, at the moment it is needed.
+    const lines = el.createDiv({ cls: 'gemma4-chat-empty-guide' });
+    for (const [mode, label, what] of guide.others) {
+      const line = lines.createDiv({ cls: 'gemma4-chat-empty-guide-line' });
       line.appendText(what + ' → ');
       const b = line.createEl('button', { cls: 'gemma4-chat-empty-guide-mode', text: label });
       b.addEventListener('click', () => this.setMode(mode));
-    });
+    }
 
     // Until the first message is sent, point at the chips. Someone opening this
     // for the first time is not short of explanation — there is a setup card, a
@@ -722,7 +715,7 @@ export class ChatView extends ItemView {
         });
       } else if (sources.length) {
         const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
-        sourcesRow.createSpan({ cls: 'gemma4-chat-sources-label', text: 'Sources' });
+        this.sourcesLabel(sourcesRow, turn.grounding ?? '');
         for (const src of sources) {
           const link = sourcesRow.createEl('a', { cls: 'gemma4-chat-source-link', text: src.title });
           link.addEventListener('click', (evt) => {
@@ -872,14 +865,14 @@ export class ChatView extends ItemView {
     // "This note", not "Note": users repeatedly read "Note" as "search my
     // notes" and were confused when it only saw the open file.
     const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'This note' });
-    const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
-    // Third: the widest net. It reads every raw note in the vault and, when
-    // none of them answers, lets the model answer on its own — so it is the
-    // default, and the one to type into without thinking.
+    // Second, and the default: every raw note in the vault, then the model
+    // on its own — the one to type into without thinking. Wiki is last
+    // because it is the one that needs building first.
     const vaultBtn = modeRow.createEl('button', {
       cls: 'gemma4-chat-mode-btn',
       text: 'Vault',
     });
+    const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
     this.modeButtons = { note: noteBtn, wiki: wikiBtn, vault: vaultBtn };
     noteBtn.addEventListener('click', () => this.setMode('note'));
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
@@ -1118,7 +1111,7 @@ export class ChatView extends ItemView {
       mode === 'note'
         ? 'Ask about this note… (Enter to send) — Wiki or Vault above for anything else'
         : mode === 'wiki'
-          ? 'Ask across the wiki it built… (Enter to send) — This note or Vault above for anything else'
+          ? 'Ask across your cards… (Enter to send) — This note or Vault above for anything else'
           : 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
     );
     this.renderSuggestions();
@@ -1126,18 +1119,43 @@ export class ChatView extends ItemView {
     void this.renderEmptyState();
   }
 
+  /** How many cards and concept pages the wiki folder holds right now. */
+  private wikiCounts(): { cards: number; concepts: number } {
+    const cards = `${wikiSourcesDir()}/`;
+    const concepts = `${wikiConceptsDir()}/`;
+    let c = 0;
+    let k = 0;
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (f.path.startsWith(cards)) c++;
+      else if (f.path.startsWith(concepts)) k++;
+    }
+    return { cards: c, concepts: k };
+  }
+
   private updateNoteChip() {
     this.noteChipEl.empty();
     const icon = this.noteChipEl.createSpan({ cls: 'gemma4-chat-note-chip-icon' });
+    // The two wide modes say what they read AND how much of it there is,
+    // because that is the difference between them: Vault has every note
+    // from the first minute; Wiki has whatever has been filed, and says
+    // "empty" until something has.
     if (this.mode === 'wiki') {
       setIcon(icon, 'library');
-      this.noteChipEl.createSpan({ text: 'Wiki (ingested pages)' });
-      this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
+      const { cards, concepts } = this.wikiCounts();
+      const label =
+        cards + concepts === 0
+          ? `${wikiDir()}/ · empty — Scan a folder to build it`
+          : `${wikiDir()}/ · ${cards} card${cards === 1 ? '' : 's'}` +
+            (concepts ? `, ${concepts} concept page${concepts === 1 ? '' : 's'}` : '');
+      this.noteChipEl.createSpan({ text: label });
+      this.noteChipEl.toggleClass('gemma4-chat-note-chip-none', cards + concepts === 0);
       return;
     }
     if (this.mode === 'vault') {
       setIcon(icon, 'folder-search');
-      this.noteChipEl.createSpan({ text: 'Your notes, then Gemma 4 E4B' });
+      const prefix = `${wikiDir()}/`;
+      const n = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix)).length;
+      this.noteChipEl.createSpan({ text: `Your notes · ${n} file${n === 1 ? '' : 's'}` });
       this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
       return;
     }
@@ -1152,6 +1170,19 @@ export class ChatView extends ItemView {
       setIcon(check, 'check');
       check.setAttribute('aria-label', 'Already in wiki');
     }
+  }
+
+  /**
+   * The Sources row's label says what kind of thing it lists, because the
+   * same row under a Vault answer and a Wiki answer lists different things
+   * — a note you wrote, or a card the plugin built — and the difference is
+   * the whole point of having two modes.
+   */
+  private sourcesLabel(row: HTMLElement, grounding: string) {
+    const kind = grounding.startsWith('wiki') ? 'cards' : grounding === 'vault' ? 'notes' : 'sources';
+    const icon = row.createSpan({ cls: 'gemma4-chat-sources-icon' });
+    setIcon(icon, kind === 'cards' ? 'library' : 'file-text');
+    row.createSpan({ cls: 'gemma4-chat-sources-label', text: kind === 'cards' ? 'Cards' : kind === 'notes' ? 'Notes' : 'Sources' });
   }
 
   private appendUserMessage(text: string) {
@@ -1733,8 +1764,9 @@ export class ChatView extends ItemView {
       const entries = await readIndexEntries(this.app.vault);
       if (!entries.length) {
         this.appendInfoMessage(
-          'Your wiki is empty, so there is nothing to answer from. File something first — ' +
-            'nothing is written without your approval.',
+          `Your ${wikiDir()}/ folder is empty, so there is nothing to answer from. Build it ` +
+            'first — nothing is written without your approval — or switch to Vault to search ' +
+            'your notes as they are.',
           [
             { label: 'Scan a folder', action: 'scan' },
             { label: 'Ingest this note into wiki', action: 'ingest' },
@@ -2172,7 +2204,7 @@ export class ChatView extends ItemView {
         // answer was grounded in, as clickable links — not left to the model.
         // A list answer already drew them above the model's lines.
         const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
-        sourcesRow.createSpan({ cls: 'gemma4-chat-sources-label', text: 'Sources' });
+        this.sourcesLabel(sourcesRow, context.grounding);
         for (const src of context.sources) {
           const link = sourcesRow.createEl('a', { cls: 'gemma4-chat-source-link', text: src.title });
           link.addEventListener('click', (evt) => {
@@ -2225,8 +2257,37 @@ export class ChatView extends ItemView {
       // does not mention", "is unclear". Either way the card under the answer
       // names the modes that could answer, and re-asks there in one click.
       // Default stays grounded; the escalation is explicit and per answer.
-      // Vault mode carries no card: it already searched, and what it did not
-      // find it said. The two narrower modes route to it.
+      // A collection-shaped question answered from four raw notes is a
+      // shallow answer, and Vault cannot do better — the cards can. Say so
+      // under the answer, with the count that makes it concrete, or with the
+      // button that starts building them.
+      if (context.vault && looksLikeCollectionQuery(question)) {
+        const { cards } = this.wikiCounts();
+        const card = body.createDiv({ cls: 'gemma4-chat-hatch gemma4-chat-route' });
+        if (cards > 0) {
+          card.createDiv({
+            cls: 'gemma4-chat-route-text',
+            text: `Questions across your whole collection are what Wiki is for — you have ${cards} card${cards === 1 ? '' : 's'}.`,
+          });
+          const b = card.createDiv({ cls: 'gemma4-chat-route-actions' }).createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Ask the wiki' });
+          b.addEventListener('click', () => {
+            if (this.busy) return;
+            b.disabled = true;
+            this.setMode('wiki');
+            void this.runGeneration(question, false, true);
+          });
+        } else {
+          card.createDiv({
+            cls: 'gemma4-chat-route-text',
+            text: `Questions across your whole collection are what Wiki is for. Build cards with Scan a folder first — nothing is in ${wikiDir()}/ yet.`,
+          });
+          const b = card.createDiv({ cls: 'gemma4-chat-route-actions' }).createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Scan a folder' });
+          b.addEventListener('click', () => this.runSuggestion({ label: 'Scan a folder', action: 'scan' }));
+        }
+      }
+
+      // Vault mode carries no other card: it already searched, and what it
+      // did not find it said. The two narrower modes route to it.
       const refused = looksLikeRefusal(answer);
       if (!context.vault && !context.ungrounded && (context.noPageMatch || refused)) {
         const inNote = context.grounding.startsWith('note:');
