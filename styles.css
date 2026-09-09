@@ -584,23 +584,23 @@
 /* A word in the sentence, not a control on top of it. The pill read as a
    third button under a screen that already has a chip row and a pill row. */
 .gemma4-chat-empty-guide-mode {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0;
   font-size: inherit;
   font-weight: 500;
   color: var(--text-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
-  box-shadow: none;
 }
 
 .gemma4-chat-empty-guide-mode:hover {
   color: var(--text-accent-hover);
-  background: transparent;
   text-decoration-thickness: 2px;
+}
+
+.gemma4-chat-empty-guide-mode:focus-visible {
+  outline: 1px solid var(--text-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* ---------- Input area ---------- */

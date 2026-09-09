@@ -550,8 +550,21 @@ export class ChatView extends ItemView {
       // not put the arrow alone at the start of the next row.
       const jump = line.createSpan({ cls: 'gemma4-chat-empty-guide-jump' });
       jump.appendText('→ ');
-      const b = jump.createEl('button', { cls: 'gemma4-chat-empty-guide-mode', text: label });
+      // A span, not a button. Obsidian and every theme style the button
+      // element itself — a background, a radius, a shadow — and a rule that
+      // turns all of that off is a rule each new theme can put back. This is
+      // a word in a sentence, so it is marked up as one and given the button
+      // role and key handling by hand.
+      const b = jump.createSpan({ cls: 'gemma4-chat-empty-guide-mode', text: label });
+      b.setAttribute('role', 'button');
+      b.setAttribute('tabindex', '0');
       b.addEventListener('click', () => this.setMode(mode));
+      b.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.setMode(mode);
+        }
+      });
     }
 
     // Until the first message is sent, point at the chips. Someone opening this
