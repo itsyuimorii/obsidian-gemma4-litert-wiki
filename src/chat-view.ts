@@ -1656,7 +1656,7 @@ export class ChatView extends ItemView {
         sourcePath: indexPath(),
         sources: hits,
         grounding: 'vault',
-        vault: { kind: 'list', hits },
+        vault: { kind: 'list', hits, adds: false },
       };
     }
 
@@ -1810,7 +1810,9 @@ export class ChatView extends ItemView {
         sourcePath: indexPath(),
         sources: listed2,
         grounding: 'vault',
-        vault: { kind: 'list', hits: listed2, adds: aboutOwn && !listQuestion },
+        // The model's own answer follows every list, as it follows every
+        // grounded answer: the notes first, then Gemma 4 E4B, always.
+        vault: { kind: 'list', hits: listed2, adds: true },
       };
     }
 
