@@ -333,7 +333,7 @@ const MODE_GUIDE: Record<
     goodFor: 'Good for: finding a note, what you wrote about something, anything general.',
     others: [
       ['note', 'This note', 'For only the note you have open'],
-      ['wiki', 'Wiki', 'For what connects, what is missing, what you added — across the cards'],
+      ['wiki', 'Wiki', 'For what connects your notes, or what is missing'],
     ],
   },
   wiki: {
@@ -341,7 +341,7 @@ const MODE_GUIDE: Record<
     reads: '',
     goodFor: 'Good for: what connects my notes, what is still open, what did I add this week.',
     others: [
-      ['vault', 'Vault', 'For a note as you wrote it, or one not filed yet'],
+      ['vault', 'Vault', 'For a note as you wrote it, filed or not'],
       ['note', 'This note', 'For only the note you have open'],
     ],
   },
@@ -462,30 +462,24 @@ export class ChatView extends ItemView {
     // read. Not kept: the two buttons that used to be here. The chip row above
     // the input carries Scan permanently now, and a screen with the same two
     // buttons twice is a screen that has not decided where they live.
-    if (this.mode === 'wiki' && this.wikiEmpty) {
-      el.createDiv({ cls: 'gemma4-chat-empty-title', text: 'Your wiki is empty' });
-      el.createDiv({
-        cls: 'gemma4-chat-empty-hint',
-        text:
-          `Wiki mode reads only the pages in your ${wikiDir()}/ folder — the cards and concept ` +
-          'pages this plugin builds from your notes. Nothing is there yet.',
-      });
-      el.createDiv({
-        cls: 'gemma4-chat-empty-hint',
-        text: 'Press Scan a folder below to build it, or switch to Vault to search your notes as they are.',
-      });
-      return;
-    }
-
     const guide = MODE_GUIDE[this.mode];
-    el.createDiv({ cls: 'gemma4-chat-empty-title', text: guide.title });
+    const wikiEmpty = this.mode === 'wiki' && this.wikiEmpty;
+    // An empty wiki gets the same screen as every other mode — what it
+    // reads, what it is good for, where else to go — under a title that
+    // says it is empty and one line that says how to fill it. The earlier
+    // screen said only "empty" and left the difference from Vault unsaid.
+    el.createDiv({ cls: 'gemma4-chat-empty-title', text: wikiEmpty ? 'Your wiki is empty' : guide.title });
     // The wiki line names the folder, which is a setting, so it is built here.
     const reads =
       this.mode === 'wiki'
-        ? `Reads only ${wikiDir()}/ — the cards and concept pages built from your notes and reviewed by you.`
+        ? `Reads only ${wikiDir()}/ — the cards and concept pages this plugin builds from your notes` +
+          (wikiEmpty ? '. Nothing is there yet.' : ', reviewed by you.')
         : guide.reads;
     el.createDiv({ cls: 'gemma4-chat-empty-hint', text: reads });
     el.createDiv({ cls: 'gemma4-chat-empty-hint', text: guide.goodFor });
+    if (wikiEmpty) {
+      el.createDiv({ cls: 'gemma4-chat-empty-hint', text: 'Press Scan a folder below to build it.' });
+    }
 
     // The other two modes, one line each: the question that belongs there,
     // then the pill. The pills under the input are the same switch; this

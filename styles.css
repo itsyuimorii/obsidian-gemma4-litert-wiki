@@ -494,7 +494,7 @@
   justify-content: center;
   gap: 8px;
   text-align: center;
-  padding: 24px;
+  padding: 24px 14px;
 }
 
 .gemma4-chat-empty-icon {
@@ -517,11 +517,15 @@
   margin-top: 4px;
 }
 
+/* As wide as the panel allows, and balanced: at 250px every sentence
+   ended with one word alone on its own line. */
 .gemma4-chat-empty-hint {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  max-width: 250px;
+  max-width: 340px;
+  width: 100%;
   line-height: 1.55;
+  text-wrap: pretty;
 }
 
 /* Shown only when Wiki mode has nothing to answer from — the one screen
@@ -554,11 +558,16 @@
 }
 
 .gemma4-chat-empty-guide-line {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: block;
+  max-width: 340px;
+  width: 100%;
+  line-height: 1.8;
+  text-wrap: pretty;
+}
+
+.gemma4-chat-empty-guide-line .gemma4-chat-empty-guide-mode {
+  margin-left: 4px;
+  vertical-align: baseline;
 }
 
 .gemma4-chat-empty-guide-mode {
