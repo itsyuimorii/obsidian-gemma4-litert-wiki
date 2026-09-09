@@ -4,6 +4,30 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## Unreleased
+
+- **Vault search that knows a phrase from its words.** A two- or
+  three-word subject — *system design*, *React Native* — is looked for
+  whole; its words apart rank a note but never make it *about* the
+  subject, so a résumé with "system" in one line and "design" in another
+  stays a mention. The model's expansions are kept whole too: a one-word
+  Chinese or Japanese name is one term, a multi-word English one is a
+  phrase. An expansion makes a note *about* the subject only when the note
+  also names the subject as typed, or when the expansion is rare enough in
+  the vault to mean nothing else.
+- **About means the title or a tag, exactly.** A tag *react-native* is no
+  longer the word *react*; a heading ranks a note but is one section of a
+  note about something else. Body scores are divided by the square root of
+  the note's length, so the two longest work logs in a vault stop leading
+  every list.
+- **French, German and Spanish** list questions (*quelles notes*, *welche
+  Notizen*, *qué notas*) are drawn as links like the English and Japanese
+  ones, and *mes notes* / *meine Notizen* / *mis notas* are read as being
+  about the vault.
+- **The panel opens on This note.** Vault and Wiki are one pill away; the
+  empty screen's Wiki line names the wiki folder. An existing setting is
+  kept.
+
 ## 1.0.15 — 2026-09-09
 
 Chat can finally read your vault. Direct becomes Vault, and it is the

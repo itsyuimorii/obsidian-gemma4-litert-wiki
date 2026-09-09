@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { asksAboutOwnNotes, looksLikeRefusal, stripLeadingRefusal } from '../src/pure.ts';
+import { asksAboutOwnNotes, looksLikeListQuery, looksLikeRefusal, stripLeadingRefusal } from '../src/pure.ts';
 
 // --- asksAboutOwnNotes -----------------------------------------------------
 
@@ -138,4 +138,45 @@ test('a refusal in the first sentence of a run-on paragraph is dropped', () => {
 test('Chinese refusals are caught again', () => {
   for (const a of ['笔记中没有提到这个话题。', '无法访问您的个人文件。', '根据您提供的笔记内容，没有明确提到"js"这个词汇的笔记。'])
     assert.ok(looksLikeRefusal(a), a);
+});
+
+// --- French, German, Spanish --------------------------------------------------
+
+test('list questions in French, German and Spanish are recognised', () => {
+  for (const q of [
+    "Quelles notes parlent de l'onboarding ?",
+    'Quels fichiers mentionnent WebGPU',
+    'Liste mes notes sur le café',
+    'Combien de notes ai-je sur React ?',
+    'Welche Notizen erwähnen WebGPU?',
+    'Welche meiner Notizen handeln von Kaffee',
+    'Zeige mir die Notizen über React',
+    'Wie viele Notizen habe ich zu Kaffee?',
+    '¿Qué notas hablan de React?',
+    'Cuáles de mis notas mencionan WebGPU',
+    'Lista mis notas sobre café',
+    '¿Cuántas notas tengo sobre React?',
+  ]) assert.ok(looksLikeListQuery(q), q);
+});
+
+test('a sentence with a note-word but no list shape is not a list question', () => {
+  for (const q of [
+    "Qu'est-ce qu'un vault Obsidian ?",
+    'Was ist ein KV-Cache?',
+    '¿Qué es una nota al pie?',
+    'Notes de version de Node 22',
+  ]) assert.equal(looksLikeListQuery(q), false, q);
+});
+
+test('possessives in French, German and Spanish are about own notes', () => {
+  for (const q of [
+    "Qu'y a-t-il dans mes notes sur le café ?",
+    'Que dit mon vault sur WebGPU',
+    'Was steht in meinen Notizen über Kaffee?',
+    'Was ist in meinem Vault?',
+    '¿Qué hay en mis notas sobre café?',
+    '¿Qué dice mi vault sobre WebGPU?',
+  ]) assert.ok(asksAboutOwnNotes(q), q);
+  for (const q of ['Mes amis sont partis', 'Meine Katze schläft', 'Mis padres viven en Madrid'])
+    assert.equal(asksAboutOwnNotes(q), false, q);
 });

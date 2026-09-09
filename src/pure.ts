@@ -229,7 +229,8 @@ const INSTRUCTION_STOP = new Set([
 // Chinese and Japanese function words and question scaffolding. The
 // segmenter returns these as tokens of their own, which is what makes a
 // stoplist possible at all: the sliding bigrams they replaced produced
-// "记提" out of "笔记|提到", a non-word that occurred in one note and so
+// a two-character non-word straddling "notes" and "mention" in a Chinese
+// question, a piece that occurred in one note and so
 // outweighed the subject of the question sevenfold.
 const CJK_STOP = new Set([
   // Chinese particles, pronouns, determiners, classifiers
@@ -296,11 +297,12 @@ export function queryTerms(text: string): string[] {
     }
     return [...new Set(out)];
   }
-  // ICU's dictionary does not know every word — 闭包 (closure) comes back
-  // as 闭 + 包. Consecutive single-character Chinese tokens that survived
-  // the stoplist are re-joined into one term, since two lone characters in
-  // a row are far more often one unknown word than two known ones. A lone
-  // single character stays as it is (猫 is a word).
+  // ICU's dictionary does not know every word — the two-character Chinese
+  // word for closure comes back as two single characters. Consecutive
+  // single-character Chinese tokens that survived the stoplist are
+  // re-joined into one term, since two lone characters in a row are far
+  // more often one unknown word than two known ones. A lone single
+  // character stays as it is (the word for cat is one character).
   let run: string[] = [];
   const flush = () => {
     if (run.length) out.push(run.join(''));
@@ -1377,6 +1379,10 @@ export function asksAboutOwnNotes(question: string): boolean {
     /\bwo\s*de\b/i,
     /\b(?:what|which|how many)\b[^.?!]{0,40}\bI\s+(?:wrote|write|added|add|saved|save|clipped|clip|filed|file|noted|note|ingested|ingest|have)\b/i,
     /(?:私|僕|俺|自分)(?:が|は)[^。？?]{0,24}(?:書い|保存し|追加し|クリップし|メモし)/,
+    // "mes notes", "meine Notizen", "mis notas" — and the vault itself.
+    /(?<!\p{L})(?:mes|mon|ma|nos|notre)\s+(?:propres?\s+)?(?:notes?|fichiers?|coffre|vault|valut|wiki)(?!\p{L})/iu,
+    /(?<!\p{L})(?:meine[rnms]?|unsere[rnms]?)\s+(?:eigenen?\s+)?(?:notizen?|dateien?|tresor|vault|valut|wiki)(?!\p{L})/iu,
+    /(?<!\p{L})(?:mis?|nuestr[ao]s?)\s+(?:propi[ao]s?\s+)?(?:notas?|archivos?|b[óo]veda|vault|valut|wiki)(?!\p{L})/iu,
   ];
   return patterns.some((p) => p.test(q));
 }
@@ -1436,14 +1442,19 @@ export interface VaultHit {
   path: string;
   score: number;
   /**
-   * `about`: the subject is in the title, a tag or a heading, or the body
-   * names it three times or more. `mentions`: the body names it once or
-   * twice. The difference between a note on coffee and a note that says
-   * "coffee's on me" in an example sentence — which lexical search alone
-   * cannot tell, and the panel must.
+   * `about`: the subject is in the title or a tag, or the body keeps
+   * naming it — three times or more, relative to its length. `mentions`:
+   * it is in a heading, or the body names it once or twice. The
+   * difference between a note on coffee and a note that says "coffee's on
+   * me" in an example sentence — which lexical search alone cannot tell,
+   * and the panel must.
    */
   tier: 'about' | 'mentions';
-  /** Typed terms found in the title, tags or headings. */
+  /**
+   * Typed terms found in the title or a tag. Not headings: a heading is
+   * one section of a note about something else. Not the words of a
+   * phrase on their own: "system" and "design" in a résumé.
+   */
   metaTyped?: string[];
   /** Expansion terms found there. They promote a note to "about" only when rare in this vault. */
   metaExpanded?: string[];
@@ -1482,37 +1493,43 @@ export function rankVaultDocs(
   extra: readonly string[] = []
 ): VaultHit[] {
   const subject = subjectOf(question);
-  const own = queryTerms(subject);
-  const ownShort = shortTerms(subject);
-  const more = expansionTerms(extra, new Set([...own, ...ownShort]));
-  const typed: { t: string; whole: boolean }[] = [
-    ...own.map((t) => ({ t, whole: false })),
-    ...ownShort.map((t) => ({ t, whole: true })),
-  ];
+  const typed = subjectTerms(subject);
+  const more = expansionTerms(extra, new Set(typed.map((x) => x.t)));
   if (!typed.length && !more.length) return [];
   const has = (hay: string, t: string, whole: boolean) => countIn(hay, t, whole, 1) > 0;
   const hits: VaultHit[] = [];
   for (const d of docs) {
     const title = d.title.toLowerCase();
-    const tags = d.tags.map((t) => t.toLowerCase().replace(/^#/, ''));
+    // Hyphens and underscores in a tag are its spaces: system-design is
+    // the phrase "system design", and react-native is not the word react.
+    const tags = d.tags.map((t) => t.toLowerCase().replace(/^#/, '').replace(/[-_]+/g, ' '));
     const tagText = tags.join(' ');
     const headings = d.headings.join(' ').toLowerCase();
+    // A tag is a name, not a sentence. A Latin term has to be the whole
+    // tag, or a whole segment of a nested one (dev/react): "react" found
+    // inside react-native said a note was about React, and it was not. A
+    // Chinese or Japanese term has no word boundary and stays a substring.
+    const inTags = (t: string) =>
+      CJK_CHAR.test(t) ? tagText.includes(t) : tags.some((tag) => tag === t || tag.split('/').includes(t));
     let score = 0;
     const metaTyped: string[] = [];
     const metaExpanded: string[] = [];
-    for (const { t, whole } of typed) {
-      let s = 0;
-      if (has(title, t, whole)) s = 3;
-      else if (whole ? tags.includes(t) : has(tagText, t, false)) s = 3;
-      else if (has(headings, t, whole)) s = 1;
-      if (s) { score += s; metaTyped.push(t); }
+    // Title or tag: three, and the note is about it. Heading: one, and it
+    // is not — a heading is one section of a note about something else.
+    for (const { t, whole, weak } of typed) {
+      const strong = has(title, t, whole) || inTags(t);
+      const s = strong ? 3 : has(headings, t, whole) ? 1 : 0;
+      if (!s) continue;
+      // A word out of a phrase is half the evidence, and never tier evidence.
+      score += weak ? s / 2 : s;
+      if (strong && !weak) metaTyped.push(t);
     }
     for (const { t, whole } of more) {
-      let s = 0;
-      if (has(title, t, whole)) s = 3;
-      else if (whole ? tags.includes(t) : has(tagText, t, false)) s = 3;
-      else if (has(headings, t, whole)) s = 1;
-      if (s) { score += s * EXPANSION_WEIGHT; metaExpanded.push(t); }
+      const strong = has(title, t, whole) || inTags(t);
+      const s = strong ? 3 : has(headings, t, whole) ? 1 : 0;
+      if (!s) continue;
+      score += s * EXPANSION_WEIGHT;
+      if (strong) metaExpanded.push(t);
     }
     if (score > 0) hits.push({ path: d.path, score, tier: 'about', metaTyped, metaExpanded });
   }
@@ -1545,9 +1562,66 @@ export function shortTerms(question: string): string[] {
   )];
 }
 
+/**
+ * The pattern for a whole-word term. A phrase ("system design") matches
+ * with any run of spaces, hyphens or underscores between its words, so a
+ * tag written system-design and a heading written System Design both
+ * count. Bounded by non-alphanumerics, so "web" is not found in WebView.
+ */
+function termRegex(term: string): RegExp {
+  const body = term
+    .split(/\s+/)
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[\\s\\-_]+');
+  return new RegExp(`(?<![a-z0-9])${body}(?![a-z0-9])`, 'g');
+}
+
+/**
+ * The subject as a phrase, when it is one: two or three Latin words in a
+ * row that all survive the stoplists — "system design", "react native
+ * bridge". A phrase is matched whole; its words on their own are weak
+ * evidence (see subjectTerms), because a note with "system" in one
+ * paragraph and "design" in another is not about system design, and a
+ * résumé that has both is about neither. Four words or more is a sentence,
+ * not a subject, and gets no phrase.
+ */
+export function phraseOf(subject: string): string | undefined {
+  const keep = new Set([...queryTerms(subject), ...shortTerms(subject)]);
+  const tokens = subject.toLowerCase().split(/[^\p{L}\p{N}#+]+/u).filter(Boolean);
+  let best: string[] = [];
+  let run: string[] = [];
+  for (const t of [...tokens, '']) {
+    if (t && !CJK_CHAR.test(t) && keep.has(t)) {
+      run.push(t);
+      continue;
+    }
+    if (run.length > best.length) best = run;
+    run = [];
+  }
+  return best.length >= 2 && best.length <= 3 ? best.join(' ') : undefined;
+}
+
+/** A term to look for; `weak` marks a word that came out of a phrase. */
+interface SubjectTerm {
+  t: string;
+  whole: boolean;
+  weak?: boolean;
+}
+
+/** The subject's own terms: the phrase first, if there is one, then each word. */
+function subjectTerms(subject: string): SubjectTerm[] {
+  const phrase = phraseOf(subject);
+  const inPhrase = new Set(phrase ? phrase.split(' ') : []);
+  const out: SubjectTerm[] = [];
+  if (phrase) out.push({ t: phrase, whole: true });
+  for (const t of queryTerms(subject)) out.push({ t, whole: false, weak: inPhrase.has(t) });
+  for (const t of shortTerms(subject)) out.push({ t, whole: true, weak: inPhrase.has(t) });
+  return out;
+}
+
 function countIn(hay: string, term: string, whole: boolean, cap = 3): number {
   if (whole) {
-    const re = new RegExp(`(?<![a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`, 'g');
+    const re = termRegex(term);
     let n = 0;
     while (n < cap && re.exec(hay)) n++;
     return n;
@@ -1590,26 +1664,57 @@ export interface WeightedTerm {
   weight: number;
   /** From the model's expansion of the subject, not from the question itself. */
   expanded?: boolean;
+  /** One word of a phrase, found on its own. Half weight, and never what makes a note "about". */
+  weak?: boolean;
 }
 
 /** How much an expansion term counts relative to a word the user typed. */
 const EXPANSION_WEIGHT = 0.7;
+/** How much one word of a phrase counts, on its own, relative to the phrase. */
+const WEAK_WEIGHT = 0.5;
 
 /**
  * Turn the expansion terms into the same shape as the question's own:
  * long ones as substrings, two-letter Latin ones as whole words, the
  * stoplists applied, anything already in the question dropped.
  */
-function expansionTerms(extra: readonly string[], own: ReadonlySet<string>): { t: string; whole: boolean }[] {
-  const out: { t: string; whole: boolean }[] = [];
+function expansionTerms(extra: readonly string[], own: ReadonlySet<string>): SubjectTerm[] {
+  const out: SubjectTerm[] = [];
   const seen = new Set<string>();
+  const add = (t: string, whole: boolean) => {
+    if (own.has(t) || seen.has(t)) return;
+    seen.add(t);
+    out.push({ t, whole });
+  };
   for (const raw of extra) {
-    // A Latin expansion term matches as a whole word: the model offered
-    // "web" for javascript, and as a substring it found every WebView note
-    // in the vault. Chinese and Japanese terms have no word boundaries and
-    // stay substrings.
-    for (const t of queryTerms(raw)) if (!own.has(t) && !seen.has(t)) { seen.add(t); out.push({ t, whole: !CJK_CHAR.test(t) }); }
-    for (const t of shortTerms(raw)) if (!own.has(t) && !seen.has(t)) { seen.add(t); out.push({ t, whole: true }); }
+    // A Latin expansion of several words is a phrase and matches whole:
+    // "virtual dom", not "virtual" and "dom" — the second of which is in
+    // every note with a heading called Design. Chinese and Japanese
+    // expansions are segmented as the question is.
+    const words = raw
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w) => w.replace(/^[^\p{L}\p{N}#+]+|[^\p{L}\p{N}#+]+$/gu, ''))
+      .filter(Boolean);
+    if (words.length >= 2 && !CJK_CHAR.test(raw)) {
+      if (words.length <= 4) add(words.join(' '), true);
+      continue;
+    }
+    // One word is one term, as the model gave it: the Chinese name of
+    // system design is one four-character word, and cut in two by the
+    // segmenter it was "system" and "design" — two words the vault uses
+    // everywhere. A Latin word matches whole — the model offered "web" for
+    // javascript, and as a substring it found every WebView note in the
+    // vault. Chinese and Japanese terms have no word boundaries and stay
+    // substrings. Only a mixed expansion ("React" plus a Chinese word) is
+    // segmented.
+    if (words.length === 1) {
+      const t = words[0];
+      if (queryTerms(t).length || shortTerms(t).length) add(t, !CJK_CHAR.test(t));
+      continue;
+    }
+    for (const t of queryTerms(raw)) add(t, !CJK_CHAR.test(t));
+    for (const t of shortTerms(raw)) add(t, true);
   }
   return out;
 }
@@ -1644,12 +1749,10 @@ export function weightedTerms(
   extra: readonly string[] = []
 ): WeightedTerm[] {
   const subject = subjectOf(question);
-  const long = queryTerms(subject);
-  const short = shortTerms(subject);
-  const more = expansionTerms(extra, new Set([...long, ...short]));
+  const typed = subjectTerms(subject);
+  const more = expansionTerms(extra, new Set(typed.map((x) => x.t)));
   const terms: WeightedTerm[] = [
-    ...long.map((t) => ({ t, whole: false, weight: 0 })),
-    ...short.map((t) => ({ t, whole: true, weight: 0 })),
+    ...typed.map(({ t, whole, weak }) => ({ t, whole, weight: 0, weak })),
     ...more.map(({ t, whole }) => ({ t, whole, weight: 0, expanded: true })),
   ];
   const docs = distinctDocs(bodies);
@@ -1664,6 +1767,7 @@ export function weightedTerms(
     // term is now worth about 0.12; at all of them, next to nothing.
     w.weight = df === 0 ? 0 : Math.log((n + 1) / df) / Math.log(n + 1);
     if (w.expanded) w.weight *= EXPANSION_WEIGHT;
+    if (w.weak) w.weight *= WEAK_WEIGHT;
   }
   return terms;
 }
@@ -1680,7 +1784,7 @@ export function rescoreWithBodies(
   if (!terms.length) return [];
   const priorScore = new Map<string, number>(prior.map((h) => [h.path, h.score]));
   const priorHit = new Map<string, VaultHit>(prior.map((h) => [h.path, h]));
-  const weightOf = new Map<string, number>(terms.map((w) => [w.t, w.weight]));
+  const termOf = new Map<string, WeightedTerm>(terms.map((w) => [w.t, w]));
   const docs = distinctDocs(bodies);
   if (!docs.length) {
     return [...priorScore.entries()]
@@ -1695,31 +1799,53 @@ export function rescoreWithBodies(
   for (const [path, hay] of docs) {
     const fromMetadata = priorScore.get(path) ?? 0;
     const meta = priorHit.get(path);
-    let score = fromMetadata;
+    let body = 0;
     let dense = false;
+    // Whether the note names the subject as the user typed it, anywhere.
+    // The model's expansions cannot tell a name for the same thing (the
+    // Chinese name of system design; "closure" for a question about JS)
+    // from a related thing ("component" for React): a note called
+    // "Autocomplete component" that never says React is not about React,
+    // and a note called "application-level system design" in Chinese that
+    // says "system design" twice is about system design. So an expansion
+    // counts towards "about" when the typed subject is in the note too —
+    // or when the expansion is so rare here that it can only mean the
+    // subject (useState, load balancer).
+    const typedPresent =
+      (meta?.metaTyped?.length ?? 0) > 0 ||
+      terms.some((w) => !w.expanded && !w.weak && w.weight > 0 && countIn(hay, w.t, w.whole, 1) > 0);
+    const expansionCounts = (w: WeightedTerm) => !w.expanded || w.weight >= 0.4 || (typedPresent && w.weight >= 0.15);
     for (const w of terms) {
       if (w.weight === 0) continue;
       const c = countIn(hay, w.t, w.whole);
-      if (c > 0) score += (1 + c) * w.weight;
+      if (c > 0) body += (1 + c) * w.weight;
       // "About" by body alone means the subject keeps coming up, relative to
       // the note's length: three mentions in a two-page note, not three in
       // a twenty-page one that used it as an example. At least three, and
       // at least one per thousand characters, of a term that carries real
-      // weight in this vault — a typed term, or an expansion term that is
-      // rare enough here to mean the subject and not "web".
-      if (c >= 3 && w.weight >= (w.expanded ? 0.3 : 0.2)) {
+      // weight in this vault. One word of a phrase, however dense, is not
+      // the phrase.
+      if (!w.weak && c >= 3 && w.weight >= 0.2 && expansionCounts(w)) {
         const all = countIn(hay, w.t, w.whole, 50);
         if (all / Math.max(1, hay.length / 1000) >= 1) dense = true;
       }
     }
-    // A typed term in the title, tags or headings makes a note about the
-    // subject. An expansion term there does too, unless it is one the vault
-    // uses nearly everywhere (weight under 0.15): whole-word matching has
-    // already kept "web" out of WebView, so what reaches here is 闭包 in a
-    // title called 闭包 — the subject, in a vault that is largely about it.
+    // A longer note holds more words, so it matches more of them: the two
+    // longest work logs in the first real vault led every list, whatever
+    // it asked. The body score is divided by √(1 + length / 4000) — a
+    // two-page note is nearly untouched, a twenty-page one is halved. Not
+    // by length itself, which would bury a long note that is entirely
+    // about the subject under a short one that names it once.
+    const score = fromMetadata + body / Math.sqrt(1 + hay.length / 4000);
+    // A typed term in the title or a tag makes a note about the subject.
+    // An expansion term there does too, on the terms above — and never one
+    // the vault uses nearly everywhere (weight under 0.15).
     const metaAbout =
       (meta?.metaTyped?.length ?? 0) > 0 ||
-      (meta?.metaExpanded ?? []).some((t) => (weightOf.get(t) ?? 0) >= 0.15);
+      (meta?.metaExpanded ?? []).some((t) => {
+        const w = termOf.get(t);
+        return !!w && w.weight >= 0.15 && expansionCounts(w);
+      });
     if (score >= min) {
       scored.push({ path, score, tier: metaAbout || dense ? 'about' : 'mentions' });
     }
@@ -1769,6 +1895,17 @@ export function looksLikeListQuery(question: string): boolean {
     /(?:何件|いくつ)の?(?:ノート|記事|ファイル|メモ)/,
     /(?:哪些|哪几篇|哪几个|哪一篇|有几篇|有多少篇|列出|列一下|找一下|找找|找出|搜一下|搜索)/,
     /(?:笔记|筆記|文章|文件|页面|頁面)(?:有哪些|都有什么|都有啥|有什么|提到)/,
+    // French, German, Spanish. \b is ASCII-only, so an accented word
+    // ("qué", "quelles" before "é") is bounded by letter lookarounds.
+    /(?<!\p{L})(?:quels?|quelles?|lesquel(?:le)?s?)\s+(?:de\s+mes\s+)?(?:notes?|fichiers?|pages?|articles?|documents?)(?!\p{L})/iu,
+    /(?<!\p{L})(?:liste[rz]?|montre[rz]?|trouve[rz]?|cherche[rz]?|affiche[rz]?)(?!\p{L})[^.?!]{0,30}(?<!\p{L})(?:notes?|fichiers?|pages?|articles?|documents?)(?!\p{L})/iu,
+    /(?<!\p{L})combien\s+de\s+(?:notes?|fichiers?|pages?|articles?|documents?)(?!\p{L})/iu,
+    /(?<!\p{L})welche[rsnm]?\s+(?:meiner\s+)?(?:notizen?|dateien?|seiten?|artikel|dokumente?|einträge?)(?!\p{L})/iu,
+    /(?<!\p{L})(?:liste|zeig(?:e|en|t)?|find(?:e|en|et)?|such(?:e|en|t)?)(?!\p{L})[^.?!]{0,30}(?<!\p{L})(?:notizen?|dateien?|seiten?|artikel|dokumente?)(?!\p{L})/iu,
+    /(?<!\p{L})wie\s+viele\s+(?:notizen|dateien|seiten|artikel|dokumente)(?!\p{L})/iu,
+    /(?<!\p{L})(?:qué|que|cuál(?:es)?|cual(?:es)?)\s+(?:de\s+mis\s+)?(?:notas?|archivos?|p[áa]ginas?|art[íi]culos?|documentos?)(?!\p{L})/iu,
+    /(?<!\p{L})(?:lista[r]?|muestra|mu[ée]strame|encuentra|busca|enumera)(?!\p{L})[^.?!]{0,30}(?<!\p{L})(?:notas?|archivos?|p[áa]ginas?|art[íi]culos?|documentos?)(?!\p{L})/iu,
+    /(?<!\p{L})cu[áa]nt[ao]s\s+(?:notas|archivos|p[áa]ginas|art[íi]culos|documentos)(?!\p{L})/iu,
   ];
   return patterns.some((p) => p.test(q));
 }
@@ -1806,7 +1943,7 @@ export function excerptAround(
     if (!t) continue;
     let n = 0;
     let i = -1;
-    const re = whole ? new RegExp(`(?<![a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`, 'g') : null;
+    const re = whole ? termRegex(t) : null;
     for (;;) {
       if (re) {
         const m = re.exec(hay);

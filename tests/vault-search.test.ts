@@ -14,6 +14,7 @@ import {
   dedupeByName,
   excerptAround,
   parseExpansion,
+  phraseOf,
   queryTerms,
   subjectOf,
   looksLikeListQuery,
@@ -484,4 +485,137 @@ test('a generic expansion term in a title does not make the note about the subje
   assert.notEqual(tier['webview.md'], 'about');
   // 闭包 is rare here, and in the title.
   assert.equal(tier['w01.md'], 'about');
+});
+
+// --- Phrases, tags, headings, length ------------------------------------------
+//
+// The second real vault: "system design" matched every note with "system"
+// in one paragraph and "design" in another, a tag react-native counted as
+// the word react, a heading counted as much as a title for the tier, and
+// the two longest work logs led every list because they hold more words.
+
+test('a two- or three-word Latin subject is a phrase; a longer one is not', () => {
+  assert.equal(phraseOf('system design'), 'system design');
+  assert.equal(phraseOf('what did I write about react native'), 'react native');
+  assert.equal(phraseOf('React Native bridge'), 'react native bridge');
+  assert.equal(phraseOf('react'), undefined);
+  assert.equal(phraseOf('coffee grind size water temperature'), undefined);
+  assert.equal(phraseOf('我关于 React 写过什么'), undefined);
+  assert.equal(phraseOf('explain react and vue'), undefined);
+});
+
+test('the phrase whole is about; its words apart are a mention', () => {
+  const docs: VaultDoc[] = [
+    { path: 'sd.md', title: 'System design', tags: [], headings: [] },
+    { path: 'w15.md', title: 'W15 RADIO', tags: ['system-design'], headings: [] },
+    { path: 'resume.md', title: 'Master Resume', tags: [], headings: [] },
+    { path: 'x.md', title: 'x', tags: [], headings: [] },
+  ];
+  const bodies = new Map([
+    ['sd.md', 'Scalability, caching, sharding.'],
+    ['w15.md', 'The RADIO framework for a component-level design.'],
+    ['resume.md', 'Led the design of the billing system. Owned system health. Design reviews weekly. System upgrades.'],
+    ['x.md', 'tea'],
+  ]);
+  const hits = rescoreWithBodies('Which of my notes are about: system design', rankVaultDocs('Which of my notes are about: system design', docs), bodies, 8, 0.05);
+  const tier = Object.fromEntries(hits.map((h) => [h.path, h.tier]));
+  assert.equal(tier['sd.md'], 'about');
+  // A tag written system-design is the phrase.
+  assert.equal(tier['w15.md'], 'about');
+  // "system" four times and "design" three times, never together.
+  assert.equal(tier['resume.md'], 'mentions');
+  assert.equal(tier['x.md'], undefined);
+});
+
+test('a tag is the whole word: react-native is not react, dev/react is', () => {
+  const docs: VaultDoc[] = [
+    { path: 'rn.md', title: 'Bridge notes', tags: ['react-native'], headings: [] },
+    { path: 'r.md', title: 'Rendering notes', tags: ['dev/react'], headings: [] },
+    { path: 'x.md', title: 'x', tags: [], headings: [] },
+  ];
+  const ranked = rankVaultDocs('react', docs);
+  assert.deepEqual(ranked.map((h) => h.path), ['r.md']);
+  assert.deepEqual(ranked[0].metaTyped, ['react']);
+});
+
+test('a Chinese tag still matches as a substring', () => {
+  const docs: VaultDoc[] = [{ path: 'a.md', title: 'W22', tags: ['前端面试'], headings: [] }];
+  assert.equal(rankVaultDocs('面试', docs)[0]?.path, 'a.md');
+});
+
+test('a heading hit ranks a note but does not make it about the subject', () => {
+  const docs: VaultDoc[] = [
+    { path: 'wk.md', title: 'Week 12', tags: [], headings: ['Coffee', 'Tea', 'Water'] },
+    { path: 'x.md', title: 'x', tags: [], headings: [] },
+  ];
+  const ranked = rankVaultDocs('coffee', docs);
+  assert.equal(ranked[0]?.path, 'wk.md');
+  assert.deepEqual(ranked[0].metaTyped, []);
+  const bodies = new Map([['wk.md', 'Coffee: one cup. Tea: two. Water: plenty.'], ['x.md', 'nothing']]);
+  const hits = rescoreWithBodies('coffee', ranked, bodies, 5, 0.05);
+  assert.equal(hits[0]?.tier, 'mentions');
+});
+
+test('a long note does not outrank a short one by holding more words', () => {
+  const filler = 'Unrelated paragraph about the weather and the trains. '.repeat(300);
+  const bodies = new Map([
+    ['long.md', `${filler} React hooks and jsx. ${filler} React again, jsx again, hooks again. ${filler} React, jsx, hooks.`],
+    ['short.md', 'React internals: hooks, jsx, fibre. React schedules; hooks order matters; jsx compiles. React, hooks, jsx.'],
+    ['x.md', 'tea'],
+    ['y.md', 'water'],
+  ]);
+  const extra = ['hooks', 'jsx'];
+  const hits = rescoreWithBodies('react', [], bodies, 5, VAULT_MATCH_MIN, extra);
+  assert.equal(hits[0]?.path, 'short.md');
+  assert.equal(hits[1]?.path, 'long.md');
+});
+
+test('a one-word expansion is one term, whatever the segmenter thinks', () => {
+  const bodies = new Map([['a.md', '系统设计面试'], ['b.md', '系统监控与设计评审'], ['c.md', 'tea']]);
+  const wt = weightedTerms('system design', bodies, ['系统设计']);
+  const names = wt.map((w) => w.t);
+  assert.ok(names.includes('系统设计'), names.join(','));
+  assert.ok(!names.includes('系统') && !names.includes('设计'), names.join(','));
+});
+
+test('a multi-word expansion is a phrase, not its words', () => {
+  const bodies = new Map([['a.md', 'the virtual DOM diff'], ['b.md', 'a virtual machine and a DOM tree'], ['c.md', 'tea']]);
+  const wt = weightedTerms('react', bodies, ['virtual dom', 'react.js']);
+  const names = wt.map((w) => w.t);
+  assert.ok(names.includes('virtual dom'), names.join(','));
+  assert.ok(!names.includes('virtual') && !names.includes('dom'), names.join(','));
+  assert.ok(names.includes('react.js'));
+  const t = wt.find((w) => w.t === 'virtual dom')!;
+  assert.equal(t.whole, true);
+});
+
+test('an expansion makes a note about the subject only if the note names the subject too', () => {
+  const docs: VaultDoc[] = [
+    { path: 'autocomplete.md', title: 'SD-Autocomplete 组件', tags: [], headings: [] },
+    { path: 'w12.md', title: 'W12 UI 组件 I', tags: [], headings: [] },
+    { path: 'w17.md', title: 'W17 应用级系统设计 I', tags: [], headings: [] },
+    { path: 'a.md', title: 'a', tags: [], headings: [] },
+    { path: 'b.md', title: 'b', tags: [], headings: [] },
+  ];
+  const bodies = new Map([
+    ['autocomplete.md', '组件 的接口设计。组件 状态。组件 事件。'],
+    ['w12.md', 'React 评分组件、折叠组件、标签页组件。React 的 props。'],
+    ['w17.md', '信息流的系统设计。系统设计 要点。系统设计 面试。'],
+    ['a.md', '组件 一个'],
+    ['b.md', 'tea'],
+  ]);
+  const react = rescoreWithBodies('我关于 React 写过什么', rankVaultDocs('我关于 React 写过什么', docs, 60, ['组件']), bodies, 8, 0.05, ['组件']);
+  const rt = Object.fromEntries(react.map((h) => [h.path, h.tier]));
+  assert.equal(rt['autocomplete.md'], 'mentions');
+  assert.equal(rt['w12.md'], 'about');
+  const sd = rescoreWithBodies('system design', rankVaultDocs('system design', docs, 60, ['系统设计']), bodies, 8, 0.05, ['系统设计']);
+  const st = Object.fromEntries(sd.map((h) => [h.path, h.tier]));
+  // The expansion is rare here — unique to one note — so it means the subject on its own.
+  assert.equal(st['w17.md'], 'about');
+});
+
+test('an excerpt window opens around a phrase', () => {
+  const body = `${'Filler sentence. '.repeat(60)}The system design round went well.${' More filler. '.repeat(60)}`;
+  const out = excerptAround(body, [{ t: 'system design', whole: true }], 300, 80);
+  assert.ok(out.includes('system design round'), out.slice(0, 80));
 });

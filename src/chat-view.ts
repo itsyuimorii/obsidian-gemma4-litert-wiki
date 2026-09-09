@@ -310,7 +310,8 @@ const VAULT_NOTE_TOKENS = 1200;
  * Lexical search finds the word it is given; "js" finds main.js and misses
  * the note on closures that never spells out JavaScript. Asked first what
  * "js" is and what it covers, the model hands back javascript, ecmascript,
- * closures, 闭包, 作用域 — and the search finds the notes that are about it.
+ * closures and their Chinese and Japanese names — and the search finds the
+ * notes that are about it.
  */
 const EXPAND_PROMPT =
   'You expand a search subject into keywords for finding notes in a personal vault. Reply with ' +
@@ -359,7 +360,7 @@ const MODE_GUIDE: Record<
     goodFor: 'Good for: what this note says, a summary, the action items, a term it uses.',
     others: [
       ['vault', 'Vault', 'For any note in your vault, or anything general'],
-      ['wiki', 'Wiki', 'For what connects your notes, once cards exist'],
+      ['wiki', 'Wiki', 'For the cards filed in {wiki}/ by this plugin, once some exist'],
     ],
   },
   vault: {
@@ -370,7 +371,7 @@ const MODE_GUIDE: Record<
     goodFor: 'Good for: finding a note, what you wrote about something, anything general.',
     others: [
       ['note', 'This note', 'For only the note you have open'],
-      ['wiki', 'Wiki', 'For what connects your notes, or what is missing'],
+      ['wiki', 'Wiki', 'For the cards filed in {wiki}/ — what connects them, or what is missing'],
     ],
   },
   wiki: {
@@ -528,7 +529,8 @@ export class ChatView extends ItemView {
     const lines = el.createDiv({ cls: 'gemma4-chat-empty-guide' });
     for (const [mode, label, what] of guide.others) {
       const line = lines.createDiv({ cls: 'gemma4-chat-empty-guide-line' });
-      line.appendText(what + ' → ');
+      // The wiki folder is a setting, so its name is filled in here.
+      line.appendText(what.replace('{wiki}', wikiDir()) + ' → ');
       const b = line.createEl('button', { cls: 'gemma4-chat-empty-guide-mode', text: label });
       b.addEventListener('click', () => this.setMode(mode));
     }
