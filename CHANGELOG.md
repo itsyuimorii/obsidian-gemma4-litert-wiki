@@ -4,6 +4,29 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.14 — 2026-09-09
+
+One setting that reaches every answer, and a README that says who this is
+not for.
+
+- **Standing instructions.** A textarea under Settings → Chat whose text is
+  added to every answer in every mode — a language, a length, a tone, a
+  format — so the things you used to retype each time are said once. It is
+  appended after the mode's own rules and says so: an instruction shapes how
+  an answer is written, and where it pulls against what a grounded answer may
+  draw on, the grounding rules win. Empty text leaves the prompt untouched;
+  text over 2,000 characters is cut and the cut is marked.
+- **The README says who this is not for.** A short section before the
+  requirements — phone, no WebGPU, no 3 GB to spare, needs frontier-model
+  knowledge, sources that are not Markdown — so a reader who is not the
+  audience finds out in ten seconds instead of after a download. The
+  comparison table gains the two rows it was missing (no index on disk, no
+  paid tier), the scan habit names the Web Clipper folder, and the status line
+  and test badge finally agree with the build.
+- **Repository upkeep.** Dependabot leaves TypeScript majors to a person after
+  a grouped bump pulled one in ahead of the linter's peer range; the workflow
+  actions took their weekly pins.
+
 ## 1.0.13 — 2026-09-08
 
 Relink gets faster, and the listing catches up with 1.0.12.
