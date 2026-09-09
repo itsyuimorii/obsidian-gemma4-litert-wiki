@@ -1,4 +1,4 @@
-import { formatVaultTree, standingInstructions } from './pure';
+import { asksAboutOwnNotes, formatVaultTree, looksLikeRefusal, standingInstructions } from './pure';
 import {
   App,
   FuzzySuggestModal,
@@ -251,6 +251,47 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
   ];
 }
 
+type RouteTarget = ChatMode | 'anyway';
+
+/**
+ * What each mode is for, said in the empty panel: a title, one line, three
+ * example questions of the right shape, and the other two modes by name and
+ * purpose. This is the text a first question is judged against — most bad
+ * first questions are good questions in the wrong mode.
+ */
+const MODE_GUIDE: Record<
+  ChatMode,
+  { title: string; hint: string; examples: string[]; others: [ChatMode, string, string][] }
+> = {
+  note: {
+    title: 'Ask about the open note',
+    hint: 'Answers come from the note in front of you, inside Obsidian — nothing leaves your machine.',
+    examples: ['What is the main argument here?', 'List the action items in this note', 'Explain the terms this note uses'],
+    others: [
+      ['wiki', 'Wiki', 'About your whole vault'],
+      ['direct', 'Direct', 'Anything else'],
+    ],
+  },
+  wiki: {
+    title: 'Ask your wiki',
+    hint: 'Answers come from the pages you have filed, and list which ones they read.',
+    examples: ['What is in my wiki?', 'What did I add this week?', 'Which pages disagree with each other?'],
+    others: [
+      ['note', 'This note', 'About one note'],
+      ['direct', 'Direct', 'Anything else'],
+    ],
+  },
+  direct: {
+    title: 'Ask anything',
+    hint: 'Answered by Gemma 4 E4B itself. It never reads your notes here, and nothing it says is filed.',
+    examples: ['Explain, in plain terms, what a KV cache is', 'Draft a short outline for a talk on local AI', 'Rewrite this paragraph to be clearer'],
+    others: [
+      ['note', 'This note', 'About the note you have open'],
+      ['wiki', 'Wiki', 'About your vault'],
+    ],
+  },
+};
+
 export class ChatView extends ItemView {
   private plugin: LiteRtSpikePlugin;
   private messagesEl!: HTMLElement;
@@ -378,13 +419,29 @@ export class ChatView extends ItemView {
       return;
     }
 
-    el.createDiv({
-      cls: 'gemma4-chat-empty-title',
-      text: this.mode === 'wiki' ? 'Ask your wiki' : 'Ask about the open note',
-    });
-    el.createDiv({
-      cls: 'gemma4-chat-empty-hint',
-      text: 'Answers come from a model running entirely inside Obsidian — nothing leaves your machine.',
+    const guide = MODE_GUIDE[this.mode];
+    el.createDiv({ cls: 'gemma4-chat-empty-title', text: guide.title });
+    el.createDiv({ cls: 'gemma4-chat-empty-hint', text: guide.hint });
+
+    // Three example questions, each one click from being asked. They are
+    // the shape of question this mode is FOR, which the title alone cannot
+    // say: "Ask your wiki" is not enough to stop someone asking it what a
+    // KV cache is.
+    const examples = el.createDiv({ cls: 'gemma4-chat-empty-examples' });
+    for (const ex of guide.examples) {
+      const btn = examples.createEl('button', { cls: 'gemma4-chat-empty-example', text: ex });
+      btn.addEventListener('click', () => void this.handleSend({ text: ex, wholeWiki: this.mode === 'wiki' && asksAboutOwnNotes(ex) }));
+    }
+
+    // And the other two modes, by name and by what they are for, as buttons.
+    // The pills under the input are the same switch; this is the sentence
+    // that explains them, at the moment it is needed.
+    const line = el.createDiv({ cls: 'gemma4-chat-empty-guide' });
+    guide.others.forEach(([mode, label, what], i) => {
+      if (i > 0) line.appendText(' · ');
+      line.appendText(what + ' → ');
+      const b = line.createEl('button', { cls: 'gemma4-chat-empty-guide-mode', text: label });
+      b.addEventListener('click', () => this.setMode(mode));
     });
 
     // Until the first message is sent, point at the chips. Someone opening this
@@ -980,13 +1037,19 @@ export class ChatView extends ItemView {
     // The Direct placeholder says where the answer comes from rather than what
     // to type, because that is the one thing that changes about an answer here
     // and the Sources row — which says it everywhere else — is absent.
+    // Each placeholder names the other two modes, because the wrong mode is
+    // the commonest way a first question goes badly: a vault question typed
+    // into This note gets "unclear", a general one typed into Wiki gets "not
+    // in your wiki", and a vault question typed into Direct gets "I do not
+    // have access to your files". The pills are the fix, and they are three
+    // small buttons under the box that nothing else points at.
     this.inputEl?.setAttribute(
       'placeholder',
       mode === 'note'
-        ? 'Ask about this note… (Enter to send)'
+        ? 'Ask about this note… (Enter to send) — Wiki or Direct above for anything else'
         : mode === 'wiki'
-          ? 'Ask your wiki… (Enter to send)'
-          : 'Ask anything — answered by the model, not your notes'
+          ? 'Ask across everything filed… (Enter to send) — This note or Direct above for anything else'
+          : 'Ask anything — answered by the model, never your notes. This note or Wiki above for those'
     );
     this.renderSuggestions();
     this.updateNoteChip();
@@ -1324,7 +1387,64 @@ export class ChatView extends ItemView {
       void this.plugin.saveSettings();
     }
     this.appendUserMessage(question);
+    // A question about your own notes, asked in the one mode that never reads
+    // them. The model's answer would be "I do not have access to your files",
+    // twenty seconds from now; the panel says it first, and offers the modes
+    // that can answer. "Ask Gemma anyway" keeps the door open for the case
+    // the detector got wrong.
+    if (this.mode === 'direct' && asksAboutOwnNotes(question)) {
+      this.routeCard(
+        this.messagesEl,
+        'This sounds like a question about your notes. Direct mode never reads them — it answers from the model alone.',
+        question,
+        ['wiki', 'note', 'anyway']
+      );
+      return;
+    }
     await this.runGeneration(question, false, opts.wholeWiki ?? false, opts.promptLabel);
+  }
+
+  /**
+   * The card that says "wrong mode" and offers the right one. Each target is
+   * a button that re-asks the same question there, in place — no retyping,
+   * and the answer lands under the card so the thread reads as one attempt
+   * that found its footing. 'anyway' runs the question ungrounded as asked.
+   */
+  private routeCard(parent: HTMLElement, text: string, question: string, targets: RouteTarget[]) {
+    const card = parent.createDiv({ cls: 'gemma4-chat-hatch gemma4-chat-route' });
+    card.createDiv({ cls: 'gemma4-chat-route-text', text });
+    const bar = card.createDiv({ cls: 'gemma4-chat-route-actions' });
+    const hasNote = !!this.app.workspace.getActiveFile();
+    const buttons: HTMLButtonElement[] = [];
+    for (const t of targets) {
+      if (t === 'note' && !hasNote) continue;
+      const label =
+        t === 'wiki' ? 'Ask your wiki'
+        : t === 'note' ? 'Ask the open note'
+        : t === 'direct' ? 'Ask Gemma directly (no sources)'
+        : 'Ask Gemma anyway (no sources)';
+      const btn = bar.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: label });
+      buttons.push(btn);
+      btn.addEventListener('click', () => {
+        if (this.busy) return;
+        for (const b of buttons) b.disabled = true;
+        void this.askInMode(t, question);
+      });
+    }
+    this.scrollToBottom();
+  }
+
+  /** Re-ask a question in another mode, switching the panel to it first. */
+  private async askInMode(target: RouteTarget, question: string) {
+    if (target === 'anyway') {
+      await this.runGeneration(question, true);
+      return;
+    }
+    this.setMode(target);
+    // A vault question routed to Wiki mode is about the collection, not about
+    // whichever pages happen to share its words — ground it in every page.
+    const wholeWiki = target === 'wiki' && asksAboutOwnNotes(question);
+    await this.runGeneration(question, target === 'direct', wholeWiki);
   }
 
   // Builds the grounding context for one question, or returns null with a
@@ -1746,23 +1866,32 @@ export class ChatView extends ItemView {
       // as sourced pages is exactly the pollution the grounding model avoids.
       this.addAssistantActions(row, () => answer, question, context.sources, !context.ungrounded, promptLabel);
 
-      // Issue #7 routing: a grounded wiki answer with no matching page often
-      // means "not in your wiki". Offer a per-answer, opt-in hatch to ask
-      // Gemma directly — default stays grounded, the escalation is explicit.
-      if (context.noPageMatch && !context.ungrounded) {
-        const hatch = body.createDiv({ cls: 'gemma4-chat-hatch' });
-        const btn = hatch.createEl('button', {
-          cls: 'gemma4-chat-hatch-btn',
-          text:
-            context.grounding.startsWith('note:')
-              ? 'Not in this note? Ask Gemma directly (no sources)'
-              : 'Not in your wiki? Ask Gemma directly (no sources)',
-        });
-        btn.addEventListener('click', () => {
-          if (this.busy) return;
-          btn.disabled = true;
-          void this.runGeneration(question, true);
-        });
+      // Routing (issue #7, widened). Two signals say the question was asked
+      // in the wrong mode: retrieval found nothing to ground in, or the
+      // answer is the model declining — "I do not have access", "the note
+      // does not mention", "is unclear". Either way the card under the answer
+      // names the modes that could answer, and re-asks there in one click.
+      // Default stays grounded; the escalation is explicit and per answer.
+      const refused = looksLikeRefusal(answer);
+      if (context.ungrounded) {
+        if (refused || asksAboutOwnNotes(question)) {
+          this.routeCard(
+            body,
+            'Direct mode answers from the model alone and never reads your notes. For a question about them:',
+            question,
+            ['wiki', 'note']
+          );
+        }
+      } else if (context.noPageMatch || refused) {
+        const inNote = context.grounding.startsWith('note:');
+        this.routeCard(
+          body,
+          inNote
+            ? 'Not in this note? Your whole wiki, or the model on its own:'
+            : 'Not in your wiki? The note you have open, or the model on its own:',
+          question,
+          inNote ? ['wiki', 'direct'] : ['note', 'direct']
+        );
       }
 
       this.scrollToBottom();
