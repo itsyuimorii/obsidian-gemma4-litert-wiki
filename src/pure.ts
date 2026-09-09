@@ -1193,3 +1193,75 @@ export function standingInstructions(raw: string, max = CHAT_INSTRUCTIONS_MAX): 
     body
   );
 }
+
+// ---------------------------------------------------------------------------
+// Mode routing for chat
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a question is about the user's own notes — "what's in my vault",
+ * "which pages did I add", 「我的笔记里有什么」 — as opposed to about the
+ * world. Lexical and deliberately narrow: it looks for a possessive next to a
+ * word for the vault, or a first-person "what did I write". A question that
+ * merely contains the word "vault" ("explain what an Obsidian vault is") is
+ * not caught, and should not be.
+ *
+ * Used in two places. Before sending in Direct mode, where a hit means the
+ * model is about to say "I do not have access to your files" twenty seconds
+ * from now, so the panel says it first and offers the mode that can answer.
+ * And when a routed question lands in Wiki mode, where a hit means the
+ * question is about the collection and should ground in every page.
+ */
+export function asksAboutOwnNotes(question: string): boolean {
+  const q = question.trim();
+  if (!q) return false;
+  const NOTES = String.raw`(?:vault|valut|vaults|notes?|wiki|files?|knowledge\s*base|second\s*brain|obsidian)`;
+  const patterns: RegExp[] = [
+    new RegExp(String.raw`\b(?:my|our|your)\s+(?:own\s+)?${NOTES}\b`, 'i'),
+    new RegExp(String.raw`\b(?:in|from|across|inside|within|throughout)\s+(?:the|this)\s+(?:whole\s+|entire\s+)?${NOTES}\b`, 'i'),
+    /\bwo\s*de\b/i,
+    /(?:我|俺|私|僕|我们|我們|咱|우리|내|제)\s*的?\s*(?:vault|valut|笔记|筆記|笔记库|库|庫|wiki|ノート|ボールト|保管庫|노트)/,
+    /(?:vault|valut|wiki|笔记|筆記|ノート)\s*(?:里|裡|中|内|裡面|里面|には|の中)/,
+    /\b(?:what|which|how many)\b[^.?!]{0,40}\bI\s+(?:wrote|write|added|add|saved|save|clipped|clip|filed|file|noted|note|ingested|ingest|have)\b/i,
+    /我(?:写|寫|加|存|记|記|收藏|剪藏|保存)(?:过|了|的)/,
+  ];
+  return patterns.some((p) => p.test(q));
+}
+
+/**
+ * Whether an answer is the model declining rather than answering — "I do
+ * not have access to your files", "the note does not mention", "is unclear".
+ * Only the opening of the answer is read, because a refusal is the whole
+ * answer and short, while a good answer may still carry a caveat somewhere
+ * in its third paragraph.
+ *
+ * Every mode can produce one: This note when the question was about the
+ * vault, Wiki when it was about one note, Direct when it was about either.
+ * A hit means the question was asked in the wrong place, and the panel can
+ * say which place is right.
+ */
+export function looksLikeRefusal(answer: string): boolean {
+  // The first paragraph only. A refusal is one paragraph; an answer that
+  // says "the note does not mention which GPU" in its third is an answer.
+  const trimmed = answer.trim();
+  const para = trimmed.split(/\n\s*\n/, 1)[0] ?? '';
+  const head = para.slice(0, 240);
+  if (!head) return false;
+  const patterns: RegExp[] = [
+    /\bI\s+(?:do\s+not|don't|did\s+not|didn't|cannot|can't|could\s+not|couldn't|am\s+unable\s+to|was\s+unable\s+to)\s+(?:have\s+)?(?:access|follow|find|see|tell|determine|locate|answer|identify)\b/i,
+    /\b(?:is|are|seems|remains)\s+unclear\b/i,
+    /\b(?:the|this|your|these)\s+(?:note|notes|wiki|material|page|pages|text|document|documents|content)\s+(?:does|do|did)\s+not\s+(?:mention|say|contain|cover|include|address|discuss|provide|specify|explain)\b/i,
+    /\bnot\s+(?:mentioned|covered|present|included|found|addressed|discussed|described)\s+(?:in|anywhere\s+in)\s+(?:the|this|your|these)\b/i,
+    /\bno\s+(?:information|mention|details?|reference|content)\s+(?:about|on|regarding|of)\b/i,
+    /\bnothing\s+in\s+(?:the|this|your|these)\s+(?:note|notes|wiki|material|page|pages)\b/i,
+    /\bnot\s+in\s+(?:your|the|this)\s+(?:wiki|note|notes|material)\b/i,
+    /\b(?:personal|private)\s+(?:files|notes|vault|data|documents)\b/i,
+    /\bplease\s+(?:ask|rephrase|clarify|provide)\b/i,
+    /无法(?:访问|訪問|获取|獲取|查看|找到|回答|确定|確定)/,
+    /没有(?:提到|提及|包含|相关|相關|找到|涉及)/,
+    /(?:不清楚|不明确|不明確|无法理解|無法理解)/,
+    /(?:アクセス|参照|確認)(?:でき|出来)ません/,
+    /(?:記載|言及)(?:が|は)(?:ありません|されていません)/,
+  ];
+  return patterns.some((p) => p.test(head));
+}
