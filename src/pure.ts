@@ -1575,3 +1575,22 @@ export function stripLeadingRefusal(answer: string): string {
   // Recase the first letter, since "however, I can" is now the opening.
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
+
+/**
+ * One hit per note name. A vault that keeps the same notes in two folders
+ * — a working copy and an archive — produces pairs whose bodies differ by a
+ * line, which the body-level dedupe cannot see; the Sources row then shows
+ * the same title twice. Two genuinely different notes with the same name
+ * are rarer than that, and the higher-scoring one is kept either way.
+ */
+export function dedupeByName(hits: readonly VaultHit[]): VaultHit[] {
+  const seen = new Set<string>();
+  const out: VaultHit[] = [];
+  for (const h of hits) {
+    const name = h.path.replace(/^.*\//, '').replace(/\.md$/, '').toLowerCase();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(h);
+  }
+  return out;
+}

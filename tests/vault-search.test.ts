@@ -10,6 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  dedupeByName,
   excerptAround,
   looksLikeListQuery,
   looksLikeCollectionQuery,
@@ -264,4 +265,16 @@ test('questions about a subject are not collection questions', () => {
     'summarise the note on grind size',
     '',
   ]) assert.equal(looksLikeCollectionQuery(q), false, q);
+});
+
+// --- dedupeByName ------------------------------------------------------------
+
+test('two hits with the same note name keep only the first', () => {
+  const hits = dedupeByName([
+    { path: 'a/Bulkhead.md', score: 5 },
+    { path: 'b/Bulkhead.md', score: 4.5 },
+    { path: 'a/CSV batch.md', score: 3 },
+    { path: 'z/csv batch.md', score: 2 },
+  ]);
+  assert.deepEqual(hits.map((h) => h.path), ['a/Bulkhead.md', 'a/CSV batch.md']);
 });

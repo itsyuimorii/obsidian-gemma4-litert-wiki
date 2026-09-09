@@ -1,5 +1,6 @@
 import {
   asksAboutOwnNotes,
+  dedupeByName,
   excerptAround,
   formatVaultTree,
   looksLikeCollectionQuery,
@@ -1589,12 +1590,44 @@ export class ChatView extends ItemView {
       };
     }
 
+    // "What connects my notes" is about the collection, and four raw notes
+    // found by the word "connects" are noise wearing a Sources row. The
+    // honest material for a collection question here is the shape of the
+    // vault; the cards, in Wiki mode, are the real answer, and the line
+    // under this one says so.
+    const overview = () => {
+      const tree = formatVaultTree(files.map((f) => f.path), { exclude: wikiDir() });
+      const recent = [...files]
+        .sort((a, b) => b.stat.mtime - a.stat.mtime)
+        .slice(0, 25)
+        .map((f) => `- ${f.basename}${f.parent && f.parent.path !== '/' ? ` (${f.parent.path})` : ''}`)
+        .join('\n');
+      return {
+        systemPrompt:
+          "The user is asking about their own Obsidian vault as a whole. You have NOT read any " +
+          'note; below is only the folder layout with note counts, and the titles of the notes ' +
+          'edited most recently. Answer from that: what the vault seems to be about, how it is ' +
+          'organised, what is recent. Name folders and titles as they appear. Do not invent ' +
+          'contents of notes you have not seen — if asked what a note says, say you would need ' +
+          'it opened or asked about by name. Earlier turns in this conversation are not ' +
+          'material either.\n\n' +
+          'Be concise. You may use markdown.\n\n' +
+          `## Folder layout\n\`\`\`\n${tree || '(empty vault)'}\n\`\`\`\n\n` +
+          `## Recently edited notes\n${recent || '(none)'}`,
+        sourcePath: indexPath(),
+        sources: [],
+        grounding: 'vault',
+        vault: { kind: 'overview' as const, hits: [] },
+      };
+    };
+    if (looksLikeCollectionQuery(question)) return overview();
+
     const ranked = rankVaultDocs(question, docs, 80);
     const rankedSet = new Set(ranked.map((h) => h.path));
     const toRead = files.length <= 400 ? files : files.filter((f) => rankedSet.has(f.path));
     const bodies = new Map<string, string>();
     for (const f of toRead) bodies.set(f.path, (await this.app.vault.cachedRead(f)).slice(0, 20000));
-    const hits = rescoreWithBodies(question, ranked, bodies, 4);
+    const hits = dedupeByName(rescoreWithBodies(question, ranked, bodies, 8)).slice(0, 4);
     const attachments = await this.readAttachments();
     // Not the whole chat budget. At a 64k context that is 48k tokens, and
     // five long notes filled it — a minute of prefill during which WebGPU
@@ -1612,33 +1645,9 @@ export class ChatView extends ItemView {
     };
 
     if (!hits.length && !attachments.blocks) {
-      if (asksAboutOwnNotes(question)) {
-        // "What's in my vault" matches no note by its words, because it is
-        // about all of them. Hand the model the shape instead: folders with
-        // counts, and the notes touched most recently.
-        const tree = formatVaultTree(files.map((f) => f.path), { exclude: wikiDir() });
-        const recent = [...files]
-          .sort((a, b) => b.stat.mtime - a.stat.mtime)
-          .slice(0, 25)
-          .map((f) => `- ${f.basename}${f.parent && f.parent.path !== '/' ? ` (${f.parent.path})` : ''}`)
-          .join('\n');
-        return {
-          systemPrompt:
-            "The user is asking about their own Obsidian vault as a whole. You have NOT read any " +
-            'note; below is only the folder layout with note counts, and the titles of the notes ' +
-            'edited most recently. Answer from that: what the vault seems to be about, how it is ' +
-            'organised, what is recent. Name folders and titles as they appear. Do not invent ' +
-            'contents of notes you have not seen — if asked what a note says, say you would need ' +
-            'it opened or asked about by name.\n\n' +
-            'Be concise. You may use markdown.\n\n' +
-            `## Folder layout\n\`\`\`\n${tree || '(empty vault)'}\n\`\`\`\n\n` +
-            `## Recently edited notes\n${recent || '(none)'}`,
-          sourcePath: indexPath(),
-          sources: [],
-          grounding: 'vault',
-          vault: { kind: 'overview', hits: [] },
-        };
-      }
+      // "What's in my vault" matches no note by its words, because it is
+      // about all of them. Hand the model the shape instead.
+      if (asksAboutOwnNotes(question)) return overview();
       // Nothing in the notes. The model answers on its own — this is the
       // Direct answer, under one line that says the notes were looked at.
       return {
@@ -1697,6 +1706,9 @@ export class ChatView extends ItemView {
         'the note it came from, and say plainly if the notes touch the subject without answering ' +
         'it. Never claim a note says something it does not, and never invent detail and present ' +
         'it as theirs. Do not add general knowledge here — that comes separately, after.\n\n' +
+        'The notes below are the ONLY material. Earlier turns in this conversation are not ' +
+        'material: a note named in an earlier answer is not available to you now unless it is ' +
+        'below. Never name, cite or summarise a note that is not below.\n\n' +
         'A note is named ONLY by the title in its "## Note:" header. Headings and numbered ' +
         'sections inside a note are parts of that note, not notes of their own — never list ' +
         'them as if they were separate notes.\n\n' +
