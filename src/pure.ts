@@ -1035,7 +1035,7 @@ export function schemaBackupsToPrune(names: string[], keep: number): string[] {
 // ---------------------------------------------------------------------------
 
 /** The shape version this build writes. Bump when adding a migration. */
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 type SavedSettings = Record<string, unknown>;
 
@@ -1064,6 +1064,17 @@ const MIGRATIONS: Array<(data: SavedSettings, known: ReadonlySet<string>) => Sav
   (data) => {
     const out: SavedSettings = { ...data };
     if (out.defaultMode === 'direct') out.defaultMode = 'vault';
+    return out;
+  },
+  // 2 -> 3: the panel opens on the open note again. 1 -> 2 wrote 'vault' into
+  // every data.json that said 'direct', so almost every saved 'vault' is a
+  // value this plugin chose, not one a person did; and a panel opening on a
+  // whole-vault search is a heavier first move than one opening on the note
+  // already in front of you. Undoing our own write, not a preference: 'note'
+  // and 'wiki' are left exactly as they are.
+  (data) => {
+    const out: SavedSettings = { ...data };
+    if (out.defaultMode === 'vault') out.defaultMode = 'note';
     return out;
   },
 ];

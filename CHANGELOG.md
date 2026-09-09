@@ -24,9 +24,19 @@ All notable changes to this plugin are recorded here. Versions follow
   Notizen*, *qué notas*) are drawn as links like the English and Japanese
   ones, and *mes notes* / *meine Notizen* / *mis notas* are read as being
   about the vault.
-- **The panel opens on This note.** Vault and Wiki are one pill away; the
-  empty screen's Wiki line names the wiki folder. An existing setting is
-  kept.
+- **The panel opens on This note.** Vault and Wiki are one pill away. A
+  saved default of *vault* goes back to *note*, because 1.0.15 wrote that
+  value into every install that had said *direct* — it was this plugin's
+  choice, not a person's. A saved *note* or *wiki* is untouched.
+- **Every screen names the wiki folder and calls each mode one thing.**
+  Wiki mode's own screen says it reads the cards in `gemma-wiki/`, in its
+  title, in what it is good for and in the input placeholder. Wiki mode
+  used to describe Vault as "a note as you wrote it, filed or not" while
+  This note called it "any note in your vault": one sentence per mode now,
+  wherever it is pointed at from. The mode name in those sentences is an
+  underlined word in the accent colour rather than a third pill on a screen
+  that already has two rows of buttons, and it no longer wraps away from
+  its arrow.
 
 ## 1.0.15 — 2026-09-09
 

@@ -56,21 +56,29 @@ test('an array on disk is not an object and is replaced', () => {
   assert.equal(r.changed, true);
 });
 
-test('1 -> 2 renames a saved default of direct to vault', () => {
+test('a saved default of direct is renamed, then lands on the open note', () => {
   const r = migrateSettings({ settingsVersion: 1, defaultMode: 'direct', wikiDir: 'x' }, [...KNOWN, 'defaultMode']);
-  assert.equal(r.data.defaultMode, 'vault');
+  assert.equal(r.data.defaultMode, 'note');
   assert.equal(r.data.settingsVersion, SETTINGS_VERSION);
   assert.equal(r.changed, true);
 });
 
-test('1 -> 2 leaves note and wiki defaults alone', () => {
+test('2 -> 3 puts a default of vault back on the open note', () => {
+  const r = migrateSettings({ settingsVersion: 2, defaultMode: 'vault', wikiDir: 'x' }, [...KNOWN, 'defaultMode']);
+  assert.equal(r.data.defaultMode, 'note');
+  assert.equal(r.data.settingsVersion, SETTINGS_VERSION);
+  assert.equal(r.changed, true);
+});
+
+test('a default of note or wiki survives every migration untouched', () => {
   for (const mode of ['note', 'wiki']) {
     const r = migrateSettings({ settingsVersion: 1, defaultMode: mode }, [...KNOWN, 'defaultMode']);
     assert.equal(r.data.defaultMode, mode);
   }
 });
 
-test('unversioned data with direct goes all the way to vault', () => {
+test('unversioned data with direct goes all the way to note', () => {
   const r = migrateSettings({ defaultMode: 'direct' }, [...KNOWN, 'defaultMode']);
-  assert.equal(r.data.defaultMode, 'vault');
+  assert.equal(r.data.defaultMode, 'note');
+  assert.equal(r.data.settingsVersion, SETTINGS_VERSION);
 });

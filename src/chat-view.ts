@@ -350,6 +350,16 @@ const DIRECT_PROMPT =
  * needed. The wiki folder is named as the folder, not as "the wiki", so
  * that a reader who has never heard the word knows where to look.
  */
+/**
+ * One sentence per mode, used wherever the other two are pointed at. Wiki
+ * mode described Vault as "a note as you wrote it, filed or not" while This
+ * note described it as "any note in your vault": two names for one mode on
+ * two screens a pill apart. `{wiki}` is filled in from the setting.
+ */
+const LINE_NOTE = 'For only the note you have open';
+const LINE_VAULT = 'For any note in your vault, or anything general';
+const LINE_WIKI = 'For the cards filed in {wiki}/, and what connects them';
+
 const MODE_GUIDE: Record<
   ChatMode,
   { title: string; reads: string; goodFor: string; others: [ChatMode, string, string][] }
@@ -359,8 +369,8 @@ const MODE_GUIDE: Record<
     reads: 'Reads only the note you have open, as you wrote it.',
     goodFor: 'Good for: what this note says, a summary, the action items, a term it uses.',
     others: [
-      ['vault', 'Vault', 'For any note in your vault, or anything general'],
-      ['wiki', 'Wiki', 'For the cards filed in {wiki}/ by this plugin, once some exist'],
+      ['vault', 'Vault', LINE_VAULT],
+      ['wiki', 'Wiki', LINE_WIKI],
     ],
   },
   vault: {
@@ -370,8 +380,8 @@ const MODE_GUIDE: Record<
       'marked as its own.',
     goodFor: 'Good for: finding a note, what you wrote about something, anything general.',
     others: [
-      ['note', 'This note', 'For only the note you have open'],
-      ['wiki', 'Wiki', 'For the cards filed in {wiki}/ — what connects them, or what is missing'],
+      ['note', 'This note', LINE_NOTE],
+      ['wiki', 'Wiki', LINE_WIKI],
     ],
   },
   wiki: {
@@ -379,8 +389,8 @@ const MODE_GUIDE: Record<
     reads: '',
     goodFor: 'Good for: what connects the cards, what is still open, what you filed this week.',
     others: [
-      ['vault', 'Vault', 'For a note as you wrote it, filed or not'],
-      ['note', 'This note', 'For only the note you have open'],
+      ['vault', 'Vault', LINE_VAULT],
+      ['note', 'This note', LINE_NOTE],
     ],
   },
 };
@@ -535,8 +545,12 @@ export class ChatView extends ItemView {
     const lines = el.createDiv({ cls: 'gemma4-chat-empty-guide' });
     for (const [mode, label, what] of guide.others) {
       const line = lines.createDiv({ cls: 'gemma4-chat-empty-guide-line' });
-      line.appendText(named(what) + ' → ');
-      const b = line.createEl('button', { cls: 'gemma4-chat-empty-guide-mode', text: label });
+      line.appendText(named(what) + ' ');
+      // Arrow and name in one unbreakable span, so a line that wraps does
+      // not put the arrow alone at the start of the next row.
+      const jump = line.createSpan({ cls: 'gemma4-chat-empty-guide-jump' });
+      jump.appendText('→ ');
+      const b = jump.createEl('button', { cls: 'gemma4-chat-empty-guide-mode', text: label });
       b.addEventListener('click', () => this.setMode(mode));
     }
 
