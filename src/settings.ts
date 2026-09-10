@@ -79,7 +79,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   contextTokens: 64000,
   devCommands: false,
   staleDays: 30,
-  defaultMode: 'vault',
+  defaultMode: 'note',
   chatInstructions: '',
   scanQuietHours: 3,
   scanInclude: '',

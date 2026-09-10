@@ -388,6 +388,12 @@
   border-bottom: 1px dashed var(--background-modifier-border);
 }
 
+/* A note that only mentions the subject in passing, in a list answer. */
+.gemma4-chat-source-mention {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
 .gemma4-chat-vault-list-label {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
@@ -566,24 +572,35 @@
 }
 
 .gemma4-chat-empty-guide-line .gemma4-chat-empty-guide-mode {
-  margin-left: 4px;
   vertical-align: baseline;
 }
 
+/* The arrow belongs to the word after it, so a wrapping line never leaves
+   the arrow stranded at the start of its own row. */
+.gemma4-chat-empty-guide-jump {
+  white-space: nowrap;
+}
+
+/* A word in the sentence, not a control on top of it. The pill read as a
+   third button under a screen that already has a chip row and a pill row. */
 .gemma4-chat-empty-guide-mode {
-  background: transparent;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  padding: 1px 9px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
+  font-size: inherit;
+  font-weight: 500;
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
-  box-shadow: none;
 }
 
 .gemma4-chat-empty-guide-mode:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
+  color: var(--text-accent-hover);
+  text-decoration-thickness: 2px;
+}
+
+.gemma4-chat-empty-guide-mode:focus-visible {
+  outline: 1px solid var(--text-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* ---------- Input area ---------- */
