@@ -4,6 +4,26 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.17 — 2026-09-10
+
+A clean review. No behaviour changes.
+
+- **The filesystem guard speaks through the typed boundary.** The
+  confinement added in 1.0.16 called the raw Node modules directly, which
+  the community directory's checker — running without Node's type
+  definitions — reads as untyped, and reported eleven times. It now goes
+  through the same typed wrappers as every other call, so the untyped
+  modules are touched only on the four lines that cast them.
+- **The settings tab no longer calls a deprecated method on itself.** It
+  rebuilt the pane after a change by calling its own `display()`, which
+  Obsidian 1.13 deprecates. The body is `redraw()`; `display()` delegates
+  to it and is written once, where the app requires it. The 1.11.4 floor
+  is unchanged.
+- **The mode word on the empty screen is underlined with a border.** The
+  underline properties that place and weight the line are only partially
+  supported on 1.11.4. A one-pixel border is the construct the folder-path
+  link has carried since 1.0.13.
+
 ## 1.0.16 — 2026-09-10
 
 Vault mode, corrected. 1.0.15 made it the plugin's headline and its
