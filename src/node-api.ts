@@ -182,7 +182,7 @@ export const fs: FsApi = {
     } catch (err) {
       // The callback is this function's only way to report, so a refusal
       // travels the same road an ENOENT would.
-      cb(err as Error, nodeBuffer.alloc(0) as unknown as Bytes);
+      cb(err as Error, nodeBuffer.alloc(0));
       return;
     }
     rawFs.readFile(abs, cb);
