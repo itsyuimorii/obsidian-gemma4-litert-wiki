@@ -587,13 +587,19 @@
   font-size: inherit;
   font-weight: 500;
   color: var(--text-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
   cursor: pointer;
+  /* A border, not text-decoration: the underline properties that place and
+     weight the line are only partially supported on the 1.11.4 floor (see
+     .gemma4-folder-path.is-link, which learned this first). A hairline
+     border sits at the same distance everywhere and passed the store's
+     stylesheet check in every release that carried it. */
+  border-bottom: 1px solid var(--text-accent);
+  padding-bottom: 1px;
 }
 
 .gemma4-chat-empty-guide-mode:hover {
   color: var(--text-accent-hover);
+  border-bottom-color: var(--text-accent-hover);
 }
 
 .gemma4-chat-empty-guide-mode:focus-visible {
