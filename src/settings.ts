@@ -299,7 +299,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     const rerender = (file: { path: string }) => {
       if (!touched(file.path)) return;
       const scrollTop = this.containerEl.scrollTop;
-      this.display();
+      this.redraw();
       this.containerEl.scrollTop = scrollTop;
     };
     // Registered one by one: vault.on is overloaded per event name, so a union
@@ -313,7 +313,18 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     );
   }
 
+  /**
+   * Obsidian calls this to open the tab. It is deprecated from 1.13 in favour
+   * of getSettingDefinitions above, and stays for the 1.11.4 floor. Nothing
+   * else in this file calls it: the rows that rebuild the pane after a change
+   * go through `redraw`, so the deprecated name is written exactly once, here,
+   * where the app requires it.
+   */
   display(): void {
+    this.redraw();
+  }
+
+  private redraw(): void {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass('gemma4-settings');
@@ -451,7 +462,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           });
           if (!ok) return;
           await this.plugin.renameWikiDir(prev, next);
-          this.display();
+          this.redraw();
         });
         syncApply();
       });
@@ -503,7 +514,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         btn.setButtonText(missing ? `Create ${missing} missing` : 'Repair folders');
         btn.onClick(async () => {
           await this.plugin.repairWikiFolders();
-          this.display();
+          this.redraw();
         });
       });
 
@@ -649,10 +660,10 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           this.plugin.rescheduleAutoScan();
           // Re-render to reveal/hide the background-only knobs below —
-          // preserving the scroll position, since display() rebuilds the pane
+          // preserving the scroll position, since redraw() rebuilds the pane
           // and would otherwise snap the view back to the top.
           const scrollTop = this.containerEl.scrollTop;
-          this.display();
+          this.redraw();
           this.containerEl.scrollTop = scrollTop;
         })
       );
