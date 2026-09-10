@@ -4,7 +4,7 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
-## 1.0.16 — 2026-09-09
+## 1.0.16 — 2026-09-10
 
 Vault mode, corrected. 1.0.15 made it the plugin's headline and its
 default; this is what a first session in it actually runs into.
