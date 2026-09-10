@@ -12,9 +12,9 @@
     "lint": "eslint src --max-warnings 4"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^26.4.1",
     "esbuild": "^0.28.1",
-    "eslint": "^9.39.5",
+    "eslint": "^10.10.0",
     "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "latest",
     "typescript": "^5.9.3",
