@@ -74,6 +74,8 @@ export interface PathApi {
   basename(p: string, ext?: string): string;
   extname(p: string): string;
   normalize(p: string): string;
+  resolve(...parts: string[]): string;
+  readonly sep: string;
 }
 
 export interface HttpRequest {
@@ -135,7 +137,7 @@ let root: string | null = null;
 
 /** Called once at plugin load. Later calls are ignored, so nothing can widen it. */
 export function confineFilesystemTo(dir: string): void {
-  if (root === null) root = nodePath.resolve(dir);
+  if (root === null) root = path.resolve(dir);
 }
 
 /** For tests and for the settings page, which shows where the model lives. */
@@ -152,8 +154,8 @@ export function filesystemRoot(): string | null {
  */
 function inside(p: string): string {
   if (root === null) throw new Error('Filesystem used before confineFilesystemTo()');
-  const abs = nodePath.resolve(p);
-  if (abs !== root && !abs.startsWith(root + nodePath.sep)) {
+  const abs = path.resolve(p);
+  if (abs !== root && !abs.startsWith(root + path.sep)) {
     throw new Error(`Refused: ${abs} is outside this plugin's folder`);
   }
   return abs;
@@ -182,7 +184,7 @@ export const fs: FsApi = {
     } catch (err) {
       // The callback is this function's only way to report, so a refusal
       // travels the same road an ENOENT would.
-      cb(err as Error, nodeBuffer.alloc(0));
+      cb(err as Error, bytes.alloc(0));
       return;
     }
     rawFs.readFile(abs, cb);

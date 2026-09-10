@@ -594,7 +594,6 @@
 
 .gemma4-chat-empty-guide-mode:hover {
   color: var(--text-accent-hover);
-  text-decoration-thickness: 2px;
 }
 
 .gemma4-chat-empty-guide-mode:focus-visible {
