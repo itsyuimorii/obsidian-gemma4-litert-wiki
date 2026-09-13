@@ -288,6 +288,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 
 | Command | What it does |
 |---|---|
+| **Check setup (diagnostics)** | Reports the five things a first answer depends on — desktop, WebGPU, free disk space, the runtime, the model — each with a sentence saying what to do about it, and a pasteable block for a bug report that carries versions and file sizes and nothing from your vault. Always available. |
 | **Download model (one-time, ~3GB)** | Downloads and caches the model with live progress, instead of waiting for the first command to trigger it. |
 | **[Test] Check WebGPU** | Confirms a usable WebGPU adapter is available. *(The four `[Test]` commands are hidden unless Settings → Model → Developer commands is on.)* |
 | **[Test] Load WASM runtime (no model download)** | Loads the LiteRT-LM WASM runtime without the model — isolates runtime issues from model issues. |

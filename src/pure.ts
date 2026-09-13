@@ -1438,6 +1438,176 @@ export function looksLikeRefusal(answer: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// First-run diagnostics
+// ---------------------------------------------------------------------------
+
+/**
+ * Why this exists.
+ *
+ * The only bug report this plugin ever received from outside said: "Having
+ * issues getting it to do anything. I never got a download model prompt or
+ * anything." A runtime file was missing, the failure happened before the
+ * model prompt, and what the user saw was `Cannot find module …`. They never
+ * came back.
+ *
+ * There is no telemetry here and there should not be, so the plugin cannot
+ * know how many installs never reached a first answer. The substitute is a
+ * plugin that can examine itself: four facts, each with a sentence saying
+ * what to do about it, in text the user can paste into an issue. A stack
+ * trace tells the author what broke; this tells the user what to do, and
+ * tells the author the same thing when it is pasted back.
+ */
+
+/** One thing that has to be true before the first answer can happen. */
+export interface Check {
+  /** Short label, e.g. "WebGPU". */
+  name: string;
+  status: 'ok' | 'warn' | 'fail';
+  /** What was actually found. One line. */
+  detail: string;
+  /** What to do about it. Present only when something is wrong. */
+  fix?: string;
+}
+
+/** The raw facts a Check is derived from. Gathered impurely; judged here. */
+export interface DiagnosticFacts {
+  /** navigator.gpu present and an adapter obtainable. */
+  webgpu: { ok: boolean; detail: string };
+  /** Bytes free on the volume holding the plugin folder, or undefined if unknown. */
+  freeBytes?: number;
+  /** The model file, if it is fully downloaded. */
+  modelBytes?: number;
+  /** A resumable partial download, if one is sitting there. */
+  partialBytes?: number;
+  /** Bytes of runtime files present in wasm/. */
+  runtimeBytes: number;
+  /** Whether the loopback server is listening, and on what port. */
+  serverPort?: number;
+  desktop: boolean;
+  obsidianVersion: string;
+  pluginVersion: string;
+  platform: string;
+}
+
+/** The model is about this big, and the download needs room for it twice over briefly. */
+export const MODEL_BYTES_APPROX = 3.1e9;
+/** Below this, a runtime download has not finished: the smallest variant is ~20 MB. */
+const RUNTIME_MIN_BYTES = 5e6;
+
+const gb = (n: number) => `${(n / 1e9).toFixed(2)} GB`;
+
+/**
+ * Judge the facts. Pure, so the wording of every failure is under test —
+ * the sentence a stuck user reads is the product here, not the check.
+ */
+export function diagnose(f: DiagnosticFacts): Check[] {
+  const checks: Check[] = [];
+
+  checks.push(
+    f.desktop
+      ? { name: 'Platform', status: 'ok', detail: `Desktop (${f.platform}), Obsidian ${f.obsidianVersion}.` }
+      : {
+          name: 'Platform',
+          status: 'fail',
+          detail: 'Running on mobile.',
+          fix: 'This plugin runs the model inside Obsidian itself, which needs the desktop app. There is no mobile path.',
+        }
+  );
+
+  checks.push(
+    f.webgpu.ok
+      ? { name: 'WebGPU', status: 'ok', detail: f.webgpu.detail }
+      : {
+          name: 'WebGPU',
+          status: 'fail',
+          detail: f.webgpu.detail,
+          fix:
+            'The model runs on the GPU through WebGPU, and this machine did not offer one. ' +
+            'Update Obsidian to the current version, and on Linux check that your GPU driver ' +
+            'supports Vulkan. Without this, nothing else here can work.',
+        }
+  );
+
+  if (f.freeBytes === undefined) {
+    checks.push({ name: 'Disk space', status: 'warn', detail: 'Could not be read on this system.' });
+  } else if (f.modelBytes) {
+    checks.push({ name: 'Disk space', status: 'ok', detail: `${gb(f.freeBytes)} free; the model is already downloaded.` });
+  } else {
+    const need = MODEL_BYTES_APPROX - (f.partialBytes ?? 0);
+    checks.push(
+      f.freeBytes >= need * 1.1
+        ? { name: 'Disk space', status: 'ok', detail: `${gb(f.freeBytes)} free, and about ${gb(need)} is needed.` }
+        : {
+            name: 'Disk space',
+            status: 'fail',
+            detail: `${gb(f.freeBytes)} free, and about ${gb(need)} is needed.`,
+            fix: 'Free up space before starting the download. A download that runs out of disk leaves a partial file, which the next attempt resumes from rather than restarts.',
+          }
+    );
+  }
+
+  checks.push(
+    f.runtimeBytes >= RUNTIME_MIN_BYTES
+      ? { name: 'Runtime', status: 'ok', detail: `${(f.runtimeBytes / 1e6).toFixed(0)} MB in wasm/.` }
+      : {
+          name: 'Runtime',
+          status: f.runtimeBytes === 0 ? 'warn' : 'fail',
+          detail: f.runtimeBytes === 0 ? 'Not downloaded yet.' : `Only ${(f.runtimeBytes / 1e6).toFixed(1)} MB in wasm/ — an interrupted download.`,
+          fix:
+            f.runtimeBytes === 0
+              ? 'This is normal before first use: it downloads itself (about 20 MB) the first time you ask something.'
+              : 'Delete the wasm/ folder inside this plugin\'s folder and ask something again; it will fetch a clean copy.',
+        }
+  );
+
+  if (f.modelBytes) {
+    checks.push({ name: 'Model', status: 'ok', detail: `${gb(f.modelBytes)} on disk.` });
+  } else if (f.partialBytes) {
+    checks.push({
+      name: 'Model',
+      status: 'warn',
+      detail: `A partial download of ${gb(f.partialBytes)} is on disk.`,
+      fix: 'Press Download model in this plugin\'s settings; it resumes from where it stopped rather than starting over.',
+    });
+  } else {
+    checks.push({
+      name: 'Model',
+      status: 'warn',
+      detail: 'Not downloaded yet.',
+      fix: 'Press Download model in this plugin\'s settings, or just ask something and you will be offered it. It is about 3 GB, downloaded once.',
+    });
+  }
+
+  return checks;
+}
+
+/** Whether anything is actually broken, as opposed to merely not done yet. */
+export function diagnosisBlocks(checks: readonly Check[]): boolean {
+  return checks.some((c) => c.status === 'fail');
+}
+
+/**
+ * The report as text, for pasting into an issue. Deliberately plain: a user
+ * forwarding this should not have to wonder what it discloses. It carries no
+ * vault contents, no paths, no note titles — versions, hardware capability
+ * and file sizes, and nothing else.
+ */
+export function formatDiagnostics(f: DiagnosticFacts, checks: readonly Check[]): string {
+  const mark = { ok: 'OK  ', warn: 'note', fail: 'FAIL' } as const;
+  const lines = [
+    `Gemma 4 E4B LLM Wiki ${f.pluginVersion} on Obsidian ${f.obsidianVersion} (${f.platform})`,
+    '',
+    ...checks.map((c) => `[${mark[c.status]}] ${c.name}: ${c.detail}`),
+  ];
+  const fixes = checks.filter((c) => c.fix);
+  if (fixes.length) {
+    lines.push('', 'What to do:');
+    for (const c of fixes) lines.push(`- ${c.name}: ${c.fix}`);
+  }
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Vault search — the retrieval behind Vault mode
 // ---------------------------------------------------------------------------
 
