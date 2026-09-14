@@ -704,3 +704,59 @@ test('a folder hit still has to survive the body pass', () => {
   assert.equal(tier['touchdesigner installs/note 0.md'], 'about');
   assert.equal(tier['misc/note 3.md'], undefined);
 });
+
+// --- One intent, two languages, one answer ---------------------------------
+//
+// "我的笔记, 讲了哪些关于javascript" returned eight notes, four of them a
+// lecture script and a talk transcript; "Which of my notes are about:
+// javascript" returned the right three. Same question. The Chinese verb 讲
+// (to talk about) was not a stopword, so it was searched for as a subject and
+// matched 讲稿 and 讲解 in titles that had nothing to do with JavaScript. The
+// English phrasing has a colon, so subjectOf kept only what followed it.
+
+test('the verb in "which notes talk about X" is not a search term', () => {
+  for (const q of ['我的笔记, 讲了哪些关于javascript', '哪些笔记讲了 javascript', '讲解 javascript 的笔记有哪些']) {
+    const terms = queryTerms(q);
+    assert.ok(!terms.some((t) => /讲|講/.test(t)), `${q} -> ${terms.join(',')}`);
+    assert.ok(terms.includes('javascript'), q);
+  }
+});
+
+test('a particle pair ICU returns as one segment is not a word', () => {
+  for (const q of ['进行中的有哪些', '正在进行中的项目', '文件夹里的内容']) {
+    const terms = queryTerms(q);
+    assert.ok(!terms.some((t) => /的$/.test(t) && t !== '目的'), `${q} -> ${terms.join(',')}`);
+  }
+  // 目的 (purpose) is a real word ending in 的 and must survive.
+  assert.ok(queryTerms('这个项目的目的是什么').includes('目的'));
+});
+
+test('the same question in Chinese and English finds the same notes', () => {
+  const docs: VaultDoc[] = [
+    { path: 'js/debounce snippet.md', title: 'debounce snippet function in modern es6 vanilla JavaScript', tags: [], headings: [] },
+    { path: 'js/basics.md', title: '1. JavaScript 基础知识', tags: [], headings: [] },
+    { path: 'js/closure.md', title: '3. Closure (frontend master)', tags: ['javascript'], headings: [] },
+    { path: 'talks/The Room 讲稿.md', title: 'The Room 讲稿', tags: [], headings: [] },
+    { path: 'talks/演示口播.md', title: 'The Room — 演示口播', tags: [], headings: [] },
+    { path: 'wiki/完整讲解.md', title: 'Karpathy LLM Wiki 方法论深度解读 — 基于原文的完整讲解', tags: [], headings: [] },
+    { path: 'x.md', title: 'x', tags: [], headings: [] },
+  ];
+  const bodies = new Map([
+    ['js/debounce snippet.md', 'A classic debounce function in modern JS.'],
+    ['js/basics.md', 'Hoisting, polyfills, falsy values in JavaScript.'],
+    ['js/closure.md', 'How a closure keeps callbacks in JavaScript honest.'],
+    ['talks/The Room 讲稿.md', '讲稿。今天讲一个情感 AI 的房间。'],
+    ['talks/演示口播.md', '口播稿，跟屏走。'],
+    ['wiki/完整讲解.md', '完整讲解 Karpathy 的方法论。'],
+    ['x.md', 'tea'],
+  ]);
+  const ask = (q: string) =>
+    dedupeByName(rescoreWithBodies(q, rankVaultDocs(q, docs, 60, ['js']), bodies, 12, 0.05, ['js']))
+      .filter((h) => h.tier === 'about')
+      .map((h) => h.path)
+      .sort();
+  const zh = ask('我的笔记, 讲了哪些关于javascript');
+  const en = ask('Which of my notes are about: javascript');
+  assert.deepEqual(zh, en);
+  assert.deepEqual(en, ['js/basics.md', 'js/closure.md', 'js/debounce snippet.md']);
+});

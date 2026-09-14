@@ -246,6 +246,14 @@ const CJK_STOP = new Set([
   '总结', '列出', '列一下', '找', '找出', '找一下', '找找', '说明', '大纲',
   '草稿', '简短', '简单', '介绍', '告诉', '看看', '想', '知道', '有哪些', '帮',
   '都有', '所有', '全部', '关联', '之间', '最近', '最新', '新',
+  // The verb of "which notes talk about X". Left as a term it matched
+  // 讲稿 (a lecture script) and 讲解 (an explanation) and pulled in notes
+  // about neither the subject nor anything near it.
+  '讲', '讲了', '讲过', '讲的', '讲解', '講', '講了', '談', '谈', '谈到', '谈了',
+  // Particle pairs ICU returns as one segment: 进行中的 comes back as
+  // 进行 | 中的, and 中的 is not a word. A trailing 的 cannot be stripped
+  // in general — 目的 is a word — so the pairs are named.
+  '中的', '上的', '下的', '里的', '裡的', '内的', '外的', '前的', '后的', '後的',
   // Japanese particles, copulas, auxiliaries, question scaffolding
   'は', 'の', 'が', 'を', 'に', 'で', 'と', 'も', 'へ', 'や', 'か', 'ね',
   'よ', 'な', 'て', 'た', 'だ', 'し', 'ます', 'です', 'でし', 'ある', 'いる',

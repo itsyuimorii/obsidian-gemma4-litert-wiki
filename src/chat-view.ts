@@ -1856,20 +1856,24 @@ export class ChatView extends ItemView {
         systemPrompt:
           'The user asked which of their notes are about something. The plugin has already ' +
           'searched the vault and found the notes below — you are not being asked to search, ' +
-          'and you cannot. Each is marked ABOUT (the subject is in its title, tags or headings, or ' +
-          'named repeatedly) or MENTIONS (named once or twice, often in passing). For each note, in ' +
-          'the order given, write one line: its title in bold, then what the note itself is about ' +
-          'and where the subject comes up in it, from its text. A MENTIONS note is usually about ' +
-          'something else; say what, and how the subject appears. Do not add notes that are not ' +
-          'listed. Do not summarise the subject itself.\n\n' +
+          'and you cannot. Each note is labelled ABOUT or MENTIONS; the label is the plugin\'s ' +
+          'and is not to be repeated or explained. For each note, in the order given, write one ' +
+          'line: its title in bold, then one sentence taken from what the note\'s own text says — ' +
+          'what the note is about, and where the subject comes up in it. Every line must contain ' +
+          'something specific from that note; a line that could describe any note is wrong. A ' +
+          'MENTIONS note is usually about something else; say what, and how the subject appears. ' +
+          'Do not add notes that are not listed. Do not summarise the subject itself.\n\n' +
           'Be concise. Use a markdown list.\n\n' +
           listMaterial,
         sourcePath: indexPath(),
         sources: listed2,
         grounding: 'vault',
-        // The model's own answer follows every list, as it follows every
-        // grounded answer: the notes first, then Gemma 4 E4B, always.
-        vault: { kind: 'list', hits: listed2, adds: true },
+        // A list is the whole answer. Someone asking which notes are about
+        // JavaScript wants the notes; a paragraph on what JavaScript is under
+        // them is filler, and when the subject was a folder name it was a
+        // dictionary entry for "in progress". The model's own answer follows
+        // a subject question, not a list question.
+        vault: { kind: 'list', hits: listed2, adds: false },
       };
     }
 
