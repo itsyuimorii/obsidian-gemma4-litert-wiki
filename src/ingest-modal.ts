@@ -1,4 +1,5 @@
 import { App, MarkdownRenderer, Modal, Component, setIcon } from 'obsidian';
+import { formatDiagnostics, type Check, type DiagnosticFacts } from './pure';
 
 // A small yes/no gate. Resolves true if the user confirms, false otherwise
 // (including closing the modal). Used e.g. when a note is already ingested and
@@ -375,5 +376,67 @@ export class ScaffoldCreatedModal extends Modal {
   onClose() {
     this.contentEl.empty();
     this.onOpenPanel();
+  }
+}
+
+/**
+ * The diagnostics report.
+ *
+ * One row per check with a plain marker, then the pasteable block. The copy
+ * button is the point: the only outside bug report this plugin has had was a
+ * screenshot of a stack trace, which said what broke but not what the user's
+ * machine looked like. This is the thing to paste instead, and it is visible
+ * on screen first so nobody has to send something they have not read.
+ */
+export class DiagnosticsModal extends Modal {
+  private facts: DiagnosticFacts;
+  private checks: readonly Check[];
+
+  constructor(app: App, facts: DiagnosticFacts, checks: readonly Check[]) {
+    super(app);
+    this.facts = facts;
+    this.checks = checks;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    const blocked = this.checks.some((c) => c.status === 'fail');
+    const pending = this.checks.some((c) => c.status === 'warn');
+    contentEl.createEl('h3', {
+      text: blocked
+        ? 'Something here has to be fixed first'
+        : pending
+          ? 'Ready, with the downloads still to do'
+          : 'Everything checks out',
+    });
+
+    const list = contentEl.createDiv({ cls: 'gemma4-diag-list' });
+    for (const c of this.checks) {
+      const row = list.createDiv({ cls: `gemma4-diag-row is-${c.status}` });
+      row.createSpan({ cls: 'gemma4-diag-name', text: c.name });
+      const body = row.createDiv({ cls: 'gemma4-diag-body' });
+      body.createDiv({ cls: 'gemma4-diag-detail', text: c.detail });
+      if (c.fix) body.createDiv({ cls: 'gemma4-diag-fix', text: c.fix });
+    }
+
+    const report = formatDiagnostics(this.facts, this.checks);
+    contentEl.createEl('p', {
+      cls: 'gemma4-diag-note',
+      text: 'The text below is what to paste into a bug report. It carries versions, hardware and file sizes — no note titles, no paths, nothing from your vault.',
+    });
+    contentEl.createEl('pre', { cls: 'gemma4-diag-report', text: report });
+
+    const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
+    const copy = buttons.createEl('button', { cls: 'mod-cta', text: 'Copy report' });
+    copy.addEventListener('click', () => {
+      void navigator.clipboard.writeText(report);
+      copy.setText('Copied');
+    });
+    const close = buttons.createEl('button', { text: 'Close' });
+    close.addEventListener('click', () => this.close());
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }

@@ -21,6 +21,14 @@ export interface Stats {
   mtimeMs: number;
 }
 
+/** What statfs reports about the volume a path sits on. */
+export interface FsStats {
+  /** Block size in bytes. */
+  bsize: number;
+  /** Blocks available to an unprivileged process. */
+  bavail: number;
+}
+
 /**
  * A chunk of bytes crossing this boundary. Node hands over Buffers, which are
  * Uint8Arrays with extra methods this plugin never calls — so the name says
@@ -52,6 +60,7 @@ export interface FsApi {
   mkdirSync(p: string, opts?: { recursive?: boolean }): void;
   readdirSync(p: string): string[];
   statSync(p: string): Stats;
+  statfsSync(p: string): FsStats;
   renameSync(from: string, to: string): void;
   rmSync(p: string, opts?: { force?: boolean }): void;
   writeFileSync(p: string, data: string): void;
@@ -170,6 +179,7 @@ export const fs: FsApi = {
   mkdirSync: (p, opts) => rawFs.mkdirSync(inside(p), opts),
   readdirSync: (p) => rawFs.readdirSync(inside(p)),
   statSync: (p) => rawFs.statSync(inside(p)),
+  statfsSync: (p) => rawFs.statfsSync(inside(p)),
   renameSync: (from, to) => rawFs.renameSync(inside(from), inside(to)),
   rmSync: (p, opts) => rawFs.rmSync(inside(p), opts),
   writeFileSync: (p, data) => rawFs.writeFileSync(inside(p), data),

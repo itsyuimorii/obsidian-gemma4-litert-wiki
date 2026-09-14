@@ -93,7 +93,13 @@ export function failureText(what: string, err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const firstLine = raw.split('\n')[0].trim();
   const reason = firstLine.length > 140 ? `${firstLine.slice(0, 137)}…` : firstLine;
-  return `${what} failed${reason ? ` — ${reason}` : ''}. Press Cmd/Ctrl+Opt+I for the full error.`;
+  // The old ending was "press Cmd/Ctrl+Opt+I for the full error", which asks
+  // someone whose plugin just failed to open a developer console and read a
+  // stack trace. The one bug report this plugin has had from outside was a
+  // screenshot of exactly that. The command named here answers the question
+  // the stack trace does not: what on this machine is missing, and what to
+  // do about it.
+  return `${what} failed${reason ? ` — ${reason}` : ''}. Run the command "Check setup (diagnostics)" to see what is missing.`;
 }
 
 /**

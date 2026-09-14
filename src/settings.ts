@@ -360,6 +360,21 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       btn.onClick(() => void this.plugin.downloadModelFromSettings());
     });
 
+    // Directly under the download row, because the settings page is where
+    // someone goes when the plugin is not working and the command palette is
+    // not the first place they look.
+    new Setting(containerEl)
+      .setName('Check setup')
+      .setDesc(
+        'Checks the five things a first answer depends on — desktop, WebGPU, disk space, the ' +
+          'runtime, the model — and says what to do about anything missing. Produces a report you ' +
+          'can paste into a bug report; it carries versions and file sizes, nothing from your vault.'
+      )
+      .addButton((btn) => {
+        btn.setButtonText('Run check');
+        btn.onClick(() => void this.plugin.showDiagnostics());
+      });
+
     new Setting(containerEl)
       .setName('Context window (tokens)')
       .setDesc(

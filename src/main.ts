@@ -3,9 +3,9 @@ import { confineFilesystemTo, fs, http, path, type Bytes, type HttpServer } from
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
-import { ConfirmModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
+import { ConfirmModal, DiagnosticsModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
-import { ensureCommonJsMarker, ensureRuntimeFile, isRuntimeFile } from './wasm-store';
+import { ensureCommonJsMarker, ensureRuntimeFile, isRuntimeFile, runtimeBytesOnDisk } from './wasm-store';
 import { setWasmScriptResolver } from './wasm-loader';
 import {
   appendLog,
@@ -65,6 +65,9 @@ import {
   formatUsageReport,
   improveOutputBudget,
   migrateSettings,
+  diagnose,
+  diagnosisBlocks,
+  type DiagnosticFacts,
   type UsageSnapshot,
 } from './pure';
 import { BENCH_CORPUS } from './bench-corpus';
@@ -861,6 +864,19 @@ export default class LiteRtSpikePlugin extends Plugin {
     // entries a user sees when they type the plugin's name, and none of them
     // is a thing anyone wants to do with their notes. Off unless asked for,
     // in Settings → Model → Developer commands.
+    // Always registered, unlike the [Test] commands below. The one bug report
+    // this plugin has had from outside was a fresh install that did nothing,
+    // and the reporter had no way to find out why — the WebGPU check existed
+    // even then, behind a Developer-commands toggle they had no reason to
+    // turn on. A user who cannot get an answer needs this on the first try.
+    this.addCommand({
+      id: 'litert-diagnostics',
+      name: 'Check setup (diagnostics)',
+      callback: async () => {
+        await this.showDiagnostics();
+      },
+    });
+
     if (this.settings.devCommands) {
       this.addCommand({
         id: 'litert-check-webgpu',
@@ -3897,6 +3913,69 @@ export default class LiteRtSpikePlugin extends Plugin {
     } catch (err) {
       p.fail('Renaming the wiki folder', err, this.app.vault);
     }
+  }
+
+  /**
+   * The four facts a stuck install turns on, gathered. The judging is in
+   * pure.ts so the sentence each failure produces is under test; this half
+   * only reads the machine, and every read is wrapped because a diagnostic
+   * that throws is worse than no diagnostic.
+   */
+  async gatherDiagnostics(): Promise<DiagnosticFacts> {
+    const desktop = this.app.vault.adapter instanceof FileSystemAdapter;
+    let dir = '';
+    try {
+      dir = this.pluginAbsDir();
+    } catch {
+      /* mobile, or no filesystem adapter: the Platform check reports it */
+    }
+    const size = (p: string) => {
+      try {
+        return fs.statSync(p).size;
+      } catch {
+        return undefined;
+      }
+    };
+    let freeBytes: number | undefined;
+    try {
+      const st = fs.statfsSync(dir);
+      freeBytes = st.bavail * st.bsize;
+    } catch {
+      /* not every filesystem answers statfs; reported as unknown, not as a fault */
+    }
+    let runtimeBytes = 0;
+    try {
+      runtimeBytes = runtimeBytesOnDisk(path.join(dir, 'wasm'));
+    } catch {
+      /* no wasm/ yet is the normal fresh-install state, and reads as zero */
+    }
+    const partial = (() => {
+      try {
+        return partialBytes(dir) || undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+    return {
+      webgpu: await checkWebGPU(),
+      freeBytes,
+      modelBytes: dir ? size(path.join(dir, 'gemma-4-E4B-it-web.litertlm')) : undefined,
+      partialBytes: partial,
+      runtimeBytes,
+      serverPort: this.serverBaseUrl ? Number(new URL(this.serverBaseUrl).port) || undefined : undefined,
+      desktop,
+      obsidianVersion: apiVersion,
+      pluginVersion: this.manifest.version,
+      platform: Platform.isMacOS ? 'macOS' : Platform.isWin ? 'Windows' : Platform.isLinux ? 'Linux' : 'unknown',
+    };
+  }
+
+  /** Run the checks and show them. Returns whether anything is actually broken. */
+  async showDiagnostics(): Promise<boolean> {
+    const facts = await this.gatherDiagnostics();
+    const checks = diagnose(facts);
+    new DiagnosticsModal(this.app, facts, checks).open();
+    return diagnosisBlocks(checks);
   }
 
   // Model status for the settings page: downloaded?, on-disk size, or the

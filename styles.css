@@ -1606,3 +1606,68 @@
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
 }
+
+/* ---------- Diagnostics ---------- */
+
+.gemma4-diag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.gemma4-diag-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding-left: 8px;
+  border-left: 2px solid var(--background-modifier-border);
+}
+
+/* The marker is the border, not an emoji: a row that fails should be findable
+   by scanning one edge, and colour here is reinforced by the word in the
+   detail line rather than carrying the meaning alone. */
+.gemma4-diag-row.is-ok {
+  border-left-color: var(--text-success);
+}
+.gemma4-diag-row.is-warn {
+  border-left-color: var(--text-warning);
+}
+.gemma4-diag-row.is-fail {
+  border-left-color: var(--text-error);
+}
+
+.gemma4-diag-name {
+  font-weight: 600;
+  font-size: var(--font-ui-small);
+}
+
+.gemma4-diag-detail {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.gemma4-diag-fix {
+  margin-top: 3px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.gemma4-diag-note {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.gemma4-diag-report {
+  max-height: 200px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+  white-space: pre;
+  user-select: text;
+}
