@@ -1671,3 +1671,38 @@
   white-space: pre;
   user-select: text;
 }
+
+/* ---------- Search-my-notes box, beside the mode pills (Vault only) ---------- */
+
+/* Same height and type size as the pills it sits with; the label is the
+   whole hit target, so a tap anywhere on the words flips it. Hidden outside
+   Vault by the [hidden] attribute, which the shell's reset honours. */
+.gemma4-composer-bar .gemma4-chat-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gemma4-composer-bar .gemma4-chat-search-toggle input {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
+.gemma4-composer-bar .gemma4-chat-search-toggle:hover {
+  color: var(--text-normal);
+}
+
+/* Unticked, the words go amber to match the warning every answer will carry. */
+.gemma4-composer-bar .gemma4-chat-search-toggle:has(input:not(:checked)) {
+  color: var(--text-warning);
+}

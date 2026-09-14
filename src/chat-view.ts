@@ -346,6 +346,25 @@ const NONE_PROMPT =
   'write about X"), answer about X itself. Be concise. You may use markdown.';
 
 /** The model on its own: no notes, and it must not pretend otherwise. */
+/** The first half of a grounded Vault answer: what the notes below say, and nothing else. */
+const groundedVaultPrompt = (material: string): string =>
+  "Use ONLY the notes below, from the user's own vault, to answer the first part of this " +
+  'reply: what their notes say about the question. Quote or paraphrase what is there, name ' +
+  'the note it came from, and say plainly if the notes touch the subject without answering ' +
+  'it. Never claim a note says something it does not, and never invent detail and present ' +
+  'it as theirs. Do not add general knowledge here — that comes separately, after.\n\n' +
+  'The notes below are the ONLY material. Earlier turns in this conversation are not ' +
+  'material: a note named in an earlier answer is not available to you now unless it is ' +
+  'below. Never name, cite or summarise a note that is not below.\n\n' +
+  'A note is named ONLY by the title in its "## Note:" header. Headings and numbered ' +
+  'sections inside a note are parts of that note, not notes of their own — never list ' +
+  'them as if they were separate notes.\n\n' +
+  'If the user asks you to work with the material — summarise, list actions, turn into ' +
+  'questions — do that from the notes. If the request is unclear, say you did not follow ' +
+  'it rather than reporting that the notes lack something.\n\n' +
+  'Be concise. You may use markdown.\n\n' +
+  material;
+
 const DIRECT_PROMPT =
   "Answer the user's question from your own general knowledge. You do NOT have access to " +
   "the user's notes or wiki here — never claim a fact came from them. If you are unsure, " +
@@ -956,6 +975,18 @@ export class ChatView extends ItemView {
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
     vaultBtn.addEventListener('click', () => this.setMode('vault'));
 
+    // Beside the pills, Vault only. A statement of what will happen, not a
+    // setting name: ticked, the notes are searched first; unticked, the
+    // model answers alone and the chip above says so.
+    this.searchBoxRow = modeRow.createEl('label', { cls: 'gemma4-chat-search-toggle' });
+    this.searchBox = this.searchBoxRow.createEl('input', { attr: { type: 'checkbox' } });
+    this.searchBox.checked = true;
+    this.searchBoxRow.appendText('Search my notes first');
+    this.searchBox.addEventListener('change', () => {
+      this.searchNotes = !!this.searchBox?.checked;
+      this.refreshVaultSurface();
+    });
+
     const attachBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
       attr: { 'aria-label': 'Add note as context' },
@@ -1170,8 +1201,36 @@ export class ChatView extends ItemView {
     await this.restoreThread();
   }
 
+  /**
+   * Whether a Vault question searches the notes before the model answers.
+   * Ticked by default, and ticked again every time Vault is (re)selected:
+   * it is a modifier for a stretch of questions, not a setting, and a box
+   * left unticked would turn "what did I write about React" into an answer
+   * the model made up, with no Sources row to give it away. While unticked
+   * the chip under the title and the placeholder both say so.
+   */
+  private searchNotes = true;
+  private searchBox?: HTMLInputElement;
+  private searchBoxRow?: HTMLElement;
+
+  private vaultPlaceholder(): string {
+    return this.searchNotes
+      ? 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
+      : 'Ask anything — answered by Gemma 4 E4B, your notes not searched (Enter to send)';
+  }
+
+  /** Everything on screen that says whether the notes will be searched. */
+  private refreshVaultSurface() {
+    if (this.searchBox) this.searchBox.checked = this.searchNotes;
+    if (this.mode === 'vault') this.inputEl?.setAttribute('placeholder', this.vaultPlaceholder());
+    this.updateNoteChip();
+  }
+
   private setMode(mode: ChatMode) {
     this.mode = mode;
+    this.searchNotes = true;
+    if (this.searchBoxRow) this.searchBoxRow.hidden = mode !== 'vault';
+    if (this.searchBox) this.searchBox.checked = true;
     this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
     this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
     this.modeButtons?.vault.toggleClass('gemma4-chat-mode-active', mode === 'vault');
@@ -1190,7 +1249,7 @@ export class ChatView extends ItemView {
         ? 'Ask about this note… (Enter to send) — Wiki or Vault above for anything else'
         : mode === 'wiki'
           ? `Ask across the cards in ${wikiDir()}/… (Enter to send) — This note or Vault for anything else`
-          : 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
+          : this.vaultPlaceholder()
     );
     this.renderSuggestions();
     this.updateNoteChip();
@@ -1230,6 +1289,12 @@ export class ChatView extends ItemView {
       return;
     }
     if (this.mode === 'vault') {
+      if (!this.searchNotes) {
+        setIcon(icon, 'sparkles');
+        this.noteChipEl.createSpan({ text: 'Gemma 4 E4B only · notes not searched' });
+        this.noteChipEl.addClass('gemma4-chat-note-chip-none');
+        return;
+      }
       setIcon(icon, 'folder-search');
       const prefix = `${wikiDir()}/`;
       const n = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix)).length;
@@ -1677,6 +1742,34 @@ export class ChatView extends ItemView {
       return { base, folder, linkPath: path.replace(/\.md$/, '') };
     };
 
+    // The box beside the pills is unticked: no expansion, no search, no
+    // "Searching N notes" line. Notes the user attached with + are still
+    // used — "do not search" is not "ignore what I handed you" — and then
+    // the answer is grounded on those alone. With nothing attached the
+    // model answers from itself under the usual warning, and the line above
+    // the answer says the notes were not searched, with a button that
+    // ticks the box and asks again.
+    if (!this.searchNotes) {
+      const attachments = await this.readAttachments();
+      if (attachments.blocks) {
+        return {
+          systemPrompt: groundedVaultPrompt(attachments.blocks),
+          sourcePath: indexPath(),
+          sources: attachments.sources,
+          grounding: 'vault',
+          vault: { kind: 'both', hits: [] },
+        };
+      }
+      return {
+        systemPrompt: DIRECT_PROMPT,
+        sourcePath: indexPath(),
+        sources: [],
+        ungrounded: true,
+        grounding: 'direct',
+        vault: { kind: 'none', hits: [], skipped: true },
+      };
+    }
+
     // "What did I write recently" is answered by the file system, not by
     // search: the eight most recently edited notes, newest first, with the
     // date each was touched. The model adds a line per note from its
@@ -1883,23 +1976,7 @@ export class ChatView extends ItemView {
     }
 
     return {
-      systemPrompt:
-        "Use ONLY the notes below, from the user's own vault, to answer the first part of this " +
-        'reply: what their notes say about the question. Quote or paraphrase what is there, name ' +
-        'the note it came from, and say plainly if the notes touch the subject without answering ' +
-        'it. Never claim a note says something it does not, and never invent detail and present ' +
-        'it as theirs. Do not add general knowledge here — that comes separately, after.\n\n' +
-        'The notes below are the ONLY material. Earlier turns in this conversation are not ' +
-        'material: a note named in an earlier answer is not available to you now unless it is ' +
-        'below. Never name, cite or summarise a note that is not below.\n\n' +
-        'A note is named ONLY by the title in its "## Note:" header. Headings and numbered ' +
-        'sections inside a note are parts of that note, not notes of their own — never list ' +
-        'them as if they were separate notes.\n\n' +
-        'If the user asks you to work with the material — summarise, list actions, turn into ' +
-        'questions — do that from the notes. If the request is unclear, say you did not follow ' +
-        'it rather than reporting that the notes lack something.\n\n' +
-        'Be concise. You may use markdown.\n\n' +
-        material,
+      systemPrompt: groundedVaultPrompt(material),
       sourcePath: indexPath(),
       sources,
       grounding: 'vault',
@@ -1938,6 +2015,8 @@ export class ChatView extends ItemView {
       hits: { title: string; linkPath: string; tier?: 'about' | 'mentions' }[];
       /** Run the model's own answer after the grounded one (a list that stood in for "what did I write about X"). */
       adds?: boolean;
+      /** The box beside the pills was unticked: no search ran, and the line above the answer says so. */
+      skipped?: boolean;
     };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
@@ -2320,7 +2399,7 @@ export class ChatView extends ItemView {
     // reading. Removed as soon as the context is built, so the line never
     // outlives the search it describes.
     const searching =
-      this.mode === 'vault' && !ungrounded
+      this.mode === 'vault' && !ungrounded && this.searchNotes
         ? this.messagesEl.createDiv({
             cls: 'gemma4-chat-row gemma4-chat-row-assistant gemma4-chat-searching',
             text: `Searching ${this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(`${wikiDir()}/`)).length} notes…`,
@@ -2369,7 +2448,17 @@ export class ChatView extends ItemView {
       if (context.vault?.kind === 'none') {
         const none = body.createDiv({ cls: 'gemma4-chat-vault-none' });
         const passing = context.vault.hits;
-        if (passing.length) {
+        if (context.vault.skipped) {
+          none.appendText('Your notes were not searched. ');
+          const again = none.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Search my notes and ask again' });
+          again.addEventListener('click', () => {
+            if (this.busy) return;
+            again.disabled = true;
+            this.searchNotes = true;
+            this.refreshVaultSurface();
+            void this.askInMode('vault', question);
+          });
+        } else if (passing.length) {
           none.appendText(
             `Nothing in your notes is about this — ${passing.length} mention${passing.length === 1 ? 's' : ''} it in passing: `
           );
