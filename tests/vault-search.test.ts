@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { asksAboutOwnNotes } from '../src/pure.ts';
 import {
   dedupeByName,
+  describedForList,
   excerptAround,
   parseExpansion,
   phraseOf,
@@ -759,4 +760,23 @@ test('the same question in Chinese and English finds the same notes', () => {
   const en = ask('Which of my notes are about: javascript');
   assert.deepEqual(zh, en);
   assert.deepEqual(en, ['js/basics.md', 'js/closure.md', 'js/debounce snippet.md']);
+});
+
+// --- Which notes get described in a list -------------------------------------
+
+test('a list describes the notes that are about the subject, and only those', () => {
+  const about = [{ path: 'a.md', tier: 'about' as const }, { path: 'b.md', tier: 'about' as const }];
+  const mentions = [{ path: 'm1.md', tier: 'mentions' as const }, { path: 'm2.md', tier: 'mentions' as const }];
+  assert.deepEqual(describedForList(about, mentions).map((h) => h.path), ['a.md', 'b.md']);
+});
+
+test('when nothing is about the subject, the mentions are the answer and get described', () => {
+  const mentions = [{ path: 'm1.md', tier: 'mentions' as const }, { path: 'm2.md', tier: 'mentions' as const }];
+  assert.deepEqual(describedForList([], mentions).map((h) => h.path), ['m1.md', 'm2.md']);
+});
+
+test('the described list is capped, whichever tier it came from', () => {
+  const about = Array.from({ length: 12 }, (_, i) => ({ path: `a${i}.md`, tier: 'about' as const }));
+  assert.equal(describedForList(about, []).length, 8);
+  assert.equal(describedForList(about, [], 3).length, 3);
 });

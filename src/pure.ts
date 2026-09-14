@@ -2269,6 +2269,26 @@ export function stripLeadingRefusal(answer: string): string {
 }
 
 /**
+ * Which notes get a line of description in a list answer.
+ *
+ * The notes that are about the subject, up to `max`. The ones that merely
+ * mention it are shown as links but not described: a 4B model writing
+ * "this is about API contracts and mentions JavaScript once" five times
+ * over is five lines nobody reads, and the more lines it writes the more
+ * room it has to drift. But when nothing is about the subject — "what did
+ * I write about coffee" when coffee only ever comes up in passing — the
+ * mentions are the answer, and where it comes up in each is exactly what
+ * is wanted; then they are the ones described.
+ */
+export function describedForList<T extends { tier: 'about' | 'mentions' }>(
+  about: readonly T[],
+  mentions: readonly T[],
+  max = 8
+): T[] {
+  return (about.length ? about : mentions).slice(0, max);
+}
+
+/**
  * One hit per note name. A vault that keeps the same notes in two folders
  * — a working copy and an archive — produces pairs whose bodies differ by a
  * line, which the body-level dedupe cannot see; the Sources row then shows

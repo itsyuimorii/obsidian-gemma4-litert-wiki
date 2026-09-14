@@ -1,6 +1,7 @@
 import {
   asksAboutOwnNotes,
   dedupeByName,
+  describedForList,
   excerptAround,
   formatVaultTree,
   looksLikeCollectionQuery,
@@ -1843,22 +1844,25 @@ export class ChatView extends ItemView {
     if (asList && allHits.length) {
       // Every hit, about first, each labelled; the model gets an excerpt of
       // each and writes one line, told which tier the plugin put it in.
-      const listed = [...about, ...mentions].slice(0, 8);
+      // Described: the abouts, or the mentions when there are no abouts.
+      // Shown: everything, as links — the chips row lists them all.
+      const described = describedForList(about, mentions, 8);
+      const shown = [...about, ...mentions].slice(0, 12);
       let listMaterial = '';
-      for (const h of listed) {
+      for (const h of described) {
         const body = bodies.get(h.path) ?? '';
         const src = titled(h.path);
         const excerpt = clampToTokens(excerptAround(body, terms, 600 * 3), 600).text;
         listMaterial += `## Note: ${src.title} (${h.path}) — ${h.tier === 'about' ? 'ABOUT the subject' : 'MENTIONS it in passing'}\n${excerpt}\n\n`;
       }
-      const listed2 = listed.map((h) => ({ ...titled(h.path), tier: h.tier }));
+      const listed2 = shown.map((h) => ({ ...titled(h.path), tier: h.tier }));
       return {
         systemPrompt:
           'The user asked which of their notes are about something. The plugin has already ' +
           'searched the vault and found the notes below — you are not being asked to search, ' +
           'and you cannot. Each note is labelled ABOUT or MENTIONS; the label is the plugin\'s ' +
-          'and is not to be repeated or explained. There are ' + listed.length + ' notes below. ' +
-          'Write exactly ' + listed.length + ' lines, one per note, in the order given, then stop. ' +
+          'and is not to be repeated or explained. There are ' + described.length + ' notes below. ' +
+          'Write exactly ' + described.length + ' lines, one per note, in the order given, then stop. ' +
           'Each line: the note\'s title in bold, then in your own words one specific thing that ' +
           'note covers and where the subject comes up in it. Do not quote the note; describe it. ' +
           'A line that could describe any note is wrong. A MENTIONS note is usually about ' +
