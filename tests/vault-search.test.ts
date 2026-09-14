@@ -764,19 +764,23 @@ test('the same question in Chinese and English finds the same notes', () => {
 
 // --- Which notes get described in a list -------------------------------------
 
+// The generic is inferred from the first argument, so both lists carry the
+// full tier union — as VaultHit does at the call site.
+type Listed = { path: string; tier: 'about' | 'mentions' };
+
 test('a list describes the notes that are about the subject, and only those', () => {
-  const about = [{ path: 'a.md', tier: 'about' as const }, { path: 'b.md', tier: 'about' as const }];
-  const mentions = [{ path: 'm1.md', tier: 'mentions' as const }, { path: 'm2.md', tier: 'mentions' as const }];
+  const about: Listed[] = [{ path: 'a.md', tier: 'about' }, { path: 'b.md', tier: 'about' }];
+  const mentions: Listed[] = [{ path: 'm1.md', tier: 'mentions' }, { path: 'm2.md', tier: 'mentions' }];
   assert.deepEqual(describedForList(about, mentions).map((h) => h.path), ['a.md', 'b.md']);
 });
 
 test('when nothing is about the subject, the mentions are the answer and get described', () => {
-  const mentions = [{ path: 'm1.md', tier: 'mentions' as const }, { path: 'm2.md', tier: 'mentions' as const }];
+  const mentions: Listed[] = [{ path: 'm1.md', tier: 'mentions' }, { path: 'm2.md', tier: 'mentions' }];
   assert.deepEqual(describedForList([], mentions).map((h) => h.path), ['m1.md', 'm2.md']);
 });
 
 test('the described list is capped, whichever tier it came from', () => {
-  const about = Array.from({ length: 12 }, (_, i) => ({ path: `a${i}.md`, tier: 'about' as const }));
+  const about: Listed[] = Array.from({ length: 12 }, (_, i) => ({ path: `a${i}.md`, tier: 'about' }));
   assert.equal(describedForList(about, []).length, 8);
   assert.equal(describedForList(about, [], 3).length, 3);
 });
