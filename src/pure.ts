@@ -1667,6 +1667,46 @@ function byScore(a: VaultHit, b: VaultHit): number {
  * Returns only notes that scored, best first, at most `max`. The body pass
  * (`rescoreWithBodies`) refines the top of this list.
  */
+/**
+ * How much a folder name is worth as evidence, per folder.
+ *
+ * In Obsidian the folder tree is the main way people sort things, and a
+ * note inside a topic folder rarely repeats the topic in its filename:
+ * nine notes in "8. TouchDesigner 装置" were called "Storm by Hand" and
+ * "Van Gogh Particles", named TouchDesigner nowhere but in the folder, and
+ * the ranking never looked at a path. On a vault past the body-reading
+ * threshold that made them unreachable.
+ *
+ * But a folder name is only evidence when it separates. This vault has
+ * "8. TouchDesigner 装置" holding nine notes and "1_進行中" holding
+ * eighty-three; the first says what a note is about and the second says
+ * only that it is not finished. So a folder segment is weighted by how much
+ * of the vault it covers, on the same smooth decay the body terms use: a
+ * segment over one note in twenty is worth close to a title hit, one over
+ * a quarter of the vault is worth almost nothing, and the flat vault with
+ * no folders at all has every segment at the same coverage and so gets
+ * nothing. No setting, no per-vault tuning.
+ */
+function folderWeights(docs: readonly VaultDoc[]): Map<string, number> {
+  const df = new Map<string, number>();
+  for (const d of docs) {
+    const segs = new Set(d.path.split('/').slice(0, -1).map((x) => x.toLowerCase()));
+    for (const seg of segs) df.set(seg, (df.get(seg) ?? 0) + 1);
+  }
+  const n = docs.length;
+  const out = new Map<string, number>();
+  for (const [seg, count] of df) out.set(seg, n ? Math.log((n + 1) / count) / Math.log(n + 1) : 0);
+  return out;
+}
+
+/**
+ * A folder segment has to carry at least this much weight before it can
+ * make a note "about" its subject rather than merely rank it. At 392 notes
+ * this is a folder of about forty or fewer — small enough to be a topic
+ * somebody made, rather than a stage of work everything passes through.
+ */
+const FOLDER_ABOUT_MIN = 0.35;
+
 export function rankVaultDocs(
   question: string,
   docs: readonly VaultDoc[],
@@ -1678,9 +1718,22 @@ export function rankVaultDocs(
   const more = expansionTerms(extra, new Set(typed.map((x) => x.t)));
   if (!typed.length && !more.length) return [];
   const has = (hay: string, t: string, whole: boolean) => countIn(hay, t, whole, 1) > 0;
+  const folderWeight = folderWeights(docs);
   const hits: VaultHit[] = [];
   for (const d of docs) {
     const title = d.title.toLowerCase();
+    // Each folder segment separately, with its own weight: a note in
+    // "work/onboarding" is served by "onboarding" even when "work" is
+    // worth nothing. Hyphens and underscores are spaces, as in a tag, so
+    // "8. TouchDesigner 装置" and "system-design" both read as phrases.
+    const segments = d.path.split('/').slice(0, -1)
+      .map((seg) => ({ text: seg.toLowerCase().replace(/[-_]+/g, ' '), weight: folderWeight.get(seg.toLowerCase()) ?? 0 }));
+    /** The best-weighted folder segment naming this term, if any. */
+    const inFolders = (t: string, whole: boolean): number => {
+      let best = 0;
+      for (const seg of segments) if (seg.weight > best && has(seg.text, t, whole)) best = seg.weight;
+      return best;
+    };
     // Hyphens and underscores in a tag are its spaces: system-design is
     // the phrase "system design", and react-native is not the word react.
     const tags = d.tags.map((t) => t.toLowerCase().replace(/^#/, '').replace(/[-_]+/g, ' '));
@@ -1698,19 +1751,23 @@ export function rankVaultDocs(
     // Title or tag: three, and the note is about it. Heading: one, and it
     // is not — a heading is one section of a note about something else.
     for (const { t, whole, weak } of typed) {
+      const fw = inFolders(t, whole);
+      // A folder is worth a title hit scaled by how much it separates, and
+      // it is the fallback: a note whose title already says it needs no help.
       const strong = has(title, t, whole) || inTags(t);
-      const s = strong ? 3 : has(headings, t, whole) ? 1 : 0;
+      const s = strong ? 3 : Math.max(has(headings, t, whole) ? 1 : 0, 3 * fw);
       if (!s) continue;
       // A word out of a phrase is half the evidence, and never tier evidence.
       score += weak ? s / 2 : s;
-      if (strong && !weak) metaTyped.push(t);
+      if (!weak && (strong || fw >= FOLDER_ABOUT_MIN)) metaTyped.push(t);
     }
     for (const { t, whole } of more) {
+      const fw = inFolders(t, whole);
       const strong = has(title, t, whole) || inTags(t);
-      const s = strong ? 3 : has(headings, t, whole) ? 1 : 0;
+      const s = strong ? 3 : Math.max(has(headings, t, whole) ? 1 : 0, 3 * fw);
       if (!s) continue;
       score += s * EXPANSION_WEIGHT;
-      if (strong) metaExpanded.push(t);
+      if (strong || fw >= FOLDER_ABOUT_MIN) metaExpanded.push(t);
     }
     if (score > 0) hits.push({ path: d.path, score, tier: 'about', metaTyped, metaExpanded });
   }

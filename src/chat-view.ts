@@ -304,6 +304,14 @@ const ADDS_PROMPT =
 /** Vault mode's ceiling on note material per answer, and per note. */
 const VAULT_MATERIAL_TOKENS = 4800;
 const VAULT_NOTE_TOKENS = 1200;
+/**
+ * The most notes a grounded answer will ever quote, whatever the budget
+ * allows. Past a dozen the answer stops being "what your notes say" and
+ * becomes a digest, and the Sources row stops being readable at a glance.
+ */
+const VAULT_MAX_NOTES = 12;
+/** Below this much budget left, there is no room for a paragraph worth reading. */
+const VAULT_NOTE_MIN = 300;
 
 /**
  * The subject of a search, expanded by the model before the search runs.
@@ -1752,7 +1760,10 @@ export class ChatView extends ItemView {
     // The notes read are the ones ABOUT the subject; a note that names it
     // once in an example sentence is listed under the answer, not read into
     // it. A list question lists both, labelled.
-    const hits = about.slice(0, 4);
+    // A ceiling, not a quota. The notes actually read are chosen below by
+    // what fits the token budget, so four long ones and a dozen short ones
+    // both arrive full rather than the count deciding for the budget.
+    const candidates = about.slice(0, VAULT_MAX_NOTES);
     const attachments = await this.readAttachments();
     // Not the whole chat budget. At a 64k context that is 48k tokens, and
     // five long notes filled it — a minute of prefill during which WebGPU
@@ -1775,8 +1786,8 @@ export class ChatView extends ItemView {
     // Asking the model the question as typed produced "I do not have access
     // to your notes" under a line that had just listed the notes.
     const aboutOwn = asksAboutOwnNotes(question);
-    const asList = listQuestion || (aboutOwn && !hits.length && mentions.length > 0);
-    if (!hits.length && !attachments.blocks && !(asList && mentions.length)) {
+    const asList = listQuestion || (aboutOwn && !candidates.length && mentions.length > 0);
+    if (!candidates.length && !attachments.blocks && !(asList && mentions.length)) {
       // "What's in my vault" matches no note by its words, because it is
       // about all of them. Hand the model the shape instead.
       if (aboutOwn) return overview();
@@ -1793,30 +1804,40 @@ export class ChatView extends ItemView {
       };
     }
 
-    // Notes matched (or were attached). Each gets an equal share of the
-    // budget, so five short notes arrive whole and five long ones arrive
-    // as their openings — the part most likely to say what they are about.
-    const hitSources = hits.map((h) => ({ ...titled(h.path), tier: h.tier }));
-    const share = Math.min(
-      VAULT_NOTE_TOKENS,
-      Math.max(300, Math.floor((budget - estimateTokens(attachments.blocks)) / Math.max(1, hits.length)))
-    );
     // The same weights the ranking used, heaviest first: the excerpt of a
     // note is the text around the words that got it here.
     const terms = weightedTerms(question, bodies, extra)
       .filter((w) => w.weight > 0)
       .sort((a, b) => b.weight - a.weight)
       .map(({ t, whole }) => ({ t, whole }));
+
+    // Fill the budget, best-ranked first, instead of dividing it four ways.
+    // Dividing was what a fixed count forced: four notes of three hundred
+    // tokens each spent twelve hundred of four thousand eight hundred and
+    // left the fifth and sixth matches unread with most of the budget
+    // unspent. A note takes what it needs up to VAULT_NOTE_TOKENS, the next
+    // one takes what is left, and the loop stops when what remains is too
+    // small to carry a paragraph. Long notes still cap out at four or so;
+    // short ones now arrive together.
+    let remaining = Math.max(300, budget - estimateTokens(attachments.blocks));
+    const hits: typeof candidates = [];
     let material = '';
-    for (const h of hits) {
+    for (const h of candidates) {
+      if (remaining < VAULT_NOTE_MIN) break;
       const body = bodies.get(h.path) ?? '';
       const src = titled(h.path);
+      const share = Math.min(VAULT_NOTE_TOKENS, remaining);
       // ~3.4 chars per token for Latin text; CJK is denser, and clampToTokens
       // below catches the case where the estimate was generous.
-      const excerpt = clampToTokens(excerptAround(body, terms, share * 3), share).text;
-      material += `## Note: ${src.title} (${h.path})\n${excerpt}\n\n`;
+      const block = `## Note: ${src.title} (${h.path})\n${clampToTokens(excerptAround(body, terms, share * 3), share).text}\n\n`;
+      material += block;
+      // What this note actually cost, not what it was allowed: a short note
+      // leaves the rest for the next one, which is the whole point.
+      remaining -= Math.max(estimateTokens(block), VAULT_NOTE_MIN);
+      hits.push(h);
     }
     material += attachments.blocks;
+    const hitSources = hits.map((h) => ({ ...titled(h.path), tier: h.tier }));
     const sources = [...attachments.sources, ...hitSources];
 
     if (asList && allHits.length) {
