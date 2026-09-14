@@ -2318,7 +2318,7 @@ export class ChatView extends ItemView {
       this.mode === 'vault' && !ungrounded
         ? this.messagesEl.createDiv({
             cls: 'gemma4-chat-row gemma4-chat-row-assistant gemma4-chat-searching',
-            text: `Searching ${this.app.vault.getMarkdownFiles().length} notes…`,
+            text: `Searching ${this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(`${wikiDir()}/`)).length} notes…`,
           })
         : null;
     this.searchingEl = searching;
