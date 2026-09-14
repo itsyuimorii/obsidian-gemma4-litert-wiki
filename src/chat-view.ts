@@ -1,6 +1,7 @@
 import {
   asksAboutOwnNotes,
   dedupeByName,
+  describedForList,
   excerptAround,
   formatVaultTree,
   looksLikeCollectionQuery,
@@ -304,6 +305,14 @@ const ADDS_PROMPT =
 /** Vault mode's ceiling on note material per answer, and per note. */
 const VAULT_MATERIAL_TOKENS = 4800;
 const VAULT_NOTE_TOKENS = 1200;
+/**
+ * The most notes a grounded answer will ever quote, whatever the budget
+ * allows. Past a dozen the answer stops being "what your notes say" and
+ * becomes a digest, and the Sources row stops being readable at a glance.
+ */
+const VAULT_MAX_NOTES = 12;
+/** Below this much budget left, there is no room for a paragraph worth reading. */
+const VAULT_NOTE_MIN = 300;
 
 /**
  * The subject of a search, expanded by the model before the search runs.
@@ -337,6 +346,25 @@ const NONE_PROMPT =
   'write about X"), answer about X itself. Be concise. You may use markdown.';
 
 /** The model on its own: no notes, and it must not pretend otherwise. */
+/** The first half of a grounded Vault answer: what the notes below say, and nothing else. */
+const groundedVaultPrompt = (material: string): string =>
+  "Use ONLY the notes below, from the user's own vault, to answer the first part of this " +
+  'reply: what their notes say about the question. Quote or paraphrase what is there, name ' +
+  'the note it came from, and say plainly if the notes touch the subject without answering ' +
+  'it. Never claim a note says something it does not, and never invent detail and present ' +
+  'it as theirs. Do not add general knowledge here — that comes separately, after.\n\n' +
+  'The notes below are the ONLY material. Earlier turns in this conversation are not ' +
+  'material: a note named in an earlier answer is not available to you now unless it is ' +
+  'below. Never name, cite or summarise a note that is not below.\n\n' +
+  'A note is named ONLY by the title in its "## Note:" header. Headings and numbered ' +
+  'sections inside a note are parts of that note, not notes of their own — never list ' +
+  'them as if they were separate notes.\n\n' +
+  'If the user asks you to work with the material — summarise, list actions, turn into ' +
+  'questions — do that from the notes. If the request is unclear, say you did not follow ' +
+  'it rather than reporting that the notes lack something.\n\n' +
+  'Be concise. You may use markdown.\n\n' +
+  material;
+
 const DIRECT_PROMPT =
   "Answer the user's question from your own general knowledge. You do NOT have access to " +
   "the user's notes or wiki here — never claim a fact came from them. If you are unsure, " +
@@ -947,6 +975,18 @@ export class ChatView extends ItemView {
     wikiBtn.addEventListener('click', () => this.setMode('wiki'));
     vaultBtn.addEventListener('click', () => this.setMode('vault'));
 
+    // Beside the pills, Vault only. A statement of what will happen, not a
+    // setting name: ticked, the notes are searched first; unticked, the
+    // model answers alone and the chip above says so.
+    this.searchBoxRow = modeRow.createEl('label', { cls: 'gemma4-chat-search-toggle' });
+    this.searchBox = this.searchBoxRow.createEl('input', { attr: { type: 'checkbox' } });
+    this.searchBox.checked = true;
+    this.searchBoxRow.appendText('Search my notes first');
+    this.searchBox.addEventListener('change', () => {
+      this.searchNotes = !!this.searchBox?.checked;
+      this.refreshVaultSurface();
+    });
+
     const attachBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
       attr: { 'aria-label': 'Add note as context' },
@@ -1161,8 +1201,38 @@ export class ChatView extends ItemView {
     await this.restoreThread();
   }
 
+  /**
+   * Whether a Vault question searches the notes before the model answers.
+   * Ticked by default, and ticked again every time Vault is (re)selected:
+   * it is a modifier for a stretch of questions, not a setting, and a box
+   * left unticked would turn "what did I write about React" into an answer
+   * the model made up, with no Sources row to give it away. While unticked
+   * the chip under the title and the placeholder both say so.
+   */
+  private searchNotes = true;
+  private searchBox?: HTMLInputElement;
+  private searchBoxRow?: HTMLElement;
+
+  private vaultPlaceholder(): string {
+    return this.searchNotes
+      ? 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
+      : 'Ask anything — answered by Gemma 4 E4B, your notes not searched (Enter to send)';
+  }
+
+  /** Everything on screen that says whether the notes will be searched. */
+  private refreshVaultSurface() {
+    if (this.searchBox) this.searchBox.checked = this.searchNotes;
+    this.searchBoxRow?.toggleClass('is-off', !this.searchNotes);
+    if (this.mode === 'vault') this.inputEl?.setAttribute('placeholder', this.vaultPlaceholder());
+    this.updateNoteChip();
+  }
+
   private setMode(mode: ChatMode) {
     this.mode = mode;
+    this.searchNotes = true;
+    if (this.searchBoxRow) this.searchBoxRow.hidden = mode !== 'vault';
+    this.searchBoxRow?.removeClass('is-off');
+    if (this.searchBox) this.searchBox.checked = true;
     this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
     this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
     this.modeButtons?.vault.toggleClass('gemma4-chat-mode-active', mode === 'vault');
@@ -1181,7 +1251,7 @@ export class ChatView extends ItemView {
         ? 'Ask about this note… (Enter to send) — Wiki or Vault above for anything else'
         : mode === 'wiki'
           ? `Ask across the cards in ${wikiDir()}/… (Enter to send) — This note or Vault for anything else`
-          : 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
+          : this.vaultPlaceholder()
     );
     this.renderSuggestions();
     this.updateNoteChip();
@@ -1221,6 +1291,12 @@ export class ChatView extends ItemView {
       return;
     }
     if (this.mode === 'vault') {
+      if (!this.searchNotes) {
+        setIcon(icon, 'sparkles');
+        this.noteChipEl.createSpan({ text: 'Gemma 4 E4B only · notes not searched' });
+        this.noteChipEl.addClass('gemma4-chat-note-chip-none');
+        return;
+      }
       setIcon(icon, 'folder-search');
       const prefix = `${wikiDir()}/`;
       const n = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix)).length;
@@ -1668,6 +1744,34 @@ export class ChatView extends ItemView {
       return { base, folder, linkPath: path.replace(/\.md$/, '') };
     };
 
+    // The box beside the pills is unticked: no expansion, no search, no
+    // "Searching N notes" line. Notes the user attached with + are still
+    // used — "do not search" is not "ignore what I handed you" — and then
+    // the answer is grounded on those alone. With nothing attached the
+    // model answers from itself under the usual warning, and the line above
+    // the answer says the notes were not searched, with a button that
+    // ticks the box and asks again.
+    if (!this.searchNotes) {
+      const attachments = await this.readAttachments();
+      if (attachments.blocks) {
+        return {
+          systemPrompt: groundedVaultPrompt(attachments.blocks),
+          sourcePath: indexPath(),
+          sources: attachments.sources,
+          grounding: 'vault',
+          vault: { kind: 'both', hits: [] },
+        };
+      }
+      return {
+        systemPrompt: DIRECT_PROMPT,
+        sourcePath: indexPath(),
+        sources: [],
+        ungrounded: true,
+        grounding: 'direct',
+        vault: { kind: 'none', hits: [], skipped: true },
+      };
+    }
+
     // "What did I write recently" is answered by the file system, not by
     // search: the eight most recently edited notes, newest first, with the
     // date each was touched. The model adds a line per note from its
@@ -1752,7 +1856,10 @@ export class ChatView extends ItemView {
     // The notes read are the ones ABOUT the subject; a note that names it
     // once in an example sentence is listed under the answer, not read into
     // it. A list question lists both, labelled.
-    const hits = about.slice(0, 4);
+    // A ceiling, not a quota. The notes actually read are chosen below by
+    // what fits the token budget, so four long ones and a dozen short ones
+    // both arrive full rather than the count deciding for the budget.
+    const candidates = about.slice(0, VAULT_MAX_NOTES);
     const attachments = await this.readAttachments();
     // Not the whole chat budget. At a 64k context that is 48k tokens, and
     // five long notes filled it — a minute of prefill during which WebGPU
@@ -1775,8 +1882,8 @@ export class ChatView extends ItemView {
     // Asking the model the question as typed produced "I do not have access
     // to your notes" under a line that had just listed the notes.
     const aboutOwn = asksAboutOwnNotes(question);
-    const asList = listQuestion || (aboutOwn && !hits.length && mentions.length > 0);
-    if (!hits.length && !attachments.blocks && !(asList && mentions.length)) {
+    const asList = listQuestion || (aboutOwn && !candidates.length && mentions.length > 0);
+    if (!candidates.length && !attachments.blocks && !(asList && mentions.length)) {
       // "What's in my vault" matches no note by its words, because it is
       // about all of them. Hand the model the shape instead.
       if (aboutOwn) return overview();
@@ -1793,52 +1900,67 @@ export class ChatView extends ItemView {
       };
     }
 
-    // Notes matched (or were attached). Each gets an equal share of the
-    // budget, so five short notes arrive whole and five long ones arrive
-    // as their openings — the part most likely to say what they are about.
-    const hitSources = hits.map((h) => ({ ...titled(h.path), tier: h.tier }));
-    const share = Math.min(
-      VAULT_NOTE_TOKENS,
-      Math.max(300, Math.floor((budget - estimateTokens(attachments.blocks)) / Math.max(1, hits.length)))
-    );
     // The same weights the ranking used, heaviest first: the excerpt of a
     // note is the text around the words that got it here.
     const terms = weightedTerms(question, bodies, extra)
       .filter((w) => w.weight > 0)
       .sort((a, b) => b.weight - a.weight)
       .map(({ t, whole }) => ({ t, whole }));
+
+    // Fill the budget, best-ranked first, instead of dividing it four ways.
+    // Dividing was what a fixed count forced: four notes of three hundred
+    // tokens each spent twelve hundred of four thousand eight hundred and
+    // left the fifth and sixth matches unread with most of the budget
+    // unspent. A note takes what it needs up to VAULT_NOTE_TOKENS, the next
+    // one takes what is left, and the loop stops when what remains is too
+    // small to carry a paragraph. Long notes still cap out at four or so;
+    // short ones now arrive together.
+    let remaining = Math.max(300, budget - estimateTokens(attachments.blocks));
+    const hits: typeof candidates = [];
     let material = '';
-    for (const h of hits) {
+    for (const h of candidates) {
+      if (remaining < VAULT_NOTE_MIN) break;
       const body = bodies.get(h.path) ?? '';
       const src = titled(h.path);
+      const share = Math.min(VAULT_NOTE_TOKENS, remaining);
       // ~3.4 chars per token for Latin text; CJK is denser, and clampToTokens
       // below catches the case where the estimate was generous.
-      const excerpt = clampToTokens(excerptAround(body, terms, share * 3), share).text;
-      material += `## Note: ${src.title} (${h.path})\n${excerpt}\n\n`;
+      const block = `## Note: ${src.title} (${h.path})\n${clampToTokens(excerptAround(body, terms, share * 3), share).text}\n\n`;
+      material += block;
+      // What this note actually cost, not what it was allowed: a short note
+      // leaves the rest for the next one, which is the whole point.
+      remaining -= Math.max(estimateTokens(block), VAULT_NOTE_MIN);
+      hits.push(h);
     }
     material += attachments.blocks;
+    const hitSources = hits.map((h) => ({ ...titled(h.path), tier: h.tier }));
     const sources = [...attachments.sources, ...hitSources];
 
     if (asList && allHits.length) {
       // Every hit, about first, each labelled; the model gets an excerpt of
       // each and writes one line, told which tier the plugin put it in.
-      const listed = [...about, ...mentions].slice(0, 8);
+      // Described: the abouts, or the mentions when there are no abouts.
+      // Shown: everything, as links — the chips row lists them all.
+      const described = describedForList(about, mentions, 8);
+      const shown = [...about, ...mentions].slice(0, 12);
       let listMaterial = '';
-      for (const h of listed) {
+      for (const h of described) {
         const body = bodies.get(h.path) ?? '';
         const src = titled(h.path);
         const excerpt = clampToTokens(excerptAround(body, terms, 600 * 3), 600).text;
         listMaterial += `## Note: ${src.title} (${h.path}) — ${h.tier === 'about' ? 'ABOUT the subject' : 'MENTIONS it in passing'}\n${excerpt}\n\n`;
       }
-      const listed2 = listed.map((h) => ({ ...titled(h.path), tier: h.tier }));
+      const listed2 = shown.map((h) => ({ ...titled(h.path), tier: h.tier }));
       return {
         systemPrompt:
           'The user asked which of their notes are about something. The plugin has already ' +
           'searched the vault and found the notes below — you are not being asked to search, ' +
-          'and you cannot. Each is marked ABOUT (the subject is in its title, tags or headings, or ' +
-          'named repeatedly) or MENTIONS (named once or twice, often in passing). For each note, in ' +
-          'the order given, write one line: its title in bold, then what the note itself is about ' +
-          'and where the subject comes up in it, from its text. A MENTIONS note is usually about ' +
+          'and you cannot. Each note is labelled ABOUT or MENTIONS; the label is the plugin\'s ' +
+          'and is not to be repeated or explained. There are ' + described.length + ' notes below. ' +
+          'Write exactly ' + described.length + ' lines, one per note, in the order given, then stop. ' +
+          'Each line: the note\'s title in bold, then in your own words one specific thing that ' +
+          'note covers and where the subject comes up in it. Do not quote the note; describe it. ' +
+          'A line that could describe any note is wrong. A MENTIONS note is usually about ' +
           'something else; say what, and how the subject appears. Do not add notes that are not ' +
           'listed. Do not summarise the subject itself.\n\n' +
           'Be concise. Use a markdown list.\n\n' +
@@ -1846,30 +1968,17 @@ export class ChatView extends ItemView {
         sourcePath: indexPath(),
         sources: listed2,
         grounding: 'vault',
-        // The model's own answer follows every list, as it follows every
-        // grounded answer: the notes first, then Gemma 4 E4B, always.
-        vault: { kind: 'list', hits: listed2, adds: true },
+        // A list is the whole answer. Someone asking which notes are about
+        // JavaScript wants the notes; a paragraph on what JavaScript is under
+        // them is filler, and when the subject was a folder name it was a
+        // dictionary entry for "in progress". The model's own answer follows
+        // a subject question, not a list question.
+        vault: { kind: 'list', hits: listed2, adds: false },
       };
     }
 
     return {
-      systemPrompt:
-        "Use ONLY the notes below, from the user's own vault, to answer the first part of this " +
-        'reply: what their notes say about the question. Quote or paraphrase what is there, name ' +
-        'the note it came from, and say plainly if the notes touch the subject without answering ' +
-        'it. Never claim a note says something it does not, and never invent detail and present ' +
-        'it as theirs. Do not add general knowledge here — that comes separately, after.\n\n' +
-        'The notes below are the ONLY material. Earlier turns in this conversation are not ' +
-        'material: a note named in an earlier answer is not available to you now unless it is ' +
-        'below. Never name, cite or summarise a note that is not below.\n\n' +
-        'A note is named ONLY by the title in its "## Note:" header. Headings and numbered ' +
-        'sections inside a note are parts of that note, not notes of their own — never list ' +
-        'them as if they were separate notes.\n\n' +
-        'If the user asks you to work with the material — summarise, list actions, turn into ' +
-        'questions — do that from the notes. If the request is unclear, say you did not follow ' +
-        'it rather than reporting that the notes lack something.\n\n' +
-        'Be concise. You may use markdown.\n\n' +
-        material,
+      systemPrompt: groundedVaultPrompt(material),
       sourcePath: indexPath(),
       sources,
       grounding: 'vault',
@@ -1908,6 +2017,8 @@ export class ChatView extends ItemView {
       hits: { title: string; linkPath: string; tier?: 'about' | 'mentions' }[];
       /** Run the model's own answer after the grounded one (a list that stood in for "what did I write about X"). */
       adds?: boolean;
+      /** The box beside the pills was unticked: no search ran, and the line above the answer says so. */
+      skipped?: boolean;
     };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
@@ -2290,10 +2401,10 @@ export class ChatView extends ItemView {
     // reading. Removed as soon as the context is built, so the line never
     // outlives the search it describes.
     const searching =
-      this.mode === 'vault' && !ungrounded
+      this.mode === 'vault' && !ungrounded && this.searchNotes
         ? this.messagesEl.createDiv({
             cls: 'gemma4-chat-row gemma4-chat-row-assistant gemma4-chat-searching',
-            text: `Searching ${this.app.vault.getMarkdownFiles().length} notes…`,
+            text: `Searching ${this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(`${wikiDir()}/`)).length} notes…`,
           })
         : null;
     this.searchingEl = searching;
@@ -2339,7 +2450,17 @@ export class ChatView extends ItemView {
       if (context.vault?.kind === 'none') {
         const none = body.createDiv({ cls: 'gemma4-chat-vault-none' });
         const passing = context.vault.hits;
-        if (passing.length) {
+        if (context.vault.skipped) {
+          none.appendText('Your notes were not searched. ');
+          const again = none.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Search my notes and ask again' });
+          again.addEventListener('click', () => {
+            if (this.busy) return;
+            again.disabled = true;
+            this.searchNotes = true;
+            this.refreshVaultSurface();
+            void this.askInMode('vault', question);
+          });
+        } else if (passing.length) {
           none.appendText(
             `Nothing in your notes is about this — ${passing.length} mention${passing.length === 1 ? 's' : ''} it in passing: `
           );

@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { asksAboutOwnNotes } from '../src/pure.ts';
 import {
   dedupeByName,
+  describedForList,
   excerptAround,
   parseExpansion,
   phraseOf,
@@ -618,4 +619,168 @@ test('an excerpt window opens around a phrase', () => {
   const body = `${'Filler sentence. '.repeat(60)}The system design round went well.${' More filler. '.repeat(60)}`;
   const out = excerptAround(body, [{ t: 'system design', whole: true }], 300, 80);
   assert.ok(out.includes('system design round'), out.slice(0, 80));
+});
+
+// --- Folders as evidence, weighted by what they separate ----------------------
+//
+// In Obsidian the folder tree is how most people sort things, and a note
+// inside a topic folder rarely repeats the topic in its filename. Nine notes
+// in "8. TouchDesigner 装置" were called "Storm by Hand" and "Van Gogh
+// Particles" and named TouchDesigner nowhere else; past the body-reading
+// threshold they were unreachable, because ranking never looked at a path.
+//
+// The danger in fixing that is the other kind of folder. The same vault has
+// "1_進行中" over eighty notes and "archive" over twenty: real folders,
+// carrying no subject at all. These tests are built so neither vault is the
+// one being fitted — a topic folder must win and a workflow folder must not,
+// from coverage alone, with no list of names anywhere in the code.
+
+/** A vault of `n` notes whose titles say nothing, in the folders given. */
+const foldered = (spec: Record<string, number>): VaultDoc[] => {
+  const docs: VaultDoc[] = [];
+  let i = 0;
+  for (const [folder, count] of Object.entries(spec)) {
+    for (let k = 0; k < count; k++) docs.push({ path: `${folder}/note ${i++}.md`, title: `note ${i}`, tags: [], headings: [] });
+  }
+  return docs;
+};
+
+test('a small topic folder names what its notes are about', () => {
+  const docs = foldered({ 'work/touchdesigner installs': 9, 'work/in progress': 83, misc: 300 });
+  const hits = rankVaultDocs('touchdesigner', docs);
+  assert.equal(hits.length, 9);
+  assert.ok(hits.every((h) => h.path.startsWith('work/touchdesigner installs/')));
+  assert.equal(hits[0].tier, 'about');
+  assert.deepEqual(hits[0].metaTyped, ['touchdesigner']);
+});
+
+test('a folder most of the vault passes through is not evidence of anything', () => {
+  const docs = foldered({ 'in progress': 200, done: 200 });
+  const hits = rankVaultDocs('progress', docs);
+  // It may rank — the word is there — but it must not claim the notes are about it.
+  for (const h of hits) assert.deepEqual(h.metaTyped, [], h.path);
+});
+
+test('the folder is the fallback, never a way to outrank a title', () => {
+  const docs: VaultDoc[] = [
+    ...foldered({ 'touchdesigner installs': 9 }),
+    { path: 'misc/TouchDesigner basics.md', title: 'TouchDesigner basics', tags: [], headings: [] },
+    ...foldered({ misc: 200 }),
+  ];
+  const hits = rankVaultDocs('touchdesigner', docs);
+  assert.equal(hits[0].path, 'misc/TouchDesigner basics.md');
+});
+
+test('each segment of a path is weighed on its own', () => {
+  // "work" is everywhere and worth nothing; "onboarding" under it is not.
+  const docs = foldered({ 'work/onboarding': 12, 'work/payroll': 12, 'work/misc': 180 });
+  const hits = rankVaultDocs('onboarding', docs);
+  assert.equal(hits.length, 12);
+  assert.ok(hits.every((h) => h.path.startsWith('work/onboarding/')));
+});
+
+test('a flat vault is unaffected, because one folder separates nothing', () => {
+  const docs = foldered({ notes: 100 });
+  for (const h of rankVaultDocs('notes', docs)) assert.deepEqual(h.metaTyped, [], h.path);
+});
+
+test('hyphens and numbering in a folder name are read as spaces', () => {
+  const docs = foldered({ '8. system-design drills': 10, inbox: 200 });
+  const hits = rankVaultDocs('system design', docs);
+  assert.equal(hits.length, 10);
+  assert.equal(hits[0].tier, 'about');
+});
+
+test('a folder hit still has to survive the body pass', () => {
+  const docs = foldered({ 'touchdesigner installs': 3, misc: 60 });
+  const bodies = new Map([
+    ['touchdesigner installs/note 0.md', 'A blob tracker drives the piano keys in TouchDesigner.'],
+    ['touchdesigner installs/note 1.md', 'Particles follow the hands. Built in TouchDesigner.'],
+    ['touchdesigner installs/note 2.md', 'Nothing to do with the subject at all.'],
+    ['misc/note 3.md', 'tea'],
+  ]);
+  const tier = Object.fromEntries(
+    rescoreWithBodies('touchdesigner', rankVaultDocs('touchdesigner', docs), bodies, 8, 0.05).map((h) => [h.path, h.tier])
+  );
+  assert.equal(tier['touchdesigner installs/note 0.md'], 'about');
+  assert.equal(tier['misc/note 3.md'], undefined);
+});
+
+// --- One intent, two languages, one answer ---------------------------------
+//
+// "我的笔记, 讲了哪些关于javascript" returned eight notes, four of them a
+// lecture script and a talk transcript; "Which of my notes are about:
+// javascript" returned the right three. Same question. The Chinese verb 讲
+// (to talk about) was not a stopword, so it was searched for as a subject and
+// matched 讲稿 and 讲解 in titles that had nothing to do with JavaScript. The
+// English phrasing has a colon, so subjectOf kept only what followed it.
+
+test('the verb in "which notes talk about X" is not a search term', () => {
+  for (const q of ['我的笔记, 讲了哪些关于javascript', '哪些笔记讲了 javascript', '讲解 javascript 的笔记有哪些']) {
+    const terms = queryTerms(q);
+    assert.ok(!terms.some((t) => /讲|講/.test(t)), `${q} -> ${terms.join(',')}`);
+    assert.ok(terms.includes('javascript'), q);
+  }
+});
+
+test('a particle pair ICU returns as one segment is not a word', () => {
+  for (const q of ['进行中的有哪些', '正在进行中的项目', '文件夹里的内容']) {
+    const terms = queryTerms(q);
+    assert.ok(!terms.some((t) => /的$/.test(t) && t !== '目的'), `${q} -> ${terms.join(',')}`);
+  }
+  // 目的 (purpose) is a real word ending in 的 and must survive.
+  assert.ok(queryTerms('这个项目的目的是什么').includes('目的'));
+});
+
+test('the same question in Chinese and English finds the same notes', () => {
+  const docs: VaultDoc[] = [
+    { path: 'js/debounce snippet.md', title: 'debounce snippet function in modern es6 vanilla JavaScript', tags: [], headings: [] },
+    { path: 'js/basics.md', title: '1. JavaScript 基础知识', tags: [], headings: [] },
+    { path: 'js/closure.md', title: '3. Closure (frontend master)', tags: ['javascript'], headings: [] },
+    { path: 'talks/The Room 讲稿.md', title: 'The Room 讲稿', tags: [], headings: [] },
+    { path: 'talks/演示口播.md', title: 'The Room — 演示口播', tags: [], headings: [] },
+    { path: 'wiki/完整讲解.md', title: 'Karpathy LLM Wiki 方法论深度解读 — 基于原文的完整讲解', tags: [], headings: [] },
+    { path: 'x.md', title: 'x', tags: [], headings: [] },
+  ];
+  const bodies = new Map([
+    ['js/debounce snippet.md', 'A classic debounce function in modern JS.'],
+    ['js/basics.md', 'Hoisting, polyfills, falsy values in JavaScript.'],
+    ['js/closure.md', 'How a closure keeps callbacks in JavaScript honest.'],
+    ['talks/The Room 讲稿.md', '讲稿。今天讲一个情感 AI 的房间。'],
+    ['talks/演示口播.md', '口播稿，跟屏走。'],
+    ['wiki/完整讲解.md', '完整讲解 Karpathy 的方法论。'],
+    ['x.md', 'tea'],
+  ]);
+  const ask = (q: string) =>
+    dedupeByName(rescoreWithBodies(q, rankVaultDocs(q, docs, 60, ['js']), bodies, 12, 0.05, ['js']))
+      .filter((h) => h.tier === 'about')
+      .map((h) => h.path)
+      .sort();
+  const zh = ask('我的笔记, 讲了哪些关于javascript');
+  const en = ask('Which of my notes are about: javascript');
+  assert.deepEqual(zh, en);
+  assert.deepEqual(en, ['js/basics.md', 'js/closure.md', 'js/debounce snippet.md']);
+});
+
+// --- Which notes get described in a list -------------------------------------
+
+// The generic is inferred from the first argument, so both lists carry the
+// full tier union — as VaultHit does at the call site.
+type Listed = { path: string; tier: 'about' | 'mentions' };
+
+test('a list describes the notes that are about the subject, and only those', () => {
+  const about: Listed[] = [{ path: 'a.md', tier: 'about' }, { path: 'b.md', tier: 'about' }];
+  const mentions: Listed[] = [{ path: 'm1.md', tier: 'mentions' }, { path: 'm2.md', tier: 'mentions' }];
+  assert.deepEqual(describedForList(about, mentions).map((h) => h.path), ['a.md', 'b.md']);
+});
+
+test('when nothing is about the subject, the mentions are the answer and get described', () => {
+  const mentions: Listed[] = [{ path: 'm1.md', tier: 'mentions' }, { path: 'm2.md', tier: 'mentions' }];
+  assert.deepEqual(describedForList([], mentions).map((h) => h.path), ['m1.md', 'm2.md']);
+});
+
+test('the described list is capped, whichever tier it came from', () => {
+  const about: Listed[] = Array.from({ length: 12 }, (_, i) => ({ path: `a${i}.md`, tier: 'about' }));
+  assert.equal(describedForList(about, []).length, 8);
+  assert.equal(describedForList(about, [], 3).length, 3);
 });

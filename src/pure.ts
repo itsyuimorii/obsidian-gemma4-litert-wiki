@@ -246,6 +246,14 @@ const CJK_STOP = new Set([
   '总结', '列出', '列一下', '找', '找出', '找一下', '找找', '说明', '大纲',
   '草稿', '简短', '简单', '介绍', '告诉', '看看', '想', '知道', '有哪些', '帮',
   '都有', '所有', '全部', '关联', '之间', '最近', '最新', '新',
+  // The verb of "which notes talk about X". Left as a term it matched
+  // 讲稿 (a lecture script) and 讲解 (an explanation) and pulled in notes
+  // about neither the subject nor anything near it.
+  '讲', '讲了', '讲过', '讲的', '讲解', '講', '講了', '談', '谈', '谈到', '谈了',
+  // Particle pairs ICU returns as one segment: 进行中的 comes back as
+  // 进行 | 中的, and 中的 is not a word. A trailing 的 cannot be stripped
+  // in general — 目的 is a word — so the pairs are named.
+  '中的', '上的', '下的', '里的', '裡的', '内的', '外的', '前的', '后的', '後的',
   // Japanese particles, copulas, auxiliaries, question scaffolding
   'は', 'の', 'が', 'を', 'に', 'で', 'と', 'も', 'へ', 'や', 'か', 'ね',
   'よ', 'な', 'て', 'た', 'だ', 'し', 'ます', 'です', 'でし', 'ある', 'いる',
@@ -1667,6 +1675,46 @@ function byScore(a: VaultHit, b: VaultHit): number {
  * Returns only notes that scored, best first, at most `max`. The body pass
  * (`rescoreWithBodies`) refines the top of this list.
  */
+/**
+ * How much a folder name is worth as evidence, per folder.
+ *
+ * In Obsidian the folder tree is the main way people sort things, and a
+ * note inside a topic folder rarely repeats the topic in its filename:
+ * nine notes in "8. TouchDesigner 装置" were called "Storm by Hand" and
+ * "Van Gogh Particles", named TouchDesigner nowhere but in the folder, and
+ * the ranking never looked at a path. On a vault past the body-reading
+ * threshold that made them unreachable.
+ *
+ * But a folder name is only evidence when it separates. This vault has
+ * "8. TouchDesigner 装置" holding nine notes and "1_進行中" holding
+ * eighty-three; the first says what a note is about and the second says
+ * only that it is not finished. So a folder segment is weighted by how much
+ * of the vault it covers, on the same smooth decay the body terms use: a
+ * segment over one note in twenty is worth close to a title hit, one over
+ * a quarter of the vault is worth almost nothing, and the flat vault with
+ * no folders at all has every segment at the same coverage and so gets
+ * nothing. No setting, no per-vault tuning.
+ */
+function folderWeights(docs: readonly VaultDoc[]): Map<string, number> {
+  const df = new Map<string, number>();
+  for (const d of docs) {
+    const segs = new Set(d.path.split('/').slice(0, -1).map((x) => x.toLowerCase()));
+    for (const seg of segs) df.set(seg, (df.get(seg) ?? 0) + 1);
+  }
+  const n = docs.length;
+  const out = new Map<string, number>();
+  for (const [seg, count] of df) out.set(seg, n ? Math.log((n + 1) / count) / Math.log(n + 1) : 0);
+  return out;
+}
+
+/**
+ * A folder segment has to carry at least this much weight before it can
+ * make a note "about" its subject rather than merely rank it. At 392 notes
+ * this is a folder of about forty or fewer — small enough to be a topic
+ * somebody made, rather than a stage of work everything passes through.
+ */
+const FOLDER_ABOUT_MIN = 0.35;
+
 export function rankVaultDocs(
   question: string,
   docs: readonly VaultDoc[],
@@ -1678,9 +1726,22 @@ export function rankVaultDocs(
   const more = expansionTerms(extra, new Set(typed.map((x) => x.t)));
   if (!typed.length && !more.length) return [];
   const has = (hay: string, t: string, whole: boolean) => countIn(hay, t, whole, 1) > 0;
+  const folderWeight = folderWeights(docs);
   const hits: VaultHit[] = [];
   for (const d of docs) {
     const title = d.title.toLowerCase();
+    // Each folder segment separately, with its own weight: a note in
+    // "work/onboarding" is served by "onboarding" even when "work" is
+    // worth nothing. Hyphens and underscores are spaces, as in a tag, so
+    // "8. TouchDesigner 装置" and "system-design" both read as phrases.
+    const segments = d.path.split('/').slice(0, -1)
+      .map((seg) => ({ text: seg.toLowerCase().replace(/[-_]+/g, ' '), weight: folderWeight.get(seg.toLowerCase()) ?? 0 }));
+    /** The best-weighted folder segment naming this term, if any. */
+    const inFolders = (t: string, whole: boolean): number => {
+      let best = 0;
+      for (const seg of segments) if (seg.weight > best && has(seg.text, t, whole)) best = seg.weight;
+      return best;
+    };
     // Hyphens and underscores in a tag are its spaces: system-design is
     // the phrase "system design", and react-native is not the word react.
     const tags = d.tags.map((t) => t.toLowerCase().replace(/^#/, '').replace(/[-_]+/g, ' '));
@@ -1698,19 +1759,23 @@ export function rankVaultDocs(
     // Title or tag: three, and the note is about it. Heading: one, and it
     // is not — a heading is one section of a note about something else.
     for (const { t, whole, weak } of typed) {
+      const fw = inFolders(t, whole);
+      // A folder is worth a title hit scaled by how much it separates, and
+      // it is the fallback: a note whose title already says it needs no help.
       const strong = has(title, t, whole) || inTags(t);
-      const s = strong ? 3 : has(headings, t, whole) ? 1 : 0;
+      const s = strong ? 3 : Math.max(has(headings, t, whole) ? 1 : 0, 3 * fw);
       if (!s) continue;
       // A word out of a phrase is half the evidence, and never tier evidence.
       score += weak ? s / 2 : s;
-      if (strong && !weak) metaTyped.push(t);
+      if (!weak && (strong || fw >= FOLDER_ABOUT_MIN)) metaTyped.push(t);
     }
     for (const { t, whole } of more) {
+      const fw = inFolders(t, whole);
       const strong = has(title, t, whole) || inTags(t);
-      const s = strong ? 3 : has(headings, t, whole) ? 1 : 0;
+      const s = strong ? 3 : Math.max(has(headings, t, whole) ? 1 : 0, 3 * fw);
       if (!s) continue;
       score += s * EXPANSION_WEIGHT;
-      if (strong) metaExpanded.push(t);
+      if (strong || fw >= FOLDER_ABOUT_MIN) metaExpanded.push(t);
     }
     if (score > 0) hits.push({ path: d.path, score, tier: 'about', metaTyped, metaExpanded });
   }
@@ -2201,6 +2266,26 @@ export function stripLeadingRefusal(answer: string): string {
   if (rest.trim().length < 40) return text;
   // Recase the first letter, since "however, I can" is now the opening.
   return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
+/**
+ * Which notes get a line of description in a list answer.
+ *
+ * The notes that are about the subject, up to `max`. The ones that merely
+ * mention it are shown as links but not described: a 4B model writing
+ * "this is about API contracts and mentions JavaScript once" five times
+ * over is five lines nobody reads, and the more lines it writes the more
+ * room it has to drift. But when nothing is about the subject — "what did
+ * I write about coffee" when coffee only ever comes up in passing — the
+ * mentions are the answer, and where it comes up in each is exactly what
+ * is wanted; then they are the ones described.
+ */
+export function describedForList<T extends { tier: 'about' | 'mentions' }>(
+  about: readonly T[],
+  mentions: readonly T[],
+  max = 8
+): T[] {
+  return (about.length ? about : mentions).slice(0, max);
 }
 
 /**

@@ -4,6 +4,51 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.18 — 2026-09-14
+
+Vault reads more of what it finds, finds what it used to miss, and can be
+told not to look. And a stuck install can now say what is wrong with it.
+
+- **Check setup (diagnostics).** Five checks — desktop, WebGPU, free disk
+  space, the runtime, the model — each with a sentence saying what to do,
+  and a report to paste into a bug report that carries versions, hardware
+  and file sizes and nothing from your vault. In the command palette, under
+  the model row in settings, and named by every failure toast, which used
+  to send you to the developer console. A fresh install reports two notes
+  and no failures: not downloaded yet is not broken.
+- **Folders are evidence.** A note's folder now ranks it, weighted by how
+  much of the vault that folder covers: a folder over one note in twenty
+  is worth close to a title hit, one over a quarter of the vault is worth
+  almost nothing, and a flat vault is unaffected. Nine notes in a
+  TouchDesigner folder named the subject nowhere else; on a vault past
+  four hundred notes they were unreachable, and now they are not.
+- **The budget is filled, not divided.** The material cap was split four
+  ways whatever the notes' length, so four short matches left most of it
+  unspent and the fifth match unread. Notes are taken best-first until the
+  budget is gone, each capped as before. On a real vault: four notes read
+  became six to eleven, with prefill unchanged because the cap is.
+- **A list is the whole answer.** Asked which notes are about something,
+  you get the notes: the ones about the subject described one line each,
+  the ones that merely mention it as links, and no paragraph on what the
+  subject is underneath. That paragraph still follows a subject question.
+  The list prompt asks for the exact number of lines, in the model's own
+  words, so it no longer pastes one boilerplate sentence for every note or
+  stops after two.
+- **Two phrasings, one answer.** The Chinese verb for "talk about" was not
+  a stopword and matched lecture scripts and explainers; a particle pair
+  the segmenter returns as one piece was scored as a word. Both are
+  stopwords now, and the same question in Chinese and English returns the
+  same notes.
+- **Search my notes first.** A box beside the mode pills, Vault only,
+  ticked by default. Untick it and the question goes straight to Gemma 4
+  E4B: no search, the chip reads *Gemma 4 E4B only · notes not searched*,
+  the placeholder and the box itself say so, the answer carries the usual
+  warning and cannot be filed, and a line above it offers to search and
+  ask again. Notes attached with **+** are still used. The box ticks itself
+  again whenever you return to Vault, so it cannot be left off by accident.
+- **Small.** The *Searching N notes* line counts the notes it searches,
+  not the wiki folder too. The third-mode poster shows Vault as shipped.
+
 ## 1.0.17 — 2026-09-10
 
 A clean review. No behaviour changes.
