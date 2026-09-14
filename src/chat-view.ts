@@ -1857,12 +1857,13 @@ export class ChatView extends ItemView {
           'The user asked which of their notes are about something. The plugin has already ' +
           'searched the vault and found the notes below — you are not being asked to search, ' +
           'and you cannot. Each note is labelled ABOUT or MENTIONS; the label is the plugin\'s ' +
-          'and is not to be repeated or explained. For each note, in the order given, write one ' +
-          'line: its title in bold, then one sentence taken from what the note\'s own text says — ' +
-          'what the note is about, and where the subject comes up in it. Every line must contain ' +
-          'something specific from that note; a line that could describe any note is wrong. A ' +
-          'MENTIONS note is usually about something else; say what, and how the subject appears. ' +
-          'Do not add notes that are not listed. Do not summarise the subject itself.\n\n' +
+          'and is not to be repeated or explained. There are ' + listed.length + ' notes below. ' +
+          'Write exactly ' + listed.length + ' lines, one per note, in the order given, then stop. ' +
+          'Each line: the note\'s title in bold, then in your own words one specific thing that ' +
+          'note covers and where the subject comes up in it. Do not quote the note; describe it. ' +
+          'A line that could describe any note is wrong. A MENTIONS note is usually about ' +
+          'something else; say what, and how the subject appears. Do not add notes that are not ' +
+          'listed. Do not summarise the subject itself.\n\n' +
           'Be concise. Use a markdown list.\n\n' +
           listMaterial,
         sourcePath: indexPath(),
