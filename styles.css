@@ -1703,6 +1703,6 @@
 }
 
 /* Unticked, the words go amber to match the warning every answer will carry. */
-.gemma4-composer-bar .gemma4-chat-search-toggle:has(input:not(:checked)) {
+.gemma4-composer-bar .gemma4-chat-search-toggle.is-off {
   color: var(--text-warning);
 }

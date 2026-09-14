@@ -1222,6 +1222,7 @@ export class ChatView extends ItemView {
   /** Everything on screen that says whether the notes will be searched. */
   private refreshVaultSurface() {
     if (this.searchBox) this.searchBox.checked = this.searchNotes;
+    this.searchBoxRow?.toggleClass('is-off', !this.searchNotes);
     if (this.mode === 'vault') this.inputEl?.setAttribute('placeholder', this.vaultPlaceholder());
     this.updateNoteChip();
   }
@@ -1230,6 +1231,7 @@ export class ChatView extends ItemView {
     this.mode = mode;
     this.searchNotes = true;
     if (this.searchBoxRow) this.searchBoxRow.hidden = mode !== 'vault';
+    this.searchBoxRow?.removeClass('is-off');
     if (this.searchBox) this.searchBox.checked = true;
     this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
     this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
