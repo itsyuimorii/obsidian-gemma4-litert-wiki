@@ -1702,6 +1702,12 @@
   color: var(--text-normal);
 }
 
+/* The display rule above outranks the shell's [hidden] { display: none },
+   so the attribute setMode sets needs a rule of the same weight to win. */
+.gemma4-composer-bar .gemma4-chat-search-toggle[hidden] {
+  display: none;
+}
+
 /* Unticked, the words go amber to match the warning every answer will carry. */
 .gemma4-composer-bar .gemma4-chat-search-toggle.is-off {
   color: var(--text-warning);
