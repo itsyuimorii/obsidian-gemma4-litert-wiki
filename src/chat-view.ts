@@ -59,7 +59,7 @@ import {
   wikiDir,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
-import { notify } from './notify';
+import { notify, failureText } from './notify';
 
 // What `written_by` records on a saved answer. The bundle filename without its
 // extension: specific enough to tell two model versions apart in six months,
@@ -470,6 +470,10 @@ export class ChatView extends ItemView {
   }> {
     let blocks = '';
     const sources: { title: string; linkPath: string }[] = [];
+    // A pill whose note has been deleted or renamed out from under it: drop
+    // it rather than throw. The vault-delete listener catches the common
+    // case, but a rename or an external change can still land here.
+    this.attachedFiles = this.attachedFiles.filter((f) => this.app.vault.getAbstractFileByPath(f.path) === f);
     for (const f of this.attachedFiles) {
       const content = await this.app.vault.read(f);
       blocks += `## Attached note: ${f.basename}\n${content.slice(0, 8000)}\n\n`;
@@ -1173,6 +1177,16 @@ export class ChatView extends ItemView {
     });
 
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateNoteChip()));
+    // A pill for a note that has been deleted is a pill that will fail the
+    // next question, and every question after it. Drop it when the note goes,
+    // and redraw so the row on screen matches what will actually be read.
+    this.registerEvent(
+      this.app.vault.on('delete', (file) => {
+        const before = this.attachedFiles.length;
+        this.attachedFiles = this.attachedFiles.filter((f) => f.path !== file.path);
+        if (this.attachedFiles.length !== before) this.renderContextPills();
+      })
+    );
     // The chips depend on whether the wiki holds anything, and that changes
     // out from under this panel — a scan finishing, a page written, a page
     // deleted. Read it once now, then follow the vault. refreshWikiEmpty
@@ -1459,6 +1473,19 @@ export class ChatView extends ItemView {
     });
     void this.persistThread();
     this.scrollToBottom();
+  }
+
+  /**
+   * Back to idle. One place, because busy is now raised before the context is
+   * built and there are four ways out of the middle of a turn; each of them
+   * forgetting one of these flags is how a panel wedges.
+   */
+  private releaseBusy() {
+    this.activeConversation = null;
+    this.busy = false;
+    this.plugin.setChatBusy(false);
+    this.sendButton.disabled = false;
+    this.stopButton.hide();
   }
 
   private appendAssistantMessage(): { body: HTMLElement; row: HTMLElement } {
@@ -2448,14 +2475,41 @@ export class ChatView extends ItemView {
     this.searchingEl = searching;
     this.emptyStateEl.hide();
     this.scrollToBottom();
+    // Busy from here, not from the first token. Building the context is the
+    // expensive half — in Vault mode a model call to expand the subject and a
+    // read of every note body — and it used to run with every guard in the
+    // plugin reading "idle": a second Enter started a genuinely concurrent
+    // generation on one engine, both writing activeConversation so Stop
+    // reached only one, and refuseIfBusy waved Ingest and Improve through.
+    this.busy = true;
+    this.stopRequested = false;
+    this.plugin.setChatBusy(true);
+    this.sendButton.disabled = true;
     let context: Awaited<ReturnType<ChatView['buildContext']>>;
     try {
       context = await this.buildContext(question, ungrounded, wholeWiki, historyTokens);
+    } catch (err) {
+      // Reached by a stale attachment: readAttachments calls vault.read on a
+      // note the user has since deleted. This used to escape runGeneration
+      // entirely and land in a `void` at the call site, leaving the question
+      // on screen with nothing under it, no error, and the dead pill still in
+      // the list to do it again on every later question.
+      console.error('[gemma-litert-wiki] building the context failed', err);
+      const { body } = this.appendAssistantMessage();
+      body.createDiv({
+        cls: 'gemma4-chat-error',
+        text: failureText('Preparing the answer', err),
+      });
+      this.releaseBusy();
+      return;
     } finally {
       searching?.remove();
       this.searchingEl = null;
     }
-    if (!context) return;
+    if (!context) {
+      this.releaseBusy();
+      return;
+    }
 
     // Recorded here, not at the input box: this is the first point at which
     // the question's grounding is known, and every entry point — typing, a
@@ -2470,15 +2524,10 @@ export class ChatView extends ItemView {
     // Nothing here needs the engine, so this returns before it is loaded.
     if (context.vault?.kind === 'none' && !context.vault.skipped) {
       this.renderNothingFound(question, context.vault.hits);
+      this.releaseBusy();
       return;
     }
 
-    this.busy = true;
-    this.stopRequested = false;
-    // Also tell the plugin: one engine, one operation, and a streaming answer
-    // is an operation. Without this the chips stayed live through an answer.
-    this.plugin.setChatBusy(true);
-    this.sendButton.disabled = true;
     this.stopButton.show();
 
     const { body, row } = this.appendAssistantMessage();
@@ -2593,6 +2642,11 @@ export class ChatView extends ItemView {
           sourcePath: context.sourcePath,
           finalText: stripLeadingRefusal,
         });
+        // The first conversation is finished with, and the variable the
+        // finally deletes is about to point at the second one: let go of the
+        // first here or it is never released, once per two-part answer for
+        // as long as the panel is open.
+        await conversation?.delete().catch(() => {});
         conversation = second.conversation;
         const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
         warnRow.createSpan({
@@ -2677,11 +2731,7 @@ export class ChatView extends ItemView {
       // the panel LOOKS idle — but this ran `await conversation.delete()`
       // before clearing the flags, leaving a window where a press was silently
       // refused because a teardown nobody can see had not finished.
-      this.activeConversation = null;
-      this.busy = false;
-      this.plugin.setChatBusy(false);
-      this.sendButton.disabled = false;
-      this.stopButton.hide();
+      this.releaseBusy();
       this.inputEl.focus();
       await conversation?.delete().catch(() => {});
     }
