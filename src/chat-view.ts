@@ -331,20 +331,6 @@ const EXPAND_PROMPT =
   'code, data, system, tool. Single words or short phrases only. No numbering, no ' +
   'explanations, no sentences.';
 
-/**
- * Nothing in the notes is about the subject: the model answers on its own,
- * under a line that has already said so and named the passing mentions.
- * Saying it again — "I do not have access to your notes" — is what the
- * old prompt produced for "what did I write about coffee", and it read as
- * a malfunction under a line listing six notes.
- */
-const NONE_PROMPT =
-  "The user's own notes have already been searched: nothing in them is about the subject of " +
-  'this question, and that has already been said to the user. Answer from your own general ' +
-  'knowledge about the SUBJECT. Never say you lack access to notes or files, and never ' +
-  'refuse on those grounds. If the question is phrased as being about the notes ("what did I ' +
-  'write about X"), answer about X itself. Be concise. You may use markdown.';
-
 /** The model on its own: no notes, and it must not pretend otherwise. */
 /** The first half of a grounded Vault answer: what the notes below say, and nothing else. */
 const groundedVaultPrompt = (material: string): string =>
@@ -1427,6 +1413,54 @@ export class ChatView extends ItemView {
     void this.persistThread();
   }
 
+  /**
+   * The answer when the search found nothing about the subject: a sentence,
+   * the notes that merely name it as links, and a button. No generation runs
+   * — not even the engine is loaded — so this is instant, and Vault mode
+   * never produces an answer out of the model's own head that the user did
+   * not ask for.
+   */
+  private renderNothingFound(question: string, passing: { title: string; linkPath: string }[]) {
+    const { body } = this.appendAssistantMessage();
+    const none = body.createDiv({ cls: 'gemma4-chat-vault-none' });
+    if (passing.length) {
+      none.appendText(
+        `Nothing in your notes is about this — ${passing.length} mention${passing.length === 1 ? 's' : ''} it in passing: `
+      );
+      passing.forEach((hit, i) => {
+        if (i > 0) none.appendText(', ');
+        const a = none.createEl('a', { cls: 'gemma4-chat-source-link', text: hit.title });
+        a.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          void this.app.workspace.openLinkText(hit.linkPath, '', false);
+        });
+      });
+      none.appendText('.');
+    } else {
+      none.appendText('Nothing in your notes is about this.');
+    }
+    const bar = body.createDiv({ cls: 'gemma4-chat-route-actions' });
+    const ask = bar.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Ask Gemma 4 E4B anyway' });
+    ask.addEventListener('click', () => {
+      if (this.busy) return;
+      ask.disabled = true;
+      // The ungrounded path, the same one the per-answer escape hatch uses:
+      // its own warning, its own history, and never filed into the wiki.
+      void this.runGeneration(question, true);
+    });
+    // A turn, so the transcript keeps alternating and a follow-up is not sent
+    // two user messages in a row. It carries what happened, not an answer.
+    this.turns.push({
+      role: 'assistant',
+      content: 'Nothing in your notes is about this. Gemma 4 E4B was not asked.',
+      sources: [],
+      grounding: 'vault',
+      historyText: '(Nothing in the notes was about this, and no answer was given.)',
+    });
+    void this.persistThread();
+    this.scrollToBottom();
+  }
+
   private appendAssistantMessage(): { body: HTMLElement; row: HTMLElement } {
     this.emptyStateEl.hide();
     const row = this.messagesEl.createDiv({ cls: 'gemma4-chat-row gemma4-chat-row-assistant' });
@@ -1891,7 +1925,11 @@ export class ChatView extends ItemView {
       // under one line that says so — and names the notes that mention it
       // in passing, as links, so nothing found is hidden.
       return {
-        systemPrompt: NONE_PROMPT,
+        // Never read: the caller sees kind 'none' without `skipped` and
+        // reports what the search found instead of generating, so no prompt
+        // from this branch reaches the model. The field is the shape every
+        // branch returns, not an instruction.
+        systemPrompt: '',
         sourcePath: indexPath(),
         sources: [],
         ungrounded: true,
@@ -2424,6 +2462,17 @@ export class ChatView extends ItemView {
     // chip, a skill, the ungrounded hatch — passes through it.
     this.turns.push({ role: 'user', content: question, grounding: context.grounding });
 
+    // Nothing in the notes is about this, and the box says to search them.
+    // Say so and stop. Answering anyway put a paragraph the model invented
+    // under a line reporting the notes had nothing — two different kinds of
+    // thing, one after the other, with only a warning label between them.
+    // The model is one button away and it is the user who presses it.
+    // Nothing here needs the engine, so this returns before it is loaded.
+    if (context.vault?.kind === 'none' && !context.vault.skipped) {
+      this.renderNothingFound(question, context.vault.hits);
+      return;
+    }
+
     this.busy = true;
     this.stopRequested = false;
     // Also tell the plugin: one engine, one operation, and a streaming answer
@@ -2442,40 +2491,23 @@ export class ChatView extends ItemView {
       const engine = await this.plugin.ensureEngine((text) => status.setText(text));
       status.remove();
 
-      // Vault mode says what it found before anything streams. Nothing: one
-      // line, so the model's own answer underneath is never mistaken for a
-      // reading of the notes. A list: the notes themselves, as links, drawn
-      // by the plugin — the model's lines follow and can be wrong, the links
-      // cannot. Both are visible while the model is still thinking.
+      // Vault mode says what it found before anything streams. A search that
+      // found nothing never reaches here — it reports and stops without an
+      // answer (renderNothingFound), so `none` here means only that the box
+      // was unticked and the model was asked deliberately. A list: the notes
+      // themselves, as links, drawn by the plugin — the model's lines follow
+      // and can be wrong, the links cannot.
       if (context.vault?.kind === 'none') {
         const none = body.createDiv({ cls: 'gemma4-chat-vault-none' });
-        const passing = context.vault.hits;
-        if (context.vault.skipped) {
-          none.appendText('Your notes were not searched. ');
-          const again = none.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Search my notes and ask again' });
-          again.addEventListener('click', () => {
-            if (this.busy) return;
-            again.disabled = true;
-            this.searchNotes = true;
-            this.refreshVaultSurface();
-            void this.askInMode('vault', question);
-          });
-        } else if (passing.length) {
-          none.appendText(
-            `Nothing in your notes is about this — ${passing.length} mention${passing.length === 1 ? 's' : ''} it in passing: `
-          );
-          passing.forEach((hit, i) => {
-            if (i > 0) none.appendText(', ');
-            const a = none.createEl('a', { cls: 'gemma4-chat-source-link', text: hit.title });
-            a.addEventListener('click', (evt) => {
-              evt.preventDefault();
-              void this.app.workspace.openLinkText(hit.linkPath, '', false);
-            });
-          });
-          none.appendText('. Gemma 4 E4B answers on its own.');
-        } else {
-          none.setText('Nothing in your notes on this — Gemma 4 E4B answers on its own.');
-        }
+        none.appendText('Your notes were not searched. ');
+        const again = none.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Search my notes and ask again' });
+        again.addEventListener('click', () => {
+          if (this.busy) return;
+          again.disabled = true;
+          this.searchNotes = true;
+          this.refreshVaultSurface();
+          void this.askInMode('vault', question);
+        });
       } else if (context.vault?.kind === 'list') {
         const list = body.createDiv({ cls: 'gemma4-chat-vault-list' });
         const hits = context.vault.hits;
