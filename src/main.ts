@@ -180,31 +180,48 @@ async function timed<T>(task: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
-async function checkWebGPU(): Promise<{ ok: boolean; detail: string }> {
-  if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
-    return { ok: false, detail: 'navigator.gpu is not present in this Obsidian build.' };
-  }
+/**
+ * The adapter request the runtime itself makes. LiteRT-LM asks for
+ * `powerPreference: 'high-performance'`; a probe that asks with no
+ * preference can be handed a different adapter on a laptop with two GPUs,
+ * and then the diagnostics name one card while the model runs on another.
+ * One descriptor, used by every probe here, so what is reported is what is
+ * used.
+ */
+const ADAPTER_REQUEST = { powerPreference: 'high-performance' } as const;
+
+type AdapterProbe = { requestAdapter: (opts?: { powerPreference: string }) => Promise<unknown> };
+type AdapterInfoLike = { info?: Record<string, unknown> } | null;
+
+async function requestRuntimeAdapter(): Promise<AdapterInfoLike | undefined> {
+  if (typeof navigator === 'undefined' || !('gpu' in navigator)) return undefined;
+  const gpu = (navigator as unknown as { gpu: AdapterProbe }).gpu;
+  return (await gpu.requestAdapter(ADAPTER_REQUEST)) as AdapterInfoLike;
+}
+
+async function checkWebGPU(): Promise<{ ok: boolean; detail: string; vendor?: string; description?: string }> {
+  let adapter: AdapterInfoLike | undefined;
   try {
-    const gpu = (navigator as unknown as { gpu: { requestAdapter: () => Promise<unknown> } }).gpu;
-    const adapter = (await gpu.requestAdapter()) as { info?: Record<string, unknown> } | null;
-    if (!adapter) {
-      return { ok: false, detail: 'requestAdapter() resolved to null — interface exists but no usable GPU adapter.' };
-    }
-    const info = adapter.info ?? {};
-    return { ok: true, detail: `Adapter found. ${JSON.stringify(info)}` };
+    adapter = await requestRuntimeAdapter();
   } catch (err) {
     return { ok: false, detail: `requestAdapter() threw: ${err instanceof Error ? err.message : String(err)}` };
   }
+  if (adapter === undefined) return { ok: false, detail: 'navigator.gpu is not present in this Obsidian build.' };
+  if (adapter === null) {
+    return { ok: false, detail: 'requestAdapter() resolved to null — interface exists but no usable GPU adapter.' };
+  }
+  const info = adapter.info ?? {};
+  const vendor = typeof info.vendor === 'string' ? info.vendor : undefined;
+  const description = typeof info.description === 'string' ? info.description : undefined;
+  return { ok: true, detail: `Adapter found. ${formatGpuInfo(info)}`, vendor, description };
 }
 
 /** GPU identity for the benchmark table, from the same adapter the runtime uses. */
 async function describeGpu(): Promise<string> {
   try {
-    const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<unknown> } }).gpu;
-    if (!gpu) return 'no WebGPU adapter';
-    const adapter = (await gpu.requestAdapter()) as { info?: Record<string, unknown> } | null;
-    const info = adapter?.info;
-    return formatGpuInfo(info);
+    const adapter = await requestRuntimeAdapter();
+    if (adapter === undefined) return 'no WebGPU adapter';
+    return formatGpuInfo(adapter?.info);
   } catch {
     return 'unavailable';
   }

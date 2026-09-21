@@ -197,6 +197,7 @@ Five honest reasons to close this tab:
 
 - **You work on a phone or tablet.** Desktop only, and structurally so: it needs WebGPU and ~3 GB on disk.
 - **Your machine has no WebGPU.** Integrated GPUs from the last few years are fine; a VM, a remote desktop or an old GPU usually is not. The `[Test] Check WebGPU` command tells you in one click.
+- **A Windows laptop with two GPUs runs it on the slow one.** The runtime asks for the high-performance adapter, but Windows decides which card Obsidian gets. *Check setup (diagnostics)* names the GPU in use; if it is Intel or AMD integrated graphics and the machine also has a dedicated card, open Settings → System → Display → Graphics, add Obsidian, set it to High performance, and restart. Scans and answers run several times faster on the dedicated card.
 - **You cannot spare ~3 GB.** The model is downloaded once and lives in the plugin folder.
 - **You need frontier-model knowledge.** Gemma 4 E4B is a 4B model: good at reading your notes, weak at the wider world. Vault mode answers general questions, and it is not a ChatGPT replacement.
 - **Your sources are PDFs, images or Office files.** Markdown notes only. Clip or convert first.

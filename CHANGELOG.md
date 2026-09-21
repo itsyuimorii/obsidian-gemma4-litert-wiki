@@ -4,6 +4,38 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.19 — 2026-09-20
+
+When the notes have nothing, Vault says so and stops. And the seconds
+between pressing Enter and the first token are no longer a blind spot.
+
+- **Nothing found means nothing answered.** A Vault search that finds no
+  note about the subject renders one sentence, the notes that name it in
+  passing as links, and *Ask Gemma 4 E4B anyway* — and stops, before the
+  engine is even loaded, so it is instant. Answering regardless put a
+  paragraph the model invented under a line reporting your notes had
+  nothing, with only a warning label between them. The unticked box is
+  unchanged: there you asked for the model, so the model answers.
+- **Busy from the moment a question is sent.** The busy flag used to go up
+  only after the context was built — in Vault mode a model call and a read
+  of every note body — and for those seconds every guard in the plugin read
+  idle: a second Enter started a concurrent generation on one engine, and
+  Ingest or Improve could start a second GPU operation. The flags go up
+  first now, and one place puts them down on every way out.
+- **A deleted attachment is an error you can see.** A note attached with
+  **+** and then deleted made the next question fail silently — the
+  question on screen, nothing under it, and the dead pill still there to
+  do it again every time. The pill now disappears when its note does, and
+  a failure while preparing the answer is shown in the thread.
+- **A leak, closed.** Each two-part Vault answer left its first
+  conversation unreleased for as long as the panel was open.
+- **Check setup names the GPU.** The plugin's own GPU probe asked for an
+  adapter with no preference, so on a laptop with two GPUs it could report
+  one card while the model ran on another. It now makes the same request
+  the runtime does, the check names the adapter, and on Windows an Intel
+  or AMD integrated GPU is a note that gives the Graphics setting to switch
+  Obsidian to the dedicated card. Issue #149.
+
 ## 1.0.18 — 2026-09-14
 
 Vault reads more of what it finds, finds what it used to miss, and can be

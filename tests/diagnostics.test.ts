@@ -105,3 +105,54 @@ test('the pasteable report carries versions and findings, and no vault content',
 test('a healthy report has no "what to do" section at all', () => {
   assert.ok(!formatDiagnostics(HEALTHY, diagnose(HEALTHY)).includes('What to do'));
 });
+
+// --- Which GPU, and whether a better one is probably idle beside it --------
+//
+// Issue #149: a Windows laptop with an NVIDIA card ran the model on the
+// Intel integrated GPU. The runtime already asks for the high-performance
+// adapter; Windows decides anyway, and only the user's own graphics setting
+// changes that. The plugin cannot see the card it was not given, so all it
+// can do is name the one it has and, when that one is the kind that usually
+// has a faster neighbour, say where the switch is.
+
+import { integratedGpuOnWindows } from '../src/pure.ts';
+
+const gpu = (platform: string, vendor?: string, description?: string): DiagnosticFacts => ({
+  ...HEALTHY,
+  platform,
+  webgpu: { ok: true, detail: `Adapter found. ${description ?? ''}`, vendor, description },
+});
+
+test('an Intel integrated GPU on Windows is a note that names the graphics setting', () => {
+  const f = gpu('Windows', 'intel', 'Intel(R) Iris(R) Xe Graphics');
+  assert.equal(integratedGpuOnWindows(f), true);
+  const c = Object.fromEntries(diagnose(f).map((x) => [x.name, x]));
+  assert.equal(c.WebGPU.status, 'warn');
+  assert.match(c.WebGPU.fix ?? '', /Settings > System > Display > Graphics/);
+  assert.match(c.WebGPU.fix ?? '', /High performance/);
+  assert.equal(diagnosisBlocks(diagnose(f)), false);
+});
+
+test('a dedicated GPU is simply ok', () => {
+  for (const [v, d] of [['nvidia', 'NVIDIA GeForce RTX 4060 Laptop GPU'], ['amd', 'AMD Radeon RX 7600'], ['intel', 'Intel(R) Arc(TM) A770 Graphics']]) {
+    const f = gpu('Windows', v, d);
+    assert.equal(integratedGpuOnWindows(f), false, d);
+    assert.equal(diagnose(f).find((x) => x.name === 'WebGPU')?.status, 'ok', d);
+  }
+});
+
+test('AMD integrated graphics are told apart from AMD cards', () => {
+  assert.equal(integratedGpuOnWindows(gpu('Windows', 'amd', 'AMD Radeon(TM) Graphics')), true);
+  assert.equal(integratedGpuOnWindows(gpu('Windows', 'amd', 'AMD Radeon Vega 8 Graphics')), true);
+});
+
+test('macOS and Linux are left alone, and so is an adapter with no info', () => {
+  assert.equal(integratedGpuOnWindows(gpu('macOS', 'apple', 'Apple M2')), false);
+  assert.equal(integratedGpuOnWindows(gpu('Linux', 'intel', 'Mesa Intel(R) UHD Graphics 620')), false);
+  assert.equal(integratedGpuOnWindows(gpu('Windows')), false);
+});
+
+test('the report names the GPU', () => {
+  const f = gpu('Windows', 'nvidia', 'NVIDIA GeForce RTX 4060 Laptop GPU');
+  assert.match(formatDiagnostics(f, diagnose(f)), /RTX 4060/);
+});
