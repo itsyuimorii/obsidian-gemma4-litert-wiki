@@ -4,6 +4,22 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.20 — 2026-09-20
+
+The settings page on Obsidian 1.13 and later shows everything again.
+
+- **Ten rows were invisible on Obsidian 1.13+.** On 1.13 Obsidian renders a
+  settings tab from its declarative definitions and never calls the older
+  `display()` once those exist — and this tab kept its model download,
+  *Check setup*, the knowledge-folder rename, the folder map and its repair
+  button, the setup card, *Organize tags*, *Open skills folder*, the scan
+  guidance and the *Save answers into* setting only in `display()`. Every
+  user on 1.13 had been without all of them, including the button the last
+  two releases pointed at. Each row is now shared by both pages and drawn
+  in place on the declarative one; before 1.13 nothing changes. *Save
+  answers into* is a declared control now, so it also turns up in settings
+  search.
+
 ## 1.0.19 — 2026-09-20
 
 When the notes have nothing, Vault says so and stops. And the seconds
