@@ -1480,7 +1480,8 @@ export interface Check {
 /** The raw facts a Check is derived from. Gathered impurely; judged here. */
 export interface DiagnosticFacts {
   /** navigator.gpu present and an adapter obtainable. */
-  webgpu: { ok: boolean; detail: string };
+  /** Vendor and description come from adapter.info when the browser provides them. */
+  webgpu: { ok: boolean; detail: string; vendor?: string; description?: string };
   /** Bytes free on the volume holding the plugin folder, or undefined if unknown. */
   freeBytes?: number;
   /** The model file, if it is fully downloaded. */
@@ -1495,6 +1496,24 @@ export interface DiagnosticFacts {
   obsidianVersion: string;
   pluginVersion: string;
   platform: string;
+}
+
+/**
+ * Whether the adapter WebGPU handed us looks like a laptop's integrated
+ * GPU, on the one platform where a second, faster GPU is commonly sitting
+ * idle beside it. WebGPU never reveals the adapters it did not pick, so
+ * this cannot know a dedicated card exists — it can only say this one is
+ * the kind that usually has a better neighbour, which is why the check is
+ * a note and not a failure. Apple's GPU is integrated and also the only
+ * one, so macOS is left alone.
+ */
+export function integratedGpuOnWindows(f: Pick<DiagnosticFacts, 'platform' | 'webgpu'>): boolean {
+  if (f.platform !== 'Windows') return false;
+  const vendor = (f.webgpu.vendor ?? '').toLowerCase();
+  const desc = (f.webgpu.description ?? '').toLowerCase();
+  if (vendor === 'intel') return !/\barc\b/.test(desc);
+  if (vendor === 'amd') return /\b(?:radeon\(tm\) graphics|radeon graphics|vega \d+ graphics)\b/.test(desc);
+  return false;
 }
 
 /** The model is about this big, and the download needs room for it twice over briefly. */
@@ -1524,7 +1543,23 @@ export function diagnose(f: DiagnosticFacts): Check[] {
 
   checks.push(
     f.webgpu.ok
-      ? { name: 'WebGPU', status: 'ok', detail: f.webgpu.detail }
+      ? integratedGpuOnWindows(f)
+        ? {
+            name: 'WebGPU',
+            status: 'warn',
+            detail: f.webgpu.detail,
+            // The runtime already asks Windows for the high-performance
+            // adapter; on a laptop with two GPUs Windows may still hand it
+            // the integrated one, and nothing a plugin does can override
+            // that. The setting that does is the user's, and this names it.
+            fix:
+              'This is an integrated GPU. If this machine also has a dedicated one (NVIDIA or ' +
+              'AMD), Windows is choosing the integrated card for Obsidian. Open Settings > System > ' +
+              'Display > Graphics, add Obsidian, set it to High performance, then restart Obsidian. ' +
+              'The NVIDIA Control Panel (Manage 3D settings > Program Settings) does the same. ' +
+              'Scans and answers are several times faster on the dedicated card.',
+          }
+        : { name: 'WebGPU', status: 'ok', detail: f.webgpu.detail }
       : {
           name: 'WebGPU',
           status: 'fail',
