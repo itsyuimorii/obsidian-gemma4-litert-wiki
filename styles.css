@@ -1712,3 +1712,16 @@
 .gemma4-composer-bar .gemma4-chat-search-toggle.is-off {
   color: var(--text-warning);
 }
+
+/* ---------- Settings, declarative page (Obsidian 1.13+) ---------- */
+
+/* The folder map is a table drawn into a settings row. The row's default
+   two-column layout (info left, control right) would squeeze it; stacked,
+   the map sits under the name and description at full width. */
+.setting-item.gemma4-folder-map-row {
+  display: block;
+}
+
+.setting-item.gemma4-folder-map-row .gemma4-folder-map {
+  margin-top: 8px;
+}
