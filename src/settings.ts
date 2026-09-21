@@ -91,6 +91,35 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   hasChatted: false,
 };
 
+// Descriptions shared by the declarative page (1.13+) and the imperative one
+// (before 1.13), so a wording change lands on both.
+const CHECK_SETUP_DESC =
+  'Checks the five things a first answer depends on — desktop, WebGPU, disk space, the runtime, ' +
+  'the model — and says what to do about anything missing. Produces a report you can paste into a ' +
+  'bug report; it carries versions and file sizes, nothing from your vault.';
+const KNOWLEDGE_FOLDER_DESC =
+  'The one folder the plugin writes to. Your own notes are never moved or modified. Changing this ' +
+  'renames the folder and rewrites internal links; blank resets to the default.';
+const SETUP_CARD_DESC =
+  'The card shown the first time the folder was made — what each folder is for, and where the chat ' +
+  'panel lives. Shown once on purpose; this is how to see it again.';
+const ORGANIZE_TAGS_DESC =
+  'Tag rules live in schema.md, not here — config as a note; open it from the list above. ' +
+  '"Organize tags" has local Gemma merge near-synonyms into one vocabulary and writes it back for ' +
+  'you to review. The first run is slow while the model loads.';
+const SKILLS_DESC =
+  'One file per skill in skills/ — frontmatter for name/icon/mode, the body is the prompt. Each file ' +
+  'becomes an entry in the ⚡ menu of the chat panel. The folder ships with a README and two examples.';
+const HOW_TO_SCAN_DESC =
+  'Cmd/Ctrl+P → "Scan a folder into the wiki", or the button in the chat panel when your wiki is ' +
+  'empty. It asks which folders, shows how many notes each one holds, and remembers your last pick. ' +
+  '"Stop the running scan" cancels — whatever was drafted before you stopped is still offered for review.';
+const ANSWER_FOLDER_DESC =
+  'Where the save button under an answer writes. Leave blank and it goes beside the note the answer ' +
+  'came from — in Wiki mode, the note behind its first source. Name a folder here to put every saved ' +
+  'answer in one place instead. Either way it is an ordinary note of yours, so the next scan can turn ' +
+  'it into a wiki card like any other.';
+
 export class GemmaWikiSettingTab extends PluginSettingTab {
   private plugin: LiteRtSpikePlugin;
 
@@ -121,6 +150,22 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         type: 'group',
         heading: 'Model',
         items: [
+          // Rendered imperatively into the declarative page. On 1.13 and later
+          // display() is never called once this list is non-empty, so anything
+          // that lives only there is invisible — which, until this, was the
+          // model download, Check setup, the folder map and the repair button.
+          {
+            name: 'Local model',
+            desc: 'The model file on disk.',
+            aliases: ['download', 'gemma', 'weights'],
+            render: (setting) => this.addLocalModelControls(setting),
+          },
+          {
+            name: 'Check setup',
+            desc: CHECK_SETUP_DESC,
+            aliases: ['diagnostics', 'gpu', 'webgpu', 'troubleshoot'],
+            render: (setting) => this.addCheckSetupControls(setting),
+          },
           {
             name: 'Context window (tokens)',
             desc:
@@ -148,6 +193,97 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
               'are for diagnosing a broken setup, not for working with notes. Off by default.',
             aliases: ['debug', 'diagnostics', 'test commands'],
             control: { type: 'toggle', key: 'devCommands' },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Wiki',
+        items: [
+          {
+            name: 'Knowledge folder name',
+            desc: KNOWLEDGE_FOLDER_DESC,
+            aliases: ['wiki folder', 'rename', 'gemma-wiki'],
+            render: (setting) =>
+              this.addKnowledgeFolderControls(setting, () => {
+                this.refreshDeclarativeScaffoldRows();
+                (this as { update?: () => void }).update?.();
+              }),
+          },
+          {
+            name: 'What the plugin created',
+            desc: 'Every folder and file this plugin owns, and whether each is present.',
+            aliases: ['folders', 'layout', 'scaffold', 'schema.md', 'skills'],
+            render: (setting) => {
+              // A table, not a control: it takes the whole row.
+              setting.settingEl.addClass('gemma4-folder-map-row');
+              const map = setting.settingEl.createDiv({ cls: 'gemma4-folder-map' });
+              this.declarativeScaffoldRows.map = map;
+              this.renderFolderMap(map);
+              // The imperative page registers these in redraw(); that never
+              // runs here, so the row that shows the state watches for it.
+              const owned = new Set(wikiScaffoldPaths().map((e) => e.path.replace(/\/$/, '')));
+              const touched = (path: string) => owned.has(path) || path === this.plugin.settings.wikiDir;
+              const refresh = (file: { path: string }) => {
+                if (touched(file.path)) this.refreshDeclarativeScaffoldRows();
+              };
+              const refs: EventRef[] = [
+                this.app.vault.on('create', refresh),
+                this.app.vault.on('delete', refresh),
+                this.app.vault.on('rename', (file, oldPath) => {
+                  if (touched(file.path) || touched(oldPath)) this.refreshDeclarativeScaffoldRows();
+                }),
+              ];
+              return () => {
+                for (const ref of refs) this.app.vault.offref(ref);
+                delete this.declarativeScaffoldRows.map;
+              };
+            },
+          },
+          {
+            name: 'Folders',
+            desc: 'Created when Obsidian starts; this is only for putting one back.',
+            aliases: ['repair', 'missing', 'recreate'],
+            render: (setting) => {
+              this.declarativeScaffoldRows.repair = setting;
+              this.addRepairFoldersControls(setting, () => this.refreshDeclarativeScaffoldRows());
+              return () => {
+                delete this.declarativeScaffoldRows.repair;
+              };
+            },
+          },
+          {
+            name: 'What this plugin created',
+            desc: SETUP_CARD_DESC,
+            aliases: ['setup card', 'welcome', 'onboarding'],
+            render: (setting) => this.addSetupCardControls(setting),
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Schema',
+        items: [
+          {
+            name: 'Tag vocabulary & naming rules',
+            desc: ORGANIZE_TAGS_DESC,
+            aliases: ['tags', 'schema', 'organize', 'vocabulary'],
+            render: (setting) => {
+              setting.setClass('gemma4-stack-buttons');
+              this.addOrganizeTagsControls(setting);
+            },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Skills',
+        items: [
+          {
+            name: 'Custom skills',
+            desc: SKILLS_DESC,
+            aliases: ['prompts', 'skills folder', 'lightning menu'],
+            render: (setting) => this.addSkillsFolderControls(setting),
           },
         ],
       },
@@ -197,6 +333,17 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         type: 'group',
         heading: 'Scan for new notes',
         items: [
+          {
+            name: 'How to run a scan',
+            desc: HOW_TO_SCAN_DESC,
+            aliases: ['scan', 'ingest', 'folder scan', 'stop scan'],
+          },
+          {
+            name: 'Save answers into',
+            desc: ANSWER_FOLDER_DESC,
+            aliases: ['answer folder', 'save', 'where answers go'],
+            control: { type: 'text', key: 'answerFolder', placeholder: 'beside the note it came from' },
+          },
           {
             name: 'Never scan these',
             desc:
@@ -345,35 +492,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     // ---------- Model ----------
     new Setting(containerEl).setName('Model').setHeading();
 
-    const status = this.plugin.modelStatus();
-    const modelSetting = new Setting(containerEl)
-      .setName('Local model')
-      .setDesc(
-        status.downloaded
-          ? `Downloaded (${status.sizeGB} GB on disk). Completely free — runs offline on your GPU, no API key or subscription.`
-          : status.partialGB
-            ? `Partial download on disk (${status.partialGB} GB). Resume to finish.`
-            : 'Not downloaded yet (~2.97 GB, one time). Downloads on first use, or start it here.'
-      );
-    modelSetting.addButton((btn) => {
-      btn.setButtonText(status.downloaded ? 'Re-download' : status.partialGB ? 'Resume download' : 'Download model');
-      btn.onClick(() => void this.plugin.downloadModelFromSettings());
-    });
-
-    // Directly under the download row, because the settings page is where
-    // someone goes when the plugin is not working and the command palette is
-    // not the first place they look.
-    new Setting(containerEl)
-      .setName('Check setup')
-      .setDesc(
-        'Checks the five things a first answer depends on — desktop, WebGPU, disk space, the ' +
-          'runtime, the model — and says what to do about anything missing. Produces a report you ' +
-          'can paste into a bug report; it carries versions and file sizes, nothing from your vault.'
-      )
-      .addButton((btn) => {
-        btn.setButtonText('Run check');
-        btn.onClick(() => void this.plugin.showDiagnostics());
-      });
+    this.addLocalModelControls(new Setting(containerEl).setName('Local model'));
+    this.addCheckSetupControls(new Setting(containerEl).setName('Check setup').setDesc(CHECK_SETUP_DESC));
 
     new Setting(containerEl)
       .setName('Context window (tokens)')
@@ -415,6 +535,60 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     // ---------- Wiki ----------
     new Setting(containerEl).setName('Wiki').setHeading();
 
+    this.addKnowledgeFolderControls(
+      new Setting(containerEl).setName('Knowledge folder name').setDesc(KNOWLEDGE_FOLDER_DESC),
+      () => this.redraw()
+    );
+    this.renderFolderMap(containerEl.createDiv({ cls: 'gemma4-folder-map' }));
+    this.addRepairFoldersControls(new Setting(containerEl).setName('Folders'), () => this.redraw());
+    this.addSetupCardControls(new Setting(containerEl).setName('What this plugin created').setDesc(SETUP_CARD_DESC));
+
+    // ---------- Schema ----------
+    new Setting(containerEl).setName('Schema').setHeading();
+    this.addOrganizeTagsControls(
+      new Setting(containerEl).setName('Tag vocabulary & naming rules').setClass('gemma4-stack-buttons').setDesc(ORGANIZE_TAGS_DESC)
+    );
+
+    // ---------- Skills ----------
+    new Setting(containerEl).setName('Skills').setHeading();
+    this.addSkillsFolderControls(new Setting(containerEl).setName('Custom skills').setDesc(SKILLS_DESC));
+
+    // ---------- Chat ----------
+    new Setting(containerEl).setName('Chat').setHeading();
+    this.legacyRedrawRest(containerEl);
+  }
+
+  /**
+   * The rows that were unique to the imperative page and are now shared with
+   * the declarative one. Each takes a Setting whose name (and static desc)
+   * is already set — by redraw() on Obsidian before 1.13, by the framework
+   * from getSettingDefinitions() on 1.13 and later — and adds what the
+   * definition language cannot express: a button, a confirm dialog, a
+   * description that depends on what is on disk.
+   */
+  private addLocalModelControls(s: Setting): void {
+    const status = this.plugin.modelStatus();
+    s.setDesc(
+      status.downloaded
+        ? `Downloaded (${status.sizeGB} GB on disk). Completely free — runs offline on your GPU, no API key or subscription.`
+        : status.partialGB
+          ? `Partial download on disk (${status.partialGB} GB). Resume to finish.`
+          : 'Not downloaded yet (~2.97 GB, one time). Downloads on first use, or start it here.'
+    );
+    s.addButton((btn) => {
+      btn.setButtonText(status.downloaded ? 'Re-download' : status.partialGB ? 'Resume download' : 'Download model');
+      btn.onClick(() => void this.plugin.downloadModelFromSettings());
+    });
+  }
+
+  private addCheckSetupControls(s: Setting): void {
+    s.addButton((btn) => {
+      btn.setButtonText('Run check');
+      btn.onClick(() => void this.plugin.showDiagnostics());
+    });
+  }
+
+  private addKnowledgeFolderControls(s: Setting, afterRename: () => void): void {
     // Renaming the knowledge folder moves every page and rewrites every
     // internal link, so Apply stays disabled until the field actually differs
     // from what is saved. It used to be permanently clickable and answered
@@ -426,14 +600,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       const next = normalizeDir(pendingDir);
       applyBtn?.setDisabled(!next || next === this.plugin.settings.wikiDir);
     };
-
-    new Setting(containerEl)
-      .setName('Knowledge folder name')
-      .setDesc(
-        'The one folder the plugin writes to. Your own notes are never moved or modified. ' +
-          'Changing this renames the folder and rewrites internal links; blank resets to the default.'
-      )
-      .addText((text) =>
+    s.addText((text) =>
         text
           .setPlaceholder(DEFAULT_WIKI_DIR)
           .setValue(this.plugin.settings.wikiDir)
@@ -477,16 +644,21 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           });
           if (!ok) return;
           await this.plugin.renameWikiDir(prev, next);
-          this.redraw();
+          afterRename();
         });
         syncApply();
       });
+  }
 
-    // What the plugin actually put in the vault. The settings page used to
-    // describe the layout in prose in three different places and got it wrong
-    // (concepts/, skills/ and schema.md were missing from the list) — this is
-    // generated from the same list the scaffold builds from, so it cannot drift.
-    const map = containerEl.createDiv({ cls: 'gemma4-folder-map' });
+  /**
+   * What the plugin actually put in the vault. The settings page used to
+   * describe the layout in prose in three different places and got it wrong
+   * (concepts/, skills/ and schema.md were missing from the list) — this is
+   * generated from the same list the scaffold builds from, so it cannot drift.
+   * Returns how many entries are missing, for the repair row beneath it.
+   */
+  private renderFolderMap(map: HTMLElement): number {
+    map.empty();
     let missing = 0;
     for (const entry of wikiScaffoldPaths()) {
       // Trailing slash is for display; the vault index is keyed without it.
@@ -510,66 +682,66 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       row.createSpan({ cls: 'gemma4-folder-what', text: entry.what });
       row.createSpan({ cls: 'gemma4-folder-state', text: here ? '✓' : 'missing' });
     }
+    return missing;
+  }
 
-    // Showing the state turns "Repair folders" from a button whose purpose is
-    // a mystery (the folders are made on startup, so why is it here?) into the
-    // action for a condition you can actually see. Sync clients drop empty
-    // directories often enough that the recovery path has to exist.
-    new Setting(containerEl)
-      .setName('Folders')
-      .setDesc(
-        missing
-          ? `${missing} of ${wikiScaffoldPaths().length} missing — they are normally created when Obsidian starts.`
-          : 'All present. These are created when Obsidian starts; this button is only for putting one back.'
-      )
-      .addButton((btn) => {
-        // Deliberately not a CTA. The red rows already carry the signal, and a
-        // filled accent button for a recovery action reads as the main thing
-        // to do on the page, which it never is.
-        btn.setButtonText(missing ? `Create ${missing} missing` : 'Repair folders');
-        btn.onClick(async () => {
-          await this.plugin.repairWikiFolders();
-          this.redraw();
-        });
+  /**
+   * Showing the state turns "Repair folders" from a button whose purpose is
+   * a mystery (the folders are made on startup, so why is it here?) into the
+   * action for a condition you can actually see. Sync clients drop empty
+   * directories often enough that the recovery path has to exist.
+   */
+  private addRepairFoldersControls(s: Setting, afterRepair: () => void): void {
+    const missing = wikiScaffoldPaths().filter((e) => !this.app.vault.getAbstractFileByPath(e.path.replace(/\/$/, ''))).length;
+    s.setDesc(
+      missing
+        ? `${missing} of ${wikiScaffoldPaths().length} missing — they are normally created when Obsidian starts.`
+        : 'All present. These are created when Obsidian starts; this button is only for putting one back.'
+    );
+    s.addButton((btn) => {
+      // Deliberately not a CTA. The red rows already carry the signal, and a
+      // filled accent button for a recovery action reads as the main thing
+      // to do on the page, which it never is.
+      btn.setButtonText(missing ? `Create ${missing} missing` : 'Repair folders');
+      btn.onClick(async () => {
+        await this.plugin.repairWikiFolders();
+        afterRepair();
       });
+    });
+  }
 
-    new Setting(containerEl)
-      .setName('What this plugin created')
-      .setDesc(
-        'The card shown the first time the folder was made — what each folder is for, and where ' +
-          'the chat panel lives. Shown once on purpose; this is how to see it again.'
-      )
-      .addButton((btn) =>
-        btn.setButtonText('Show setup card').onClick(() => this.plugin.showSetupCard())
-      );
+  private addSetupCardControls(s: Setting): void {
+    s.addButton((btn) => btn.setButtonText('Show setup card').onClick(() => this.plugin.showSetupCard()));
+  }
 
-    // ---------- Schema ----------
-    new Setting(containerEl).setName('Schema').setHeading();
-    new Setting(containerEl)
-      .setName('Tag vocabulary & naming rules')
-      .setClass('gemma4-stack-buttons')
-      .setDesc(
-        'Tag rules live in schema.md, not here — config as a note; open it from the list above. ' +
-          '"Organize tags" has local Gemma merge near-synonyms into one vocabulary and writes it back ' +
-          'for you to review. The first run is slow while the model loads.'
-      )
-      .addButton((btn) =>
-        btn.setButtonText('Organize tags').onClick(() => void this.plugin.suggestTagVocabulary())
-      );
+  private addOrganizeTagsControls(s: Setting): void {
+    s.addButton((btn) => btn.setButtonText('Organize tags').onClick(() => void this.plugin.suggestTagVocabulary()));
+  }
 
-    // ---------- Skills ----------
-    new Setting(containerEl).setName('Skills').setHeading();
-    new Setting(containerEl)
-      .setName('Custom skills')
-      .setDesc(
-        'One file per skill in skills/ — frontmatter for name/icon/mode, the body is the prompt. ' +
-          'Each file becomes an entry in the ⚡ menu of the chat panel. The folder ships with a README ' +
-          'and two examples.'
-      )
-      .addButton((btn) => btn.setButtonText('Open skills folder').onClick(() => void this.plugin.createSkillsFolder()));
+  private addSkillsFolderControls(s: Setting): void {
+    s.addButton((btn) => btn.setButtonText('Open skills folder').onClick(() => void this.plugin.createSkillsFolder()));
+  }
 
-    // ---------- Chat ----------
-    new Setting(containerEl).setName('Chat').setHeading();
+  /**
+   * On Obsidian 1.13 and later the declarative page is what renders, and the
+   * rows above are drawn into it through `render`. Those rows read the vault
+   * (is the model there, which folders exist) and go stale when it changes;
+   * this redraws just the two that do, in place, and is what the vault
+   * watchers registered by the folder map call.
+   */
+  private declarativeScaffoldRows: { map?: HTMLElement; repair?: Setting } = {};
+
+  private refreshDeclarativeScaffoldRows(): void {
+    const { map, repair } = this.declarativeScaffoldRows;
+    if (map) this.renderFolderMap(map);
+    if (repair) {
+      repair.controlEl.empty();
+      this.addRepairFoldersControls(repair, () => this.refreshDeclarativeScaffoldRows());
+    }
+  }
+
+  /** The remainder of the imperative page, unchanged: rows the declarative page also declares. */
+  private legacyRedrawRest(containerEl: HTMLElement): void {
 
     new Setting(containerEl)
       .setName('Default mode')
