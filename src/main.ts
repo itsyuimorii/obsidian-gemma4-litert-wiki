@@ -141,7 +141,10 @@ export function setDebugLogging(on: boolean) {
   debugLogging = on;
 }
 function log(...args: unknown[]) {
-  if (debugLogging) console.log('[gemma-litert-wiki]', ...args);
+  // console.debug, not console.log: this is debug output behind the Developer
+  // toggle, and debug is the method the plugin guidelines allow for exactly
+  // that (their no-console rule permits warn, error and debug).
+  if (debugLogging) console.debug('[gemma-litert-wiki]', ...args);
 }
 
 // Cumulative per-step model time (#132). Impure by necessity — it is a running
