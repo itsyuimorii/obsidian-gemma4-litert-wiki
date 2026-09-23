@@ -4,6 +4,13 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.21 — 2026-09-23
+
+- **The debug log uses `console.debug`.** The one console call the
+  directory's review flagged was debug output behind the Developer toggle;
+  `debug` is the method the plugin guidelines allow for exactly that. No
+  behaviour change.
+
 ## 1.0.20 — 2026-09-20
 
 The settings page on Obsidian 1.13 and later shows everything again.
