@@ -19,9 +19,8 @@ import {
   weightedTerms,
   type VaultDoc,
   parseLogEntries,
-  isoDaysBefore,
-  pagesAddedSince,
-  lastAddedDate,
+  recentlyAdded,
+  describeRecency,
 } from './pure';
 import {
   App,
@@ -271,11 +270,16 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
       wholeWiki: true,
     },
     {
-      // The activity log rides along with every wiki answer, so "this week"
+      // The activity log rides along with every wiki answer, so this question
       // is answerable here and nowhere else. It is also the third question
       // whose shape says what this mode is: about the collection, over time.
-      label: 'Added this week?',
-      ask: 'What did I add to the wiki this week? List the pages and what each is about. Cite the pages.',
+      //
+      // "Recently", not "this week": a wiki gets built in a burst and then
+      // left alone, so any fixed window is empty most of the time, and
+      // "nothing this week" is a dead end. The answer is the pages newest
+      // first with a line saying how old they are — see wikiAddedContext.
+      label: 'Added recently?',
+      ask: 'What did I add to the wiki recently? List the pages and what each is about. Cite the pages.',
       wholeWiki: true,
     },
   ];
@@ -399,7 +403,7 @@ const MODE_GUIDE: Record<
   wiki: {
     title: 'Ask the cards in {wiki}/',
     reads: '',
-    goodFor: 'Good for: what connects the cards, what is still open, what you filed this week.',
+    goodFor: 'Good for: what connects the cards, what is still open, what you filed recently.',
     others: [
       ['vault', 'Vault', LINE_VAULT],
       ['note', 'This note', LINE_NOTE],
@@ -1790,26 +1794,24 @@ export class ChatView extends ItemView {
    */
   private wikiAddedContext(
     added: { date: string; title: string }[],
-    entries: { title: string; summary: string }[],
-    lastAdded?: string
+    entries: { title: string; summary: string }[]
   ): Awaited<ReturnType<ChatView['buildContext']>> {
     const summaryOf = new Map(entries.map((e) => [e.title.toLowerCase(), e.summary]));
     const hits = added.map((a) => ({
       title: `${a.title} (${a.date})`,
       linkPath: `${wikiSourcesDir()}/${a.title}`,
     }));
+    // Only a wiki nothing was ever filed into reaches this, and that case is
+    // already answered by the empty-index message above.
     if (!added.length) {
       return {
         systemPrompt:
-          'The user asked what they added to their wiki recently. The plugin has checked the ' +
-          'activity log: nothing was added in the last seven days' +
-          (lastAdded ? `, and the last time anything was added was ${lastAdded}` : '') +
-          '. Say exactly that in one sentence and stop. Do not list pages, do not guess, and ' +
-          'do not describe the wiki.',
+          'The activity log records no page ever being added to this wiki. Say exactly that in ' +
+          'one sentence and stop. Do not list pages, do not guess, do not describe the wiki.',
         sourcePath: indexPath(),
         sources: [],
         grounding: 'wiki',
-        vault: { kind: 'list' as const, hits: [], adds: false },
+        vault: { kind: 'list' as const, hits: [], adds: false, label: 'Nothing has been added yet' },
       };
     }
     const material = added
@@ -1818,16 +1820,22 @@ export class ChatView extends ItemView {
     return {
       systemPrompt:
         'The user asked what they added to their wiki recently. The plugin has already read the ' +
-        'activity log and found the pages below, with the date each was added — you are not ' +
-        'being asked to find them, and you cannot. Write one line per page, in the order given: ' +
-        'its title in bold, then what it is about, from its summary below. Add no page that is ' +
-        'not listed, and do not say anything about when: the dates are shown already.\n\n' +
+        'activity log and found the pages below, newest first, with the date each was added — ' +
+        'you are not being asked to find them, and you cannot. Write one line per page, in the ' +
+        'order given: its title in bold, then what it is about, from its summary below. Add no ' +
+        'page that is not listed. Say nothing about when, and nothing about weeks: the dates are ' +
+        'already shown and the line above the list has already said how recent they are.\n\n' +
         'Be concise. Use a markdown list.\n\n' +
         material,
       sourcePath: indexPath(),
       sources: hits,
       grounding: 'wiki',
-      vault: { kind: 'list' as const, hits: hits.map((h) => ({ ...h, tier: 'about' as const })), adds: false },
+      vault: {
+        kind: 'list' as const,
+        hits: hits.map((h) => ({ ...h, tier: 'about' as const })),
+        adds: false,
+        label: describeRecency(added[0].date, new Date().toLocaleDateString('en-CA'), added.length),
+      },
     };
   }
 
@@ -2145,6 +2153,8 @@ export class ChatView extends ItemView {
       adds?: boolean;
       /** The box beside the pills was unticked: no search ran, and the line above the answer says so. */
       skipped?: boolean;
+      /** Replaces the tier counts above a list, for a list that is not search results. */
+      label?: string;
     };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
@@ -2190,9 +2200,7 @@ export class ChatView extends ItemView {
         // model came to answer from relinks twelve days old.
         const logFile = this.app.vault.getAbstractFileByPath(logPath());
         const logText = logFile instanceof TFile ? await this.app.vault.cachedRead(logFile) : '';
-        const logEntries = parseLogEntries(logText);
-        const added = pagesAddedSince(logEntries, isoDaysBefore(new Date().toLocaleDateString('en-CA'), 7));
-        return this.wikiAddedContext(added, entries, lastAddedDate(logEntries));
+        return this.wikiAddedContext(recentlyAdded(parseLogEntries(logText)), entries);
       }
 
       // A whole-wiki question is not a retrieval problem. Scoring "what
@@ -2644,7 +2652,9 @@ export class ChatView extends ItemView {
         const nMention = hits.length - nAbout;
         list.createSpan({
           cls: 'gemma4-chat-vault-list-label',
-          text: `${nAbout} about · ${nMention} mention${nMention === 1 ? 's' : ''} it`,
+          // A list of search results says how it was tiered; a list of what
+          // was added says how recent it is. The caller that knows supplies it.
+          text: context.vault.label ?? `${nAbout} about · ${nMention} mention${nMention === 1 ? 's' : ''} it`,
         });
         for (const hit of hits) {
           const a = list.createEl('a', {

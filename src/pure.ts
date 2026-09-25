@@ -1479,18 +1479,22 @@ export function parseLogEntries(text: string): LogEntry[] {
 }
 
 /**
- * The pages added on or after `since`, newest first, one per title.
+ * The pages most recently added, newest first, one per title — whatever
+ * their date.
  *
- * `since` and the entries' dates are both plain ISO days, compared as
- * strings, so no timezone enters into it: the log is written with the
- * local day and read back the same way.
+ * Not a window. Any fixed window is empty most of the time on a wiki built
+ * in a burst and then left alone, and "nothing this week" is a dead end:
+ * the question behind the question is always "what has gone in lately",
+ * and the honest answer is the list plus how old it is. Every row carries
+ * its date, so the gap is something the reader sees rather than something
+ * they are told about.
  */
-export function pagesAddedSince(entries: readonly LogEntry[], since: string, max = 20): LogEntry[] {
+export function recentlyAdded(entries: readonly LogEntry[], max = 12): LogEntry[] {
   const seen = new Set<string>();
   const out: LogEntry[] = [];
   for (let i = entries.length - 1; i >= 0 && out.length < max; i--) {
     const e = entries[i];
-    if (!ADDING_ACTIONS.has(e.action) || e.date < since) continue;
+    if (!ADDING_ACTIONS.has(e.action)) continue;
     const key = e.title.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -1499,21 +1503,24 @@ export function pagesAddedSince(entries: readonly LogEntry[], since: string, max
   return out;
 }
 
-/** The ISO day `days` before `today`, both as plain ISO days. */
-export function isoDaysBefore(today: string, days: number): string {
-  const d = new Date(`${today}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
+/** Whole days between two plain ISO days. Negative if `to` is before `from`. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
 }
 
 /**
- * The most recent day anything was added, for the line that runs when
- * nothing was added in the window: "nothing this week; the last was on X"
- * beats "nothing", which reads like the log is broken.
+ * The one line above the list: what it is, and how recent. The plugin
+ * writes this, not the model — every word of it is a fact the plugin holds
+ * and the model would have to be told anyway, which is how the old version
+ * came to announce a week that was not this one.
  */
-export function lastAddedDate(entries: readonly LogEntry[]): string | undefined {
-  for (let i = entries.length - 1; i >= 0; i--) if (ADDING_ACTIONS.has(entries[i].action)) return entries[i].date;
-  return undefined;
+export function describeRecency(newest: string, today: string, count: number): string {
+  const days = daysBetween(newest, today);
+  const pages = `${count} page${count === 1 ? '' : 's'}`;
+  const ago = days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+  if (days <= 7) return `${pages}, newest first — the last one ${ago}`;
+  if (days <= 14) return `${pages}, newest first — nothing in the last week; the most recent was ${ago}`;
+  return `${pages}, newest first — nothing in the last two weeks; the most recent was ${newest}`;
 }
 
 // ---------------------------------------------------------------------------
