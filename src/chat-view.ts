@@ -961,9 +961,17 @@ export class ChatView extends ItemView {
     });
     const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
     this.modeButtons = { note: noteBtn, wiki: wikiBtn, vault: vaultBtn };
-    noteBtn.addEventListener('click', () => this.setMode('note'));
-    wikiBtn.addEventListener('click', () => this.setMode('wiki'));
-    vaultBtn.addEventListener('click', () => this.setMode('vault'));
+    // Blur after a click: a pill is a segmented control, and a theme's focus
+    // styling lingering on the one just pressed read as that pill being a
+    // different size. Keyboard focus (Tab) is untouched, since it never
+    // passes through a click.
+    const pick = (mode: ChatMode) => (evt: MouseEvent) => {
+      this.setMode(mode);
+      (evt.currentTarget as HTMLElement | null)?.blur();
+    };
+    noteBtn.addEventListener('click', pick('note'));
+    wikiBtn.addEventListener('click', pick('wiki'));
+    vaultBtn.addEventListener('click', pick('vault'));
 
     // Beside the pills, Vault only. A statement of what will happen, not a
     // setting name: ticked, the notes are searched first; unticked, the
