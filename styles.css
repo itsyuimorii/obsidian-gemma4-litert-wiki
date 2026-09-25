@@ -633,13 +633,28 @@
 .gemma4-composer-bar {
   display: flex;
   align-items: center;
+  /* Wrap rather than clip. The row is three pills, a box in Vault mode,
+     four icon buttons and Send; in a sidebar under about 480px that does
+     not fit on one line, and the alternative was the buttons on the right
+     being pushed out of view — Send first. Measured with the real
+     stylesheet: nothing is clipped at any width from 300px up; at usual
+     sidebar widths the row is one line, exactly as before. */
+  flex-wrap: wrap;
   gap: 4px;
+  row-gap: 6px;
   padding: 6px 8px 8px;
   border-top: 1px solid var(--background-modifier-border);
 }
 
 .gemma4-composer-bar .gemma4-chat-mode-row {
   margin-right: 6px;
+  /* The base rule pins this at flex-shrink: 0 so the pills never squash; in
+     the composer they may wrap instead, and the box beside them wraps with
+     them. */
+  flex-shrink: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 
 .gemma4-composer-bar .gemma4-chat-mode-btn {

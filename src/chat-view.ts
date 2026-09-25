@@ -971,7 +971,12 @@ export class ChatView extends ItemView {
     this.searchBoxRow = modeRow.createEl('label', { cls: 'gemma4-chat-search-toggle' });
     this.searchBox = this.searchBoxRow.createEl('input', { attr: { type: 'checkbox' } });
     this.searchBox.checked = true;
-    this.searchBoxRow.appendText('Search my notes first');
+    // Two words, not five: "Search my notes first" was the single widest
+    // thing in the row and what pushed Send out of a sidebar narrower than
+    // 480px. The full sentence is the tooltip, and the chip under the title
+    // says the same thing at length while the box is off.
+    this.searchBoxRow.appendText('Notes first');
+    setTooltip(this.searchBoxRow, 'Search my notes first. Untick to ask Gemma 4 E4B directly, without searching.');
     this.searchBox.addEventListener('change', () => {
       this.searchNotes = !!this.searchBox?.checked;
       this.refreshVaultSurface();
