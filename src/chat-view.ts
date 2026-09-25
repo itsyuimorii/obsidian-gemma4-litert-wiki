@@ -21,6 +21,7 @@ import {
   parseLogEntries,
   recentlyAdded,
   describeRecency,
+  ADDED_SHOWN,
 } from './pure';
 import {
   App,
@@ -1797,7 +1798,10 @@ export class ChatView extends ItemView {
     entries: { title: string; summary: string }[]
   ): Awaited<ReturnType<ChatView['buildContext']>> {
     const summaryOf = new Map(entries.map((e) => [e.title.toLowerCase(), e.summary]));
-    const hits = added.map((a) => ({
+    // Only the newest few get a chip and a line. The rest is a count and a
+    // link to the index, which is the file that exists to hold the full list.
+    const shown = added.slice(0, ADDED_SHOWN);
+    const hits = shown.map((a) => ({
       title: `${a.title} (${a.date})`,
       linkPath: `${wikiSourcesDir()}/${a.title}`,
     }));
@@ -1814,17 +1818,18 @@ export class ChatView extends ItemView {
         vault: { kind: 'list' as const, hits: [], adds: false, label: 'Nothing has been added yet' },
       };
     }
-    const material = added
+    const material = shown
       .map((a) => `## Page: ${a.title} — added ${a.date}\n${summaryOf.get(a.title.toLowerCase()) ?? '(no summary in the index)'}`)
       .join('\n\n');
     return {
       systemPrompt:
         'The user asked what they added to their wiki recently. The plugin has already read the ' +
-        'activity log and found the pages below, newest first, with the date each was added — ' +
-        'you are not being asked to find them, and you cannot. Write one line per page, in the ' +
-        'order given: its title in bold, then what it is about, from its summary below. Add no ' +
-        'page that is not listed. Say nothing about when, and nothing about weeks: the dates are ' +
-        'already shown and the line above the list has already said how recent they are.\n\n' +
+        'activity log; the newest few pages are below, with the date each was added. You are not ' +
+        'being asked to find them, and you cannot. Write one line per page, in the order given: ' +
+        'its title in bold, then what it is about, from its summary below. Add no page that is ' +
+        'not listed, and do not offer to list more. Say nothing about when, and nothing about ' +
+        'weeks: the dates are already shown and the line above the list has already said how ' +
+        'recent they are, and how many there are in total.\n\n' +
         'Be concise. Use a markdown list.\n\n' +
         material,
       sourcePath: indexPath(),
@@ -1835,6 +1840,10 @@ export class ChatView extends ItemView {
         hits: hits.map((h) => ({ ...h, tier: 'about' as const })),
         adds: false,
         label: describeRecency(added[0].date, new Date().toLocaleDateString('en-CA'), added.length),
+        more:
+          added.length > shown.length
+            ? { text: `${added.length - shown.length} more in ${indexPath()}`, linkPath: indexPath().replace(/\.md$/, '') }
+            : undefined,
       },
     };
   }
@@ -2155,6 +2164,8 @@ export class ChatView extends ItemView {
       skipped?: boolean;
       /** Replaces the tier counts above a list, for a list that is not search results. */
       label?: string;
+      /** A closing link for the rest of a list that is deliberately not shown in full. */
+      more?: { text: string; linkPath: string };
     };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
@@ -2665,6 +2676,14 @@ export class ChatView extends ItemView {
           a.addEventListener('click', (evt) => {
             evt.preventDefault();
             void this.app.workspace.openLinkText(hit.linkPath, '', false);
+          });
+        }
+        const more = context.vault.more;
+        if (more) {
+          const rest = list.createEl('a', { cls: 'gemma4-chat-source-link gemma4-chat-source-mention', text: more.text });
+          rest.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            void this.app.workspace.openLinkText(more.linkPath, '', false);
           });
         }
       } else if (context.vault?.kind === 'both') {

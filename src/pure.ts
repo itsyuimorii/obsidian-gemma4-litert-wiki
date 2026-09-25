@@ -1489,7 +1489,7 @@ export function parseLogEntries(text: string): LogEntry[] {
  * its date, so the gap is something the reader sees rather than something
  * they are told about.
  */
-export function recentlyAdded(entries: readonly LogEntry[], max = 12): LogEntry[] {
+export function recentlyAdded(entries: readonly LogEntry[], max = 200): LogEntry[] {
   const seen = new Set<string>();
   const out: LogEntry[] = [];
   for (let i = entries.length - 1; i >= 0 && out.length < max; i--) {
@@ -1509,18 +1509,30 @@ export function daysBetween(from: string, to: string): number {
 }
 
 /**
- * The one line above the list: what it is, and how recent. The plugin
- * writes this, not the model — every word of it is a fact the plugin holds
- * and the model would have to be told anyway, which is how the old version
- * came to announce a week that was not this one.
+ * How many of the newest pages get a line of their own.
+ *
+ * Twelve pages filed on one afternoon rendered as twelve chips and twelve
+ * descriptions, which is a wall that answers neither of the two questions
+ * actually being asked — is there anything new, and what is it. Three
+ * names with substance answer both, and the index already holds the full
+ * list, so the rest is a count and a link rather than a repetition of a
+ * file the user can open.
  */
-export function describeRecency(newest: string, today: string, count: number): string {
+export const ADDED_SHOWN = 3;
+
+/**
+ * The one line above the list: how many, and how recent. The plugin writes
+ * this, not the model — every word of it is a fact the plugin holds and the
+ * model would have to be told anyway, which is how the old version came to
+ * announce a week that was not this one.
+ */
+export function describeRecency(newest: string, today: string, total: number): string {
   const days = daysBetween(newest, today);
-  const pages = `${count} page${count === 1 ? '' : 's'}`;
+  const pages = `${total} page${total === 1 ? '' : 's'} added`;
   const ago = days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
-  if (days <= 7) return `${pages}, newest first — the last one ${ago}`;
-  if (days <= 14) return `${pages}, newest first — nothing in the last week; the most recent was ${ago}`;
-  return `${pages}, newest first — nothing in the last two weeks; the most recent was ${newest}`;
+  if (days <= 7) return `${pages}, the last one ${ago}`;
+  if (days <= 14) return `${pages} — nothing in the last week; the most recent was ${ago}`;
+  return `${pages} — nothing in the last two weeks; the most recent was ${newest}`;
 }
 
 // ---------------------------------------------------------------------------

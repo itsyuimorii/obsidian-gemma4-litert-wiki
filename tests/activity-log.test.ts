@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLogEntries, recentlyAdded, daysBetween, describeRecency } from '../src/pure.ts';
+import { parseLogEntries, recentlyAdded, daysBetween, describeRecency, ADDED_SHOWN } from '../src/pure.ts';
 
 const LOG = `# Activity
 
@@ -67,17 +67,29 @@ test('days are counted as plain days, with no timezone in it', () => {
   assert.equal(daysBetween('2026-09-25', '2026-09-25'), 0);
 });
 
-test('the line above the list says how recent, in the reader\'s terms', () => {
-  assert.match(describeRecency('2026-09-25', '2026-09-25', 3), /^3 pages, newest first — the last one today$/);
-  assert.match(describeRecency('2026-09-24', '2026-09-25', 1), /^1 page, newest first — the last one yesterday$/);
-  assert.match(describeRecency('2026-09-20', '2026-09-25', 4), /the last one 5 days ago$/);
+test('the line above the list counts every page and says how recent', () => {
+  // The count is the total added, not the three that get a line of their own.
+  assert.equal(describeRecency('2026-09-25', '2026-09-25', 12), '12 pages added, the last one today');
+  assert.equal(describeRecency('2026-09-24', '2026-09-25', 1), '1 page added, the last one yesterday');
+  assert.match(describeRecency('2026-09-20', '2026-09-25', 4), /^4 pages added, the last one 5 days ago$/);
 });
 
-test('a gap is named rather than hidden, and the list is still shown', () => {
+test('a gap is named rather than hidden, and the pages are still listed', () => {
   // Between one and two weeks: say the week was empty, but stay in days.
-  assert.match(describeRecency('2026-09-15', '2026-09-25', 6), /nothing in the last week; the most recent was 10 days ago$/);
+  assert.match(describeRecency('2026-09-15', '2026-09-25', 6), /^6 pages added — nothing in the last week; the most recent was 10 days ago$/);
   // Past two weeks: the day itself is more use than a count.
-  assert.match(describeRecency('2026-09-01', '2026-09-25', 6), /nothing in the last two weeks; the most recent was 2026-09-01$/);
+  assert.match(describeRecency('2026-09-01', '2026-09-25', 6), /^6 pages added — nothing in the last two weeks; the most recent was 2026-09-01$/);
+});
+
+test('only the newest few are described, however many were added', () => {
+  const many = parseLogEntries(
+    Array.from({ length: 12 }, (_, i) => `- [2026-09-13] ingest | page-${i}`).join('\n')
+  );
+  const added = recentlyAdded(many);
+  assert.equal(added.length, 12);
+  assert.equal(added.slice(0, ADDED_SHOWN).length, 3);
+  // The line still speaks for all twelve, so the rest is a count and a link.
+  assert.match(describeRecency(added[0].date, '2026-09-25', added.length), /^12 pages added —/);
 });
 
 test('the real log that produced the wrong answer now describes itself honestly', () => {
@@ -93,5 +105,5 @@ test('the real log that produced the wrong answer now describes itself honestly'
   // Not one of the relinks the old answer listed as "added this week".
   assert.deepEqual(added.map((e) => e.title), ['finance']);
   // Twelve days: past a week, not yet past two, so it stays in days.
-  assert.match(describeRecency(added[0].date, '2026-09-25', added.length), /^1 page, newest first — nothing in the last week; the most recent was 12 days ago$/);
+  assert.equal(describeRecency(added[0].date, '2026-09-25', added.length), '1 page added — nothing in the last week; the most recent was 12 days ago');
 });

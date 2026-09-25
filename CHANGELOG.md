@@ -33,12 +33,15 @@ The row under the chat box fits, whatever width the sidebar is.
   twelve lines were all link repairs from twelve days earlier — so the
   answer named pages that had not been added, in a week that was not this
   one, plus one page that was in neither and came from the catalog. The
-  plugin now reads the whole log, keeps only the entries that actually
-  created a page, and lists them newest first as links, with one line above
-  saying how recent they are: *the last one 3 days ago*, or *nothing in the
-  last two weeks; the most recent was 2026-09-13*. The model is handed each
-  page's own summary and asked only to describe it. A wiki built in a burst
-  and then left alone no longer answers "nothing".
+  plugin now reads the whole log and keeps only the entries that actually
+  created a page. One line says how many and how recent — *34 pages added,
+  the last one 3 days ago*, or *nothing in the last week; the most recent
+  was 12 days ago* — then the three newest as links, then a link to
+  `index.md` for the rest, which is the file that exists to hold the full
+  list. The model describes those three from their own summaries and
+  nothing else. A wiki built in a burst and then left alone no longer
+  answers "nothing", and one filled in an afternoon no longer answers with
+  a wall.
 
 ## 1.0.21 — 2026-09-23
 
