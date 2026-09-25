@@ -633,19 +633,56 @@
 .gemma4-composer-bar {
   display: flex;
   align-items: center;
+  /* Wrap rather than clip. The row is three pills, a box in Vault mode,
+     four icon buttons and Send; in a sidebar under about 480px that does
+     not fit on one line, and the alternative was the buttons on the right
+     being pushed out of view — Send first. Measured with the real
+     stylesheet: nothing is clipped at any width from 300px up; at usual
+     sidebar widths the row is one line, exactly as before. */
+  flex-wrap: wrap;
   gap: 4px;
+  row-gap: 6px;
   padding: 6px 8px 8px;
   border-top: 1px solid var(--background-modifier-border);
 }
 
 .gemma4-composer-bar .gemma4-chat-mode-row {
   margin-right: 6px;
+  /* The base rule pins this at flex-shrink: 0 so the pills never squash; in
+     the composer they may wrap instead, and the box beside them wraps with
+     them. */
+  flex-shrink: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 
-.gemma4-composer-bar .gemma4-chat-mode-btn {
+/* One size in every state. The selected pill was reported taller than the
+   other two and its label sitting low; the plugin's own rules give all three
+   the same box, so whatever enlarged the selected one came from outside —
+   a theme's or the app's styling of a focused or filled button. Rather than
+   find each source, every state locks the box: selected, hover, focus and
+   pressed, at a specificity above the plugin's own selected-state rule, with
+   the shadow, outline and transform a theme might add turned off. The line
+   height equals the box's inner height rather than 1: with 1, interface
+   fonts with tall ascenders (the Korean and Japanese system fonts) set the
+   glyphs about a pixel low in the 22px box; measured with Apple SD Gothic
+   Neo, this centres them to within a fifth of a pixel. */
+.gemma4-composer-bar .gemma4-chat-mode-btn,
+.gemma4-composer-bar .gemma4-chat-mode-btn.gemma4-chat-mode-active,
+.gemma4-composer-bar .gemma4-chat-mode-btn:hover,
+.gemma4-composer-bar .gemma4-chat-mode-btn:focus,
+.gemma4-composer-bar .gemma4-chat-mode-btn:focus-visible,
+.gemma4-composer-bar .gemma4-chat-mode-btn:active {
   height: 22px;
+  min-height: 22px;
+  max-height: 22px;
   padding: 0 10px;
   font-size: 11px;
+  line-height: 20px;
+  box-shadow: none;
+  outline: none;
+  transform: none;
 }
 
 /* Tools inside the bar go quiet: no outline, hover background only. */

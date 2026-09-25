@@ -4,6 +4,30 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.22 — 2026-09-25
+
+The row under the chat box fits, whatever width the sidebar is.
+
+- **It wraps instead of clipping.** Three pills, the box in Vault mode, four
+  icon buttons and Send did not fit a sidebar narrower than about 480px, and
+  because the row could not wrap, whatever was on the right was pushed out of
+  view — Send first. Measured in a replica with the real stylesheet: up to
+  five controls clipped before, none now at any width from 300px up. At usual
+  widths it is still one line.
+- **The box beside the pills says "Notes first."** The full sentence was the
+  widest thing in the row, and is now its tooltip.
+- **The mode pills are one size in every state.** The selected pill could be
+  drawn taller than the other two by a theme's styling of a focused or filled
+  button; every state now locks the box, and a pill blurs after a click so no
+  focus ring lingers. Keyboard focus is untouched.
+- **Their labels sit centred.** With a line height of 1, interface fonts with
+  tall ascenders set the glyphs about a pixel low; measured under the Things
+  theme with Apple SD Gothic Neo, they now sit within a fifth of a pixel of
+  centre.
+- **Wiki mode is back to three chips.** There were four, so the row wrapped.
+  *What's still open?* goes: the skills menu already asks it of whatever the
+  chat is grounded in, and the wiki-wide version is a sentence in the box.
+
 ## 1.0.21 — 2026-09-23
 
 - **The debug log uses `console.debug`.** The one console call the

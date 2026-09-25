@@ -250,26 +250,19 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
   // rearranging the furniture in advance.
   //
   // Three because the row is permanent screen space and a fourth wraps on a
-  // narrow panel. Scan takes one because it is an action, and a skill file is
-  // frontmatter plus a prompt with no way to express "do this". The other two
-  // are the questions whose answers are not already sitting in a file you
-  // could open — which is what ruled out "What's in my wiki?" (index.md) and
-  // "Added recently" (log.md, and it duplicated a skills-menu entry).
+  // narrow panel — which it had, since "Added this week?" was added later
+  // and nobody counted. Scan takes one because it is an action, and a skill
+  // file is frontmatter plus a prompt with no way to express "do this". The
+  // other two are the questions whose answers are not already sitting in a
+  // file you could open — which is what ruled out "What's in my wiki?"
+  // (index.md). "What's still open?" went to get back to three: the ⚡ menu's
+  // Find gaps asks the same thing of whatever the chat is grounded in, and
+  // the wiki-wide version of it is one sentence away in the box.
   return [
     { label: 'Scan a folder', action: 'scan' },
     {
       label: 'Find connections',
       ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
-      wholeWiki: true,
-    },
-    {
-      label: "What's still open?",
-      // Wiki-wide, which is what separates it from the "Find gaps" skill:
-      // that one looks for holes in whatever the chat is grounded in right
-      // now, this one looks across everything filed.
-      ask:
-        'What questions do my pages raise but never answer? List the gaps and why each ' +
-        'matters. Cite the pages.',
       wholeWiki: true,
     },
     {
@@ -961,9 +954,17 @@ export class ChatView extends ItemView {
     });
     const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
     this.modeButtons = { note: noteBtn, wiki: wikiBtn, vault: vaultBtn };
-    noteBtn.addEventListener('click', () => this.setMode('note'));
-    wikiBtn.addEventListener('click', () => this.setMode('wiki'));
-    vaultBtn.addEventListener('click', () => this.setMode('vault'));
+    // Blur after a click: a pill is a segmented control, and a theme's focus
+    // styling lingering on the one just pressed read as that pill being a
+    // different size. Keyboard focus (Tab) is untouched, since it never
+    // passes through a click.
+    const pick = (mode: ChatMode) => (evt: MouseEvent) => {
+      this.setMode(mode);
+      (evt.currentTarget as HTMLElement | null)?.blur();
+    };
+    noteBtn.addEventListener('click', pick('note'));
+    wikiBtn.addEventListener('click', pick('wiki'));
+    vaultBtn.addEventListener('click', pick('vault'));
 
     // Beside the pills, Vault only. A statement of what will happen, not a
     // setting name: ticked, the notes are searched first; unticked, the
@@ -971,7 +972,12 @@ export class ChatView extends ItemView {
     this.searchBoxRow = modeRow.createEl('label', { cls: 'gemma4-chat-search-toggle' });
     this.searchBox = this.searchBoxRow.createEl('input', { attr: { type: 'checkbox' } });
     this.searchBox.checked = true;
-    this.searchBoxRow.appendText('Search my notes first');
+    // Two words, not five: "Search my notes first" was the single widest
+    // thing in the row and what pushed Send out of a sidebar narrower than
+    // 480px. The full sentence is the tooltip, and the chip under the title
+    // says the same thing at length while the box is off.
+    this.searchBoxRow.appendText('Notes first');
+    setTooltip(this.searchBoxRow, 'Search my notes first. Untick to ask Gemma 4 E4B directly, without searching.');
     this.searchBox.addEventListener('change', () => {
       this.searchNotes = !!this.searchBox?.checked;
       this.refreshVaultSurface();
