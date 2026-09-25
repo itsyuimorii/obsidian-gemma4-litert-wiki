@@ -27,6 +27,15 @@ The row under the chat box fits, whatever width the sidebar is.
 - **Wiki mode is back to three chips.** There were four, so the row wrapped.
   *What's still open?* goes: the skills menu already asks it of whatever the
   chat is grounded in, and the wiki-wide version is a sentence in the box.
+- **"Added this week?" is answered from the log, not guessed.** It was a
+  prompt: the model got the last dozen log lines and no idea what day it
+  was, and in a real wiki those twelve lines were all link repairs from
+  twelve days earlier — so the answer named pages that had not been added,
+  in a week that was not this one, plus one page that was in neither and
+  came from the catalog. The plugin now reads the whole log, keeps the
+  entries that actually created a page, filters by date itself, and hands
+  the model only what to describe. When nothing was added it says so, and
+  names the day something last was.
 
 ## 1.0.21 — 2026-09-23
 

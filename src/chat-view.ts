@@ -18,6 +18,10 @@ import {
   vaultHistoryText,
   weightedTerms,
   type VaultDoc,
+  parseLogEntries,
+  isoDaysBefore,
+  pagesAddedSince,
+  lastAddedDate,
 } from './pure';
 import {
   App,
@@ -57,6 +61,7 @@ import {
   scoreEntries,
   type ChatTurnRecord,
   wikiDir,
+  logPath,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
 import { notify, failureText } from './notify';
@@ -1777,6 +1782,56 @@ export class ChatView extends ItemView {
   }
 
   /**
+   * The answer to "what did I add this week", built from the log rather
+   * than asked of the model: the pages are the plugin's, drawn as links,
+   * and the model is handed each page's own summary to describe it. When
+   * nothing was added in the window the line says so and names the day
+   * something last was, which "nothing" alone does not.
+   */
+  private wikiAddedContext(
+    added: { date: string; title: string }[],
+    entries: { title: string; summary: string }[],
+    lastAdded?: string
+  ): Awaited<ReturnType<ChatView['buildContext']>> {
+    const summaryOf = new Map(entries.map((e) => [e.title.toLowerCase(), e.summary]));
+    const hits = added.map((a) => ({
+      title: `${a.title} (${a.date})`,
+      linkPath: `${wikiSourcesDir()}/${a.title}`,
+    }));
+    if (!added.length) {
+      return {
+        systemPrompt:
+          'The user asked what they added to their wiki recently. The plugin has checked the ' +
+          'activity log: nothing was added in the last seven days' +
+          (lastAdded ? `, and the last time anything was added was ${lastAdded}` : '') +
+          '. Say exactly that in one sentence and stop. Do not list pages, do not guess, and ' +
+          'do not describe the wiki.',
+        sourcePath: indexPath(),
+        sources: [],
+        grounding: 'wiki',
+        vault: { kind: 'list' as const, hits: [], adds: false },
+      };
+    }
+    const material = added
+      .map((a) => `## Page: ${a.title} — added ${a.date}\n${summaryOf.get(a.title.toLowerCase()) ?? '(no summary in the index)'}`)
+      .join('\n\n');
+    return {
+      systemPrompt:
+        'The user asked what they added to their wiki recently. The plugin has already read the ' +
+        'activity log and found the pages below, with the date each was added — you are not ' +
+        'being asked to find them, and you cannot. Write one line per page, in the order given: ' +
+        'its title in bold, then what it is about, from its summary below. Add no page that is ' +
+        'not listed, and do not say anything about when: the dates are shown already.\n\n' +
+        'Be concise. Use a markdown list.\n\n' +
+        material,
+      sourcePath: indexPath(),
+      sources: hits,
+      grounding: 'wiki',
+      vault: { kind: 'list' as const, hits: hits.map((h) => ({ ...h, tier: 'about' as const })), adds: false },
+    };
+  }
+
+  /**
    * Vault mode: search every raw note first, then decide what the answer is
    * made of. This is what every "chat with your vault" is underneath — the
    * plugin finds the few notes that matter, the model reads those — and the
@@ -2121,6 +2176,25 @@ export class ChatView extends ItemView {
         );
         return null;
       }
+      // "What did I add to the wiki this week?" is a question about dates,
+      // and the model was being asked to answer it from twelve log lines
+      // with no idea what day it was. In a real vault those twelve lines
+      // were all `relink` entries from twelve days earlier, and the answer
+      // named pages that had not been added, in a week that was not this
+      // one, plus one that was in neither — it came from the catalog. The
+      // plugin knows every date exactly. It answers this itself, and the
+      // model only describes what it is handed, as it does for a Vault list.
+      if (looksLikeRecentQuery(question)) {
+        // The whole log, not readLogTail's last dozen lines: a run of error
+        // entries pushed every real one out of that window, which is how the
+        // model came to answer from relinks twelve days old.
+        const logFile = this.app.vault.getAbstractFileByPath(logPath());
+        const logText = logFile instanceof TFile ? await this.app.vault.cachedRead(logFile) : '';
+        const logEntries = parseLogEntries(logText);
+        const added = pagesAddedSince(logEntries, isoDaysBefore(new Date().toLocaleDateString('en-CA'), 7));
+        return this.wikiAddedContext(added, entries, lastAddedDate(logEntries));
+      }
+
       // A whole-wiki question is not a retrieval problem. Scoring "what
       // connects my pages" against page summaries matches nothing, because the
       // question is about the shape of the collection and not about anything

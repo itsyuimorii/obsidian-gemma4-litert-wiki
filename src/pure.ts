@@ -1446,6 +1446,77 @@ export function looksLikeRefusal(answer: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// The activity log
+// ---------------------------------------------------------------------------
+
+/** One line of `log.md`: `- [2026-09-13] ingest | Closures`. */
+export interface LogEntry {
+  /** ISO date, as written. */
+  date: string;
+  /** ingest, concept, relink, improve, dedupe, retag, schema, answer, error, warning. */
+  action: string;
+  title: string;
+}
+
+/**
+ * The actions that put a new page in the wiki. Everything else in the log
+ * either edits a page that was already there (relink, improve, dedupe,
+ * retag), records a setting (schema) or is not a page at all (error,
+ * warning). Asked what was added, a `relink` line is the wrong answer even
+ * when its date is right — and it was the answer, because the twelve most
+ * recent lines in a real log were all relinks from twelve days earlier.
+ */
+const ADDING_ACTIONS = new Set(['ingest', 'concept']);
+
+export function parseLogEntries(text: string): LogEntry[] {
+  const out: LogEntry[] = [];
+  for (const line of text.split('\n')) {
+    // The current '- [date] action | title' form and the legacy '## [date]'.
+    const m = /^(?:- |## )\[(\d{4}-\d{2}-\d{2})\]\s*([a-z]+)\s*\|\s*(.+)$/.exec(line.trim());
+    if (m) out.push({ date: m[1], action: m[2], title: m[3].trim() });
+  }
+  return out;
+}
+
+/**
+ * The pages added on or after `since`, newest first, one per title.
+ *
+ * `since` and the entries' dates are both plain ISO days, compared as
+ * strings, so no timezone enters into it: the log is written with the
+ * local day and read back the same way.
+ */
+export function pagesAddedSince(entries: readonly LogEntry[], since: string, max = 20): LogEntry[] {
+  const seen = new Set<string>();
+  const out: LogEntry[] = [];
+  for (let i = entries.length - 1; i >= 0 && out.length < max; i--) {
+    const e = entries[i];
+    if (!ADDING_ACTIONS.has(e.action) || e.date < since) continue;
+    const key = e.title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
+/** The ISO day `days` before `today`, both as plain ISO days. */
+export function isoDaysBefore(today: string, days: number): string {
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The most recent day anything was added, for the line that runs when
+ * nothing was added in the window: "nothing this week; the last was on X"
+ * beats "nothing", which reads like the log is broken.
+ */
+export function lastAddedDate(entries: readonly LogEntry[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) if (ADDING_ACTIONS.has(entries[i].action)) return entries[i].date;
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // First-run diagnostics
 // ---------------------------------------------------------------------------
 
