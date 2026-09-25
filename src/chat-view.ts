@@ -250,26 +250,19 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
   // rearranging the furniture in advance.
   //
   // Three because the row is permanent screen space and a fourth wraps on a
-  // narrow panel. Scan takes one because it is an action, and a skill file is
-  // frontmatter plus a prompt with no way to express "do this". The other two
-  // are the questions whose answers are not already sitting in a file you
-  // could open — which is what ruled out "What's in my wiki?" (index.md) and
-  // "Added recently" (log.md, and it duplicated a skills-menu entry).
+  // narrow panel — which it had, since "Added this week?" was added later
+  // and nobody counted. Scan takes one because it is an action, and a skill
+  // file is frontmatter plus a prompt with no way to express "do this". The
+  // other two are the questions whose answers are not already sitting in a
+  // file you could open — which is what ruled out "What's in my wiki?"
+  // (index.md). "What's still open?" went to get back to three: the ⚡ menu's
+  // Find gaps asks the same thing of whatever the chat is grounded in, and
+  // the wiki-wide version of it is one sentence away in the box.
   return [
     { label: 'Scan a folder', action: 'scan' },
     {
       label: 'Find connections',
       ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
-      wholeWiki: true,
-    },
-    {
-      label: "What's still open?",
-      // Wiki-wide, which is what separates it from the "Find gaps" skill:
-      // that one looks for holes in whatever the chat is grounded in right
-      // now, this one looks across everything filed.
-      ask:
-        'What questions do my pages raise but never answer? List the gaps and why each ' +
-        'matters. Cite the pages.',
       wholeWiki: true,
     },
     {
