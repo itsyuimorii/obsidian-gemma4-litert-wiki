@@ -10,3 +10,5 @@ gemma-4-E4B-it-web.litertlm
 
 # Per-user runtime settings (each install differs)
 data.json
+
+local-stats/

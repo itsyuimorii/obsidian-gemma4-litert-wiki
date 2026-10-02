@@ -18,10 +18,6 @@ import {
   vaultHistoryText,
   weightedTerms,
   type VaultDoc,
-  parseLogEntries,
-  recentlyAdded,
-  describeRecency,
-  ADDED_SHOWN,
 } from './pure';
 import {
   App,
@@ -61,7 +57,6 @@ import {
   scoreEntries,
   type ChatTurnRecord,
   wikiDir,
-  logPath,
 } from './wiki-store';
 import { IngestPreviewModal } from './ingest-modal';
 import { notify, failureText } from './notify';
@@ -244,7 +239,7 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
       { label: 'Ingest this note into wiki', action: 'ingest' },
     ];
   }
-  // Three, fixed, and the same whatever state the wiki is in.
+  // Fixed, and the same whatever state the wiki is in.
   //
   // An earlier version swapped these out for "Scan a folder / File this note"
   // when nothing was filed yet. It meant the row you learned was not the row
@@ -254,33 +249,19 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
   // the buttons to fix it — the remedy travels with the problem instead of
   // rearranging the furniture in advance.
   //
-  // Three because the row is permanent screen space and a fourth wraps on a
-  // narrow panel — which it had, since "Added this week?" was added later
-  // and nobody counted. Scan takes one because it is an action, and a skill
-  // file is frontmatter plus a prompt with no way to express "do this". The
-  // other two are the questions whose answers are not already sitting in a
-  // file you could open — which is what ruled out "What's in my wiki?"
-  // (index.md). "What's still open?" went to get back to three: the ⚡ menu's
-  // Find gaps asks the same thing of whatever the chat is grounded in, and
-  // the wiki-wide version of it is one sentence away in the box.
+  // Two, because the row is permanent screen space and only two things
+  // earn it. Scan takes one because it is an action, and a skill file is
+  // frontmatter plus a prompt with no way to express "do this". Find
+  // connections is the question this mode exists for, and the one whose
+  // answer is not already sitting in a file you could open — which is what
+  // ruled out "What's in my wiki?" (index.md) and, in the end, "Added
+  // recently?" too: that list is index.md, dated, without asking anything.
+  // "What's still open?" went the same way, to the ⚡ menu's Find gaps.
   return [
     { label: 'Scan a folder', action: 'scan' },
     {
       label: 'Find connections',
       ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
-      wholeWiki: true,
-    },
-    {
-      // The activity log rides along with every wiki answer, so this question
-      // is answerable here and nowhere else. It is also the third question
-      // whose shape says what this mode is: about the collection, over time.
-      //
-      // "Recently", not "this week": a wiki gets built in a burst and then
-      // left alone, so any fixed window is empty most of the time, and
-      // "nothing this week" is a dead end. The answer is the pages newest
-      // first with a line saying how old they are — see wikiAddedContext.
-      label: 'Added recently?',
-      ask: 'What did I add to the wiki recently? List the pages and what each is about. Cite the pages.',
       wholeWiki: true,
     },
   ];
@@ -404,7 +385,7 @@ const MODE_GUIDE: Record<
   wiki: {
     title: 'Ask the cards in {wiki}/',
     reads: '',
-    goodFor: 'Good for: what connects the cards, what is still open, what you filed recently.',
+    goodFor: 'Good for: what connects the cards, and what your filed pages say together.',
     others: [
       ['vault', 'Vault', LINE_VAULT],
       ['note', 'This note', LINE_NOTE],
@@ -1787,68 +1768,6 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * The answer to "what did I add this week", built from the log rather
-   * than asked of the model: the pages are the plugin's, drawn as links,
-   * and the model is handed each page's own summary to describe it. When
-   * nothing was added in the window the line says so and names the day
-   * something last was, which "nothing" alone does not.
-   */
-  private wikiAddedContext(
-    added: { date: string; title: string }[],
-    entries: { title: string; summary: string }[]
-  ): Awaited<ReturnType<ChatView['buildContext']>> {
-    const summaryOf = new Map(entries.map((e) => [e.title.toLowerCase(), e.summary]));
-    // Only the newest few get a chip and a line. The rest is a count and a
-    // link to the index, which is the file that exists to hold the full list.
-    const shown = added.slice(0, ADDED_SHOWN);
-    const hits = shown.map((a) => ({
-      title: `${a.title} (${a.date})`,
-      linkPath: `${wikiSourcesDir()}/${a.title}`,
-    }));
-    // Only a wiki nothing was ever filed into reaches this, and that case is
-    // already answered by the empty-index message above.
-    if (!added.length) {
-      return {
-        systemPrompt:
-          'The activity log records no page ever being added to this wiki. Say exactly that in ' +
-          'one sentence and stop. Do not list pages, do not guess, do not describe the wiki.',
-        sourcePath: indexPath(),
-        sources: [],
-        grounding: 'wiki',
-        vault: { kind: 'list' as const, hits: [], adds: false, label: 'Nothing has been added yet' },
-      };
-    }
-    const material = shown
-      .map((a) => `## Page: ${a.title} — added ${a.date}\n${summaryOf.get(a.title.toLowerCase()) ?? '(no summary in the index)'}`)
-      .join('\n\n');
-    return {
-      systemPrompt:
-        'The user asked what they added to their wiki recently. The plugin has already read the ' +
-        'activity log; the newest few pages are below, with the date each was added. You are not ' +
-        'being asked to find them, and you cannot. Write one line per page, in the order given: ' +
-        'its title in bold, then what it is about, from its summary below. Add no page that is ' +
-        'not listed, and do not offer to list more. Say nothing about when, and nothing about ' +
-        'weeks: the dates are already shown and the line above the list has already said how ' +
-        'recent they are, and how many there are in total.\n\n' +
-        'Be concise. Use a markdown list.\n\n' +
-        material,
-      sourcePath: indexPath(),
-      sources: hits,
-      grounding: 'wiki',
-      vault: {
-        kind: 'list' as const,
-        hits: hits.map((h) => ({ ...h, tier: 'about' as const })),
-        adds: false,
-        label: describeRecency(added[0].date, new Date().toLocaleDateString('en-CA'), added.length),
-        more:
-          added.length > shown.length
-            ? { text: `${added.length - shown.length} more in ${indexPath()}`, linkPath: indexPath().replace(/\.md$/, '') }
-            : undefined,
-      },
-    };
-  }
-
-  /**
    * Vault mode: search every raw note first, then decide what the answer is
    * made of. This is what every "chat with your vault" is underneath — the
    * plugin finds the few notes that matter, the model reads those — and the
@@ -2162,10 +2081,6 @@ export class ChatView extends ItemView {
       adds?: boolean;
       /** The box beside the pills was unticked: no search ran, and the line above the answer says so. */
       skipped?: boolean;
-      /** Replaces the tier counts above a list, for a list that is not search results. */
-      label?: string;
-      /** A closing link for the rest of a list that is deliberately not shown in full. */
-      more?: { text: string; linkPath: string };
     };
   } | null> {
     // Escape hatch (issue #7): the user explicitly asked to bypass grounding
@@ -2197,23 +2112,6 @@ export class ChatView extends ItemView {
         );
         return null;
       }
-      // "What did I add to the wiki this week?" is a question about dates,
-      // and the model was being asked to answer it from twelve log lines
-      // with no idea what day it was. In a real vault those twelve lines
-      // were all `relink` entries from twelve days earlier, and the answer
-      // named pages that had not been added, in a week that was not this
-      // one, plus one that was in neither — it came from the catalog. The
-      // plugin knows every date exactly. It answers this itself, and the
-      // model only describes what it is handed, as it does for a Vault list.
-      if (looksLikeRecentQuery(question)) {
-        // The whole log, not readLogTail's last dozen lines: a run of error
-        // entries pushed every real one out of that window, which is how the
-        // model came to answer from relinks twelve days old.
-        const logFile = this.app.vault.getAbstractFileByPath(logPath());
-        const logText = logFile instanceof TFile ? await this.app.vault.cachedRead(logFile) : '';
-        return this.wikiAddedContext(recentlyAdded(parseLogEntries(logText)), entries);
-      }
-
       // A whole-wiki question is not a retrieval problem. Scoring "what
       // connects my pages" against page summaries matches nothing, because the
       // question is about the shape of the collection and not about anything
@@ -2251,6 +2149,7 @@ export class ChatView extends ItemView {
       }
       return {
         systemPrompt:
+          `Today is ${new Date().toLocaleDateString('en-CA')}. ` +
           "Use ONLY the material below about the user's personal wiki: " +
           'the catalog (every wiki page with a one-line summary), the recent activity log ' +
           '(dated ingest/answer entries), and ' +
@@ -2663,9 +2562,7 @@ export class ChatView extends ItemView {
         const nMention = hits.length - nAbout;
         list.createSpan({
           cls: 'gemma4-chat-vault-list-label',
-          // A list of search results says how it was tiered; a list of what
-          // was added says how recent it is. The caller that knows supplies it.
-          text: context.vault.label ?? `${nAbout} about · ${nMention} mention${nMention === 1 ? 's' : ''} it`,
+          text: `${nAbout} about · ${nMention} mention${nMention === 1 ? 's' : ''} it`,
         });
         for (const hit of hits) {
           const a = list.createEl('a', {
@@ -2676,14 +2573,6 @@ export class ChatView extends ItemView {
           a.addEventListener('click', (evt) => {
             evt.preventDefault();
             void this.app.workspace.openLinkText(hit.linkPath, '', false);
-          });
-        }
-        const more = context.vault.more;
-        if (more) {
-          const rest = list.createEl('a', { cls: 'gemma4-chat-source-link gemma4-chat-source-mention', text: more.text });
-          rest.addEventListener('click', (evt) => {
-            evt.preventDefault();
-            void this.app.workspace.openLinkText(more.linkPath, '', false);
           });
         }
       } else if (context.vault?.kind === 'both') {

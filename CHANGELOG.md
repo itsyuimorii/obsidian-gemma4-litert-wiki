@@ -27,21 +27,14 @@ The row under the chat box fits, whatever width the sidebar is.
 - **Wiki mode is back to three chips.** There were four, so the row wrapped.
   *What's still open?* goes: the skills menu already asks it of whatever the
   chat is grounded in, and the wiki-wide version is a sentence in the box.
-- **"Added recently?" is answered from the log, not guessed.** It was
-  *Added this week?*, and it was a prompt: the model got the last dozen log
-  lines and no indication of what day it was, and in a real wiki those
-  twelve lines were all link repairs from twelve days earlier — so the
-  answer named pages that had not been added, in a week that was not this
-  one, plus one page that was in neither and came from the catalog. The
-  plugin now reads the whole log and keeps only the entries that actually
-  created a page. One line says how many and how recent — *34 pages added,
-  the last one 3 days ago*, or *nothing in the last week; the most recent
-  was 12 days ago* — then the three newest as links, then a link to
-  `index.md` for the rest, which is the file that exists to hold the full
-  list. The model describes those three from their own summaries and
-  nothing else. A wiki built in a burst and then left alone no longer
-  answers "nothing", and one filled in an afternoon no longer answers with
-  a wall.
+- **Wiki mode has two chips: Scan a folder and Find connections.** There
+  were four, so the row wrapped. *What's still open?* is the skills menu's
+  Find gaps, asked of the whole wiki in one typed sentence. *Added
+  recently?* was `index.md` with dates on it — and it had been answering
+  from a prompt, so the model was given a dozen log lines and no idea what
+  day it was, and named pages that had not been added in a week that was
+  not this one. The wiki prompt now carries today's date, so a date
+  question typed into the box is not answered blind.
 
 ## 1.0.21 — 2026-09-23
 
