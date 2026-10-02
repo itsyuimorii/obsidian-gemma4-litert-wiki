@@ -239,7 +239,7 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
       { label: 'Ingest this note into wiki', action: 'ingest' },
     ];
   }
-  // Three, fixed, and the same whatever state the wiki is in.
+  // Fixed, and the same whatever state the wiki is in.
   //
   // An earlier version swapped these out for "Scan a folder / File this note"
   // when nothing was filed yet. It meant the row you learned was not the row
@@ -249,28 +249,19 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
   // the buttons to fix it — the remedy travels with the problem instead of
   // rearranging the furniture in advance.
   //
-  // Three because the row is permanent screen space and a fourth wraps on a
-  // narrow panel — which it had, since "Added this week?" was added later
-  // and nobody counted. Scan takes one because it is an action, and a skill
-  // file is frontmatter plus a prompt with no way to express "do this". The
-  // other two are the questions whose answers are not already sitting in a
-  // file you could open — which is what ruled out "What's in my wiki?"
-  // (index.md). "What's still open?" went to get back to three: the ⚡ menu's
-  // Find gaps asks the same thing of whatever the chat is grounded in, and
-  // the wiki-wide version of it is one sentence away in the box.
+  // Two, because the row is permanent screen space and only two things
+  // earn it. Scan takes one because it is an action, and a skill file is
+  // frontmatter plus a prompt with no way to express "do this". Find
+  // connections is the question this mode exists for, and the one whose
+  // answer is not already sitting in a file you could open — which is what
+  // ruled out "What's in my wiki?" (index.md) and, in the end, "Added
+  // recently?" too: that list is index.md, dated, without asking anything.
+  // "What's still open?" went the same way, to the ⚡ menu's Find gaps.
   return [
     { label: 'Scan a folder', action: 'scan' },
     {
       label: 'Find connections',
       ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
-      wholeWiki: true,
-    },
-    {
-      // The activity log rides along with every wiki answer, so "this week"
-      // is answerable here and nowhere else. It is also the third question
-      // whose shape says what this mode is: about the collection, over time.
-      label: 'Added this week?',
-      ask: 'What did I add to the wiki this week? List the pages and what each is about. Cite the pages.',
       wholeWiki: true,
     },
   ];
@@ -394,7 +385,7 @@ const MODE_GUIDE: Record<
   wiki: {
     title: 'Ask the cards in {wiki}/',
     reads: '',
-    goodFor: 'Good for: what connects the cards, what is still open, what you filed this week.',
+    goodFor: 'Good for: what connects the cards, and what your filed pages say together.',
     others: [
       ['vault', 'Vault', LINE_VAULT],
       ['note', 'This note', LINE_NOTE],
@@ -2158,6 +2149,7 @@ export class ChatView extends ItemView {
       }
       return {
         systemPrompt:
+          `Today is ${new Date().toLocaleDateString('en-CA')}. ` +
           "Use ONLY the material below about the user's personal wiki: " +
           'the catalog (every wiki page with a one-line summary), the recent activity log ' +
           '(dated ingest/answer entries), and ' +
