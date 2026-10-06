@@ -25,7 +25,7 @@ export interface GemmaWikiSettings {
   // grounding per answer, at the cost of GPU memory and first-token latency.
   // Applied at engine creation, so changes need a plugin reload.
   contextTokens: number;
-  // Show the four [Test] diagnostic commands in the palette. Off by default:
+  // Show the [Test] diagnostic commands in the palette. Off by default:
   // they are debugging tools, not things to do with your notes.
   devCommands: boolean;
   staleDays: number;
@@ -188,9 +188,9 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
           {
             name: 'Developer commands',
             desc:
-              'Adds four [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
-              'the model, fix grammar of a selection with timings, and a JSON-reliability run. They ' +
-              'are for diagnosing a broken setup, not for working with notes. Off by default.',
+              'Adds the [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
+              'the model, time a grammar fix, run the JSON-reliability test, and benchmark this ' +
+              'machine. They are for diagnosing a broken setup, not for working with notes. Off by default.',
             aliases: ['debug', 'diagnostics', 'test commands'],
             control: { type: 'toggle', key: 'devCommands' },
           },
@@ -520,9 +520,9 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Developer commands')
       .setDesc(
-        'Adds four [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
-          'the model, fix grammar of a selection with timings, and a JSON-reliability run. They ' +
-          'are for diagnosing a broken setup, not for working with notes. Off by default.'
+        'Adds the [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
+          'the model, time a grammar fix, run the JSON-reliability test, and benchmark this ' +
+          'machine. They are for diagnosing a broken setup, not for working with notes. Off by default.'
       )
       .addToggle((t) =>
         t.setValue(this.plugin.settings.devCommands).onChange(async (v) => {
