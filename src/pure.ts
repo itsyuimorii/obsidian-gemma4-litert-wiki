@@ -357,6 +357,59 @@ export function subjectOf(question: string): string {
   return prefixWords <= 8 ? m[2].trim() : question.trim();
 }
 
+/**
+ * What a question is searched as, given the one asked before it.
+ *
+ * The model is handed the earlier turns, so it knows what "in an interview"
+ * continues. Retrieval is not handed anything: it matched the fragment's own
+ * words, and the answer was grounded in interview notes — or reported that
+ * nothing was found — before the model read a word of history. A question
+ * too short to name its own subject is searched together with the previous
+ * one.
+ *
+ * Short is at most three terms and twenty-four columns, a CJK character
+ * counting two. That takes in "why?", "and for arrays?", "in an interview",
+ * and leaves alone any question long enough to stand by itself. It also
+ * takes in a short new subject ("what about coffee"); the cost there is one
+ * extra note read, where the cost of missing a follow-up is the wrong answer.
+ *
+ * A question about the vault itself is never a follow-up to a subject.
+ */
+export function followUpQuery(question: string, previous: string | undefined): string {
+  const q = question.trim();
+  const prev = previous?.trim();
+  if (!q || !prev || prev === q) return question;
+  if (looksLikeRecentQuery(q) || looksLikeListQuery(q) || looksLikeCollectionQuery(q) || asksAboutOwnNotes(q)) {
+    return question;
+  }
+  const width = [...q].reduce((n, ch) => n + (CJK_CHAR.test(ch) ? 2 : 1), 0);
+  if (width > 24 || queryTerms(q).length > 3) return question;
+  return `${prev} ${q}`;
+}
+
+/**
+ * The thread a question belongs to: the key its turn is recorded under and
+ * the key its history is read by. One definition, because they were two.
+ * Vault with the search box unticked and nothing attached answers from the
+ * model alone, and that turn was recorded as 'direct' while the next
+ * question asked for the history of 'vault' — so a follow-up to a general
+ * question reached the model with nothing before it.
+ */
+export function groundingKeyFor(o: {
+  ungrounded: boolean;
+  wholeWiki: boolean;
+  mode: 'note' | 'wiki' | 'vault';
+  searchNotes: boolean;
+  /** How many notes are attached with the + button. */
+  attached: number;
+  notePath: string;
+}): string {
+  if (o.ungrounded) return 'direct';
+  if (o.mode === 'vault') return o.searchNotes || o.attached > 0 ? 'vault' : 'direct';
+  if (o.mode === 'wiki') return o.wholeWiki ? 'wiki:all' : 'wiki';
+  return `note:${o.notePath}`;
+}
+
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
   const terms = queryTerms(question);
   if (!terms.length) return [];
