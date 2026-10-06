@@ -410,6 +410,53 @@ export function groundingKeyFor(o: {
   return `note:${o.notePath}`;
 }
 
+/** The fields of a recorded turn that decide whether and how it goes back to the model. */
+export interface HistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  grounding?: string;
+  historyText?: string;
+}
+
+/**
+ * The earlier turns a question is sent with: those filed under `grounding`,
+ * most recent first until `ceiling` tokens are spent, returned in the order
+ * they were said. `cost` is the token estimate, passed in because the one
+ * the plugin uses lives beside the vault code.
+ */
+export function pickHistory(
+  turns: readonly HistoryTurn[],
+  grounding: string,
+  ceiling: number,
+  cost: (text: string) => number
+): { role: 'user' | 'assistant'; content: string }[] {
+  const picked: { role: 'user' | 'assistant'; content: string }[] = [];
+  let spent = 0;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.grounding !== grounding) continue;
+    // A thread saved before historyText existed still carries the two-part
+    // answer whole; cut it at the marker the second part was joined with.
+    const text =
+      t.historyText ??
+      (t.role === 'assistant' && grounding === 'vault'
+        ? t.content.split(/\n\n---\n\*\*Gemma 4 E4B adds/)[0]
+        : t.content);
+    const c = cost(text);
+    if (spent + c > ceiling) break;
+    spent += c;
+    picked.unshift({ role: t.role, content: text });
+  }
+  // Never open on an assistant turn: a leading answer with no question in
+  // front of it reads as something the user said.
+  while (picked.length && picked[0].role === 'assistant') picked.shift();
+  // Nor end on a user turn. One can only be there if its generation failed
+  // — the assistant turn is recorded on success — and a question with no
+  // answer under it invites the model to answer that one instead of this.
+  while (picked.length && picked.at(-1)!.role === 'user') picked.pop();
+  return picked;
+}
+
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
   const terms = queryTerms(question);
   if (!terms.length) return [];
