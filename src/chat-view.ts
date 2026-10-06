@@ -16,6 +16,7 @@ import {
   subjectOf,
   followUpQuery,
   groundingKeyFor,
+  pickHistory,
   VAULT_MATCH_MIN,
   vaultHistoryText,
   weightedTerms,
@@ -2424,7 +2425,9 @@ export class ChatView extends ItemView {
       wholeWiki,
       mode: this.mode,
       searchNotes: this.searchNotes,
-      attached: this.attachedFiles.length,
+      // Counted the way readAttachments reads them: a pill whose note is gone
+      // contributes nothing, and the turn is then filed as the model alone.
+      attached: this.attachedFiles.filter((f) => this.app.vault.getAbstractFileByPath(f.path) === f).length,
       notePath: this.app.workspace.getActiveFile()?.path ?? '',
     });
   }
@@ -2437,31 +2440,7 @@ export class ChatView extends ItemView {
     // generation with nothing the user can act on. What history takes here,
     // buildContext gives up in material.
     const ceiling = Math.max(600, Math.floor(this.plugin.budget('chat') * 0.15));
-    const picked: { role: 'user' | 'assistant'; content: string }[] = [];
-    let spent = 0;
-    for (let i = this.turns.length - 1; i >= 0; i--) {
-      const t = this.turns[i];
-      if (t.grounding !== grounding) continue;
-      // A thread saved before historyText existed still carries the two-part
-      // answer whole; cut it at the marker the second part was joined with.
-      const text =
-        t.historyText ??
-        (t.role === 'assistant' && grounding === 'vault'
-          ? t.content.split(/\n\n---\n\*\*Gemma 4 E4B adds/)[0]
-          : t.content);
-      const cost = estimateTokens(text);
-      if (spent + cost > ceiling) break;
-      spent += cost;
-      picked.unshift({ role: t.role, content: text });
-    }
-    // Never open on an assistant turn: a leading answer with no question in
-    // front of it reads as something the user said.
-    while (picked.length && picked[0].role === 'assistant') picked.shift();
-    // Nor end on a user turn. One can only be there if its generation failed
-    // — the assistant turn is recorded on success — and a question with no
-    // answer under it invites the model to answer that one instead of this.
-    while (picked.length && picked.at(-1)!.role === 'user') picked.pop();
-    return picked;
+    return pickHistory(this.turns, grounding, ceiling, estimateTokens);
   }
 
   private async runGeneration(question: string, ungrounded = false, wholeWiki = false, promptLabel?: string) {
