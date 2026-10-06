@@ -457,6 +457,71 @@ export function pickHistory(
   return picked;
 }
 
+/** What one wiki page contributes to concept clustering. */
+export interface ConceptSource {
+  linkPath: string;
+  tags: string[];
+  mentions: string[];
+  /** A concept page is named by its subject, so it is never a member of one. */
+  isConcept: boolean;
+}
+
+export interface ConceptCluster {
+  /** slugify() of the subject: what groups spellings, and the page's filename. */
+  key: string;
+  /** The first spelling seen. */
+  label: string;
+  /** linkPaths of the pages that share the subject, in the order they were seen. */
+  members: string[];
+}
+
+/** Tags that mark what a page IS, not what it is about. */
+const CONCEPT_SKIP = new Set(['concept', 'answer', 'chat']);
+
+/**
+ * The subjects enough pages share to deserve a page above them.
+ *
+ * Pages are grouped by shared tag AND by shared mention (#48): mentions are
+ * the entities ingest already extracts, and "the things several pages talk
+ * about" is what a concept page is for. Grouped case-insensitively through
+ * slugify(); a page carrying one subject as both a tag and a mention counts
+ * once. Largest cluster first.
+ *
+ * Here rather than in the command, because two things ask this question: the
+ * picker that builds a concept page, and the Tidy check that reports the
+ * subjects still without one.
+ */
+export function conceptClusters(pages: readonly ConceptSource[], minMembers: number): ConceptCluster[] {
+  const clusters = new Map<string, ConceptCluster>();
+  const addTo = (key: string, label: string, linkPath: string) => {
+    let c = clusters.get(key);
+    if (!c) {
+      c = { key, label, members: [] };
+      clusters.set(key, c);
+    }
+    if (!c.members.includes(linkPath)) c.members.push(linkPath);
+  };
+  for (const page of pages) {
+    // On every rebuild the coffee concept landed in the coffee cluster and
+    // listed itself under ## Pages; skipping the 'concept' KEY was not
+    // enough, since the page also carries its own subject as a tag (#62).
+    if (page.isConcept) continue;
+    for (const t of page.tags) {
+      if (CONCEPT_SKIP.has(t)) continue;
+      addTo(slugify(t), t, page.linkPath);
+    }
+    for (const m of page.mentions) {
+      if (!m.trim()) continue;
+      const key = slugify(m);
+      if (!key || CONCEPT_SKIP.has(key)) continue;
+      addTo(key, m.trim(), page.linkPath);
+    }
+  }
+  return [...clusters.values()]
+    .filter((c) => c.members.length >= minMembers)
+    .sort((a, b) => b.members.length - a.members.length);
+}
+
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
   const terms = queryTerms(question);
   if (!terms.length) return [];

@@ -13,6 +13,7 @@ import {
   buildSchemaFile,
   buildWikiPage,
   conceptPagePath,
+  conceptSources,
   ensureSkillsScaffold,
   ensureWikiScaffold,
   fmOf,
@@ -41,7 +42,7 @@ import {
   type NoteExtraction,
 } from './wiki-store';
 import { findSameSubject, runLint, TidyModal, type TagHealth } from './lint';
-import type { DuplicatePair } from './pure';
+import { conceptClusters, type DuplicatePair } from './pure';
 import {
   collectWikiPages,
   ContradictionReportModal,
@@ -2525,58 +2526,14 @@ export default class LiteRtSpikePlugin extends Plugin {
     // threshold there actually changes what is offered.
     const { conceptThreshold } = await readSchema(this.app.vault);
     const minMembers = Math.max(2, conceptThreshold);
-    // Cluster pages by shared tag AND by shared mention (#48). Mentions are
-    // the entities ingest already extracts — "the things several pages talk
-    // about" is exactly what a concept page is for, so they are a second,
-    // finer-grained source of candidates. It also gives the mentions field a
-    // real consumer instead of being write-only. Grouped case-insensitively;
-    // the first spelling seen names the cluster.
+    // Clustered by shared tag and by shared mention (#48) — see
+    // conceptClusters, which the Tidy check asks the same question of.
     const entries = await readIndexEntries(this.app.vault);
     const byLinkPath = new Map(entries.map((e) => [e.linkPath, e]));
-    const clusters = new Map<string, IndexEntry[]>();
-    const clusterLabel = new Map<string, string>();
-    const SKIP = new Set(['concept', 'answer', 'chat']);
-    const addTo = (key: string, label: string, entry: IndexEntry) => {
-      if (!clusterLabel.has(key)) clusterLabel.set(key, label);
-      const list = clusters.get(key) ?? [];
-      // A page can carry the same subject as both a tag and a mention.
-      if (!list.some((e) => e.linkPath === entry.linkPath)) list.push(entry);
-      clusters.set(key, list);
-    };
-    for (const f of this.app.vault.getMarkdownFiles()) {
-      if (!isWikiPage(f)) continue;
-      const entry = byLinkPath.get(f.path.replace(/\.md$/, ''));
-      if (!entry) continue;
-      const fm = fmOf(this.app, f);
-      // A concept page is never a MEMBER of a cluster — it carries its own
-      // subject as a tag ([concept, coffee]), so on every rebuild the coffee
-      // concept landed in the coffee cluster and listed itself under
-      // ## Pages. Skipping the 'concept' cluster KEY was not enough (#62).
-      if (fm?.kind === 'concept') continue;
-      const raw = fm?.tags;
-      const tags = Array.isArray(raw)
-        ? raw.map((t) => String(t))
-        : typeof raw === 'string'
-          ? raw.split(/[,\s]+/).filter(Boolean)
-          : [];
-      for (const t of tags) {
-        if (SKIP.has(t)) continue;
-        addTo(slugify(t), t, entry);
-      }
-      const rawMentions = fm?.mentions;
-      const mentions = Array.isArray(rawMentions)
-        ? rawMentions.map((m) => String(m)).filter((m) => m.trim())
-        : [];
-      for (const m of mentions) {
-        const key = slugify(m);
-        if (!key || SKIP.has(key)) continue;
-        addTo(key, m.trim(), entry);
-      }
-    }
-    const candidates = [...clusters.entries()]
-      .filter(([, members]) => members.length >= minMembers)
-      .map(([key, members]) => ({ tag: clusterLabel.get(key) ?? key, members }))
-      .sort((a, b) => b.members.length - a.members.length);
+    const candidates = conceptClusters(conceptSources(this.app, entries), minMembers).map((c) => ({
+      tag: c.label,
+      members: c.members.flatMap((linkPath) => byLinkPath.get(linkPath) ?? []),
+    }));
 
     if (!candidates.length) {
       notify(
