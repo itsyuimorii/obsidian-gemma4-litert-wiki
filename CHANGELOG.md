@@ -27,6 +27,14 @@ The row under the chat box fits, whatever width the sidebar is.
 - **Wiki mode is back to three chips.** There were four, so the row wrapped.
   *What's still open?* goes: the skills menu already asks it of whatever the
   chat is grounded in, and the wiki-wide version is a sentence in the box.
+- **Wiki mode has two chips: Scan a folder and Find connections.** There
+  were four, so the row wrapped. *What's still open?* is the skills menu's
+  Find gaps, asked of the whole wiki in one typed sentence. *Added
+  recently?* was `index.md` with dates on it — and it had been answering
+  from a prompt, so the model was given a dozen log lines and no idea what
+  day it was, and named pages that had not been added in a week that was
+  not this one. The wiki prompt now carries today's date, so a date
+  question typed into the box is not answered blind.
 
 ## 1.0.21 — 2026-09-23
 
