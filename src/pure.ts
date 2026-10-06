@@ -410,6 +410,32 @@ export function groundingKeyFor(o: {
   return `note:${o.notePath}`;
 }
 
+/**
+ * The least of an answer worth sending as history, in tokens. Under this a
+ * clipped answer is a sentence fragment, and no history reads better than
+ * a broken one.
+ */
+const MIN_CLIPPED_ANSWER = 40;
+
+/**
+ * The longest opening of `text` that costs at most `room`, marked as cut.
+ * The opening rather than the end: an answer leads with what it answers.
+ */
+function clipToCost(text: string, room: number, cost: (text: string) => number): string {
+  if (cost(text) <= room) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (cost(text.slice(0, mid)) <= room) lo = mid;
+    else hi = mid - 1;
+  }
+  // Not half of a surrogate pair.
+  const code = text.charCodeAt(lo - 1);
+  if (code >= 0xd800 && code <= 0xdbff) lo--;
+  return `${text.slice(0, lo).trimEnd()}…`;
+}
+
 /** The fields of a recorded turn that decide whether and how it goes back to the model. */
 export interface HistoryTurn {
   role: 'user' | 'assistant';
@@ -423,6 +449,13 @@ export interface HistoryTurn {
  * most recent first until `ceiling` tokens are spent, returned in the order
  * they were said. `cost` is the token estimate, passed in because the one
  * the plugin uses lives beside the vault code.
+ *
+ * The most recent answer is the one a follow-up continues, so it is the one
+ * turn that is shortened rather than dropped. At a small context window the
+ * ceiling is 600 tokens and an answer may run to 1024: stopping at the first
+ * turn that did not fit meant one long answer left the next question with no
+ * history at all (#162). It is cut to what is left after its own question,
+ * and kept only if a useful amount survives.
  */
 export function pickHistory(
   turns: readonly HistoryTurn[],
@@ -443,7 +476,17 @@ export function pickHistory(
         ? t.content.split(/\n\n---\n\*\*Gemma 4 E4B adds/)[0]
         : t.content);
     const c = cost(text);
-    if (spent + c > ceiling) break;
+    if (spent + c > ceiling) {
+      if (t.role !== 'assistant' || picked.some((p) => p.role === 'assistant')) break;
+      const question = turns.slice(0, i).reverse().find((q) => q.grounding === grounding);
+      if (question?.role !== 'user') break;
+      const room = ceiling - spent - cost(question.historyText ?? question.content);
+      if (room < MIN_CLIPPED_ANSWER) break;
+      const clipped = clipToCost(text, room, cost);
+      spent += cost(clipped);
+      picked.unshift({ role: t.role, content: clipped });
+      continue;
+    }
     spent += c;
     picked.unshift({ role: t.role, content: text });
   }
