@@ -14,6 +14,8 @@ import {
   standingInstructions,
   stripLeadingRefusal,
   subjectOf,
+  followUpQuery,
+  groundingKeyFor,
   VAULT_MATCH_MIN,
   vaultHistoryText,
   weightedTerms,
@@ -1783,7 +1785,8 @@ export class ChatView extends ItemView {
    */
   private async buildVaultContext(
     question: string,
-    historyTokens: number
+    historyTokens: number,
+    searchAs = question
   ): Promise<Awaited<ReturnType<ChatView['buildContext']>>> {
     const prefix = `${wikiDir()}/`;
     const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix));
@@ -1893,13 +1896,13 @@ export class ChatView extends ItemView {
     // What the subject IS, from the model, before what the notes SAY. The
     // line that said "Searching N notes…" now says what it is searching
     // for, so the reading the model gave the question is visible.
-    const subject = subjectOf(question);
+    const subject = subjectOf(searchAs);
     const extra = await this.expandSubject(subject);
     if (this.searchingEl) {
       const shown = [subject, ...extra].slice(0, 7).join(', ');
       this.searchingEl.setText(`Searching ${files.length} notes for: ${shown}${extra.length > 6 ? '…' : ''}`);
     }
-    const ranked = rankVaultDocs(question, docs, 80, extra);
+    const ranked = rankVaultDocs(searchAs, docs, 80, extra);
     const rankedSet = new Set(ranked.map((h) => h.path));
     const toRead = files.length <= 400 ? files : files.filter((f) => rankedSet.has(f.path));
     const bodies = new Map<string, string>();
@@ -1908,7 +1911,7 @@ export class ChatView extends ItemView {
     // bar is only "a subject term is in it"; an answer question keeps the
     // rarity threshold, since one mention of a common word is not material.
     const listQuestion = looksLikeListQuery(question);
-    const allHits = dedupeByName(rescoreWithBodies(question, ranked, bodies, 12, listQuestion ? 0.05 : VAULT_MATCH_MIN, extra));
+    const allHits = dedupeByName(rescoreWithBodies(searchAs, ranked, bodies, 12, listQuestion ? 0.05 : VAULT_MATCH_MIN, extra));
     const about = allHits.filter((h) => h.tier === 'about');
     const mentions = allHits.filter((h) => h.tier === 'mentions');
     // The notes read are the ones ABOUT the subject; a note that names it
@@ -1957,14 +1960,17 @@ export class ChatView extends ItemView {
         sourcePath: indexPath(),
         sources: [],
         ungrounded: true,
-        grounding: 'direct',
+        // The Vault thread, like the turn renderNothingFound records under
+        // it. Filed as 'direct' the question sat in a thread nobody had
+        // opened, and the follow-up to it found no question before it.
+        grounding: 'vault',
         vault: { kind: 'none', hits: mentions.slice(0, 6).map((h) => ({ ...titled(h.path), tier: 'mentions' as const })) },
       };
     }
 
     // The same weights the ranking used, heaviest first: the excerpt of a
     // note is the text around the words that got it here.
-    const terms = weightedTerms(question, bodies, extra)
+    const terms = weightedTerms(searchAs, bodies, extra)
       .filter((w) => w.weight > 0)
       .sort((a, b) => b.weight - a.weight)
       .map(({ t, whole }) => ({ t, whole }));
@@ -2056,7 +2062,9 @@ export class ChatView extends ItemView {
     question: string,
     ungrounded = false,
     wholeWiki = false,
-    historyTokens = 0
+    historyTokens = 0,
+    /** The question as retrieval should read it — see followUpQuery. */
+    searchAs = question
   ): Promise<{
     systemPrompt: string;
     sourcePath: string;
@@ -2096,7 +2104,7 @@ export class ChatView extends ItemView {
       };
     }
     if (this.mode === 'vault') {
-      return this.buildVaultContext(question, historyTokens);
+      return this.buildVaultContext(question, historyTokens, searchAs);
     }
     if (this.mode === 'wiki') {
       const entries = await readIndexEntries(this.app.vault);
@@ -2117,7 +2125,7 @@ export class ChatView extends ItemView {
       // question is about the shape of the collection and not about anything
       // in it — so every page is the right answer to "which pages", and
       // loadPages fills up to the budget and stops.
-      const selected = wholeWiki ? entries : scoreEntries(question, entries);
+      const selected = wholeWiki ? entries : scoreEntries(searchAs, entries);
       // Expand one hop through the link graph (issue #14): a page linked to
       // or from a lexical hit often holds the answer even when its own summary
       // didn't share the question's words. Seeds still decide noPageMatch.
@@ -2411,10 +2419,14 @@ export class ChatView extends ItemView {
   }
 
   private groundingKey(ungrounded: boolean, wholeWiki: boolean): string {
-    if (ungrounded) return 'direct';
-    if (this.mode === 'vault') return 'vault';
-    if (this.mode === 'wiki') return wholeWiki ? 'wiki:all' : 'wiki';
-    return `note:${this.app.workspace.getActiveFile()?.path ?? ''}`;
+    return groundingKeyFor({
+      ungrounded,
+      wholeWiki,
+      mode: this.mode,
+      searchNotes: this.searchNotes,
+      attached: this.attachedFiles.length,
+      notePath: this.app.workspace.getActiveFile()?.path ?? '',
+    });
   }
 
   private historyFor(grounding: string): { role: 'user' | 'assistant'; content: string }[] {
@@ -2460,6 +2472,12 @@ export class ChatView extends ItemView {
     // shorter one.
     const history = this.historyFor(this.groundingKey(ungrounded, wholeWiki));
     const historyTokens = history.reduce((n, t) => n + estimateTokens(t.content), 0);
+    // History reaches the model; this is what reaches the search. The last
+    // thing asked that is not this same question — "Ask anyway" and
+    // Regenerate re-ask the same words — whatever thread it was filed under:
+    // a fragment continues what is on screen above it.
+    const previous = [...this.turns].reverse().find((t) => t.role === 'user' && t.content !== question)?.content;
+    const searchAs = followUpQuery(question, previous);
     // Vault mode reads the vault before it can say anything; say that it is
     // reading. Removed as soon as the context is built, so the line never
     // outlives the search it describes.
@@ -2485,7 +2503,7 @@ export class ChatView extends ItemView {
     this.sendButton.disabled = true;
     let context: Awaited<ReturnType<ChatView['buildContext']>>;
     try {
-      context = await this.buildContext(question, ungrounded, wholeWiki, historyTokens);
+      context = await this.buildContext(question, ungrounded, wholeWiki, historyTokens, searchAs);
     } catch (err) {
       // Reached by a stale attachment: readAttachments calls vault.read on a
       // note the user has since deleted. This used to escape runGeneration
@@ -2634,7 +2652,7 @@ export class ChatView extends ItemView {
         const second = await this.streamAnswer(engine, {
           systemPrompt: ADDS_PROMPT,
           history: [],
-          question: `About the subject of this question, from general knowledge only: ${question}`,
+          question: `About the subject of this question, from general knowledge only: ${searchAs}`,
           body,
           typing: typing2,
           sourcePath: context.sourcePath,
