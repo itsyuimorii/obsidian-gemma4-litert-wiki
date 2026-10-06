@@ -1930,7 +1930,7 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Bounded (a handful of pages, one call each) and flag-only.
   async spotCheckProvenance() {
     const LIMIT = 8;
-    this.status('Sampling wiki pages…');
+    this.status('Choosing the pages to check…');
     const samples = await sampleWikiPages(this.app, LIMIT);
     if (!samples.length) {
       this.statusEnd('No ingested pages with key points to check.', 'noop');
@@ -1949,17 +1949,15 @@ export default class LiteRtSpikePlugin extends Plugin {
         if (!(srcFile instanceof TFile)) continue; // source note gone
         const srcText = clampToTokens(cleanClippedMarkdown(await this.app.vault.read(srcFile)), this.budget('provenance')).text;
         const result = await this.checkProvenance(srcText, s.keyPoints);
-        if (!result.ok) {
-          unchecked++;
-          continue;
-        }
-        if (result.unsupported.length) {
-          flags.push({
-            linkPath: s.linkPath,
-            title: s.title,
-            sourcePath: s.sourcePath,
-            unsupported: result.unsupported,
-          });
+        if (!result.ok) unchecked++;
+        // A mention the note never uses was found by matching, so it stands
+        // whether or not the model could be read on this page.
+        const unsupported = [
+          ...s.missingMentions.map((m) => `Mention not found in the source note: ${m}`),
+          ...(result.ok ? result.unsupported : []),
+        ];
+        if (unsupported.length) {
+          flags.push({ linkPath: s.linkPath, title: s.title, sourcePath: s.sourcePath, unsupported });
         }
       }
       this.statusEnd();

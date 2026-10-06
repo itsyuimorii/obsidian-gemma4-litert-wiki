@@ -205,7 +205,7 @@ All of these are on the command palette (<kbd>Cmd/Ctrl</kbd> + <kbd>P</kbd>) und
 |---|---|
 | **Review board (low-confidence, drifted, and stale pages)** | One queue for the three ways a page goes bad: low self-rated confidence, source drift caught by `source_hash`, and staleness. |
 | **Find contradictions in wiki (local Gemma)** | Checks pages sharing a tag for claims that disagree, recently-changed pairs first. Flags with the reason quoted and **never edits**. |
-| **Provenance spot-check (local Gemma)** | Traces each key point on a page back to a sentence in the raw note, and flags what cannot be traced. |
+| **Provenance spot-check (local Gemma)** | Traces each key point on a page back to a sentence in the raw note, and flags what cannot be traced. Eight pages a run, chosen without the model: the ones whose mentions and key points their source note bears out least go first. |
 | **Tidy the wiki (check, then fix what you approve)** | The five maintenance commands in one. A model-free check reports orphans, dead index entries, unindexed pages, tag drift, and subjects that have enough pages for a concept page and no page yet; then four repairs — make links mutual, drop dead index entries, rebuild the tag vocabulary, apply it to existing pages — are offered together, ticked where the check found something, and run in turn behind their own previews. |
 
 **Write into your own note — the only one that does**

@@ -1,4 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
+import { cardGrounding } from './pure';
 import { contentHash, isWikiPage } from './wiki-store';
 
 // Review board: turns "you should periodically review the wiki" from a
@@ -59,6 +60,12 @@ export async function buildReviewBoard(app: App, staleDays: number): Promise<Rev
         if (contentHash(cur) !== srcHash) {
           drifted = true;
           reasons.push('source changed since ingest');
+        } else {
+          // Only against the note the card was made from: once the note has
+          // changed, a missing name is the drift above, not a second finding.
+          const mentions = Array.isArray(fm?.mentions) ? (fm.mentions as unknown[]).map((m) => String(m)) : [];
+          const missing = cardGrounding({ keyPoints: [], mentions }, cur, srcFile.basename).missingMentions.length;
+          if (missing) reasons.push(`${missing} mention${missing === 1 ? '' : 's'} not in the source note`);
         }
       }
     }
