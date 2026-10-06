@@ -4,6 +4,34 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.23 — 2026-10-06
+
+A follow-up is answered as a follow-up, and Wiki mode knows what day it is.
+
+- **A follow-up with the search box unticked reaches the model with the
+  conversation before it.** In Vault mode with *Notes first* unticked and
+  nothing attached, each turn was filed under one thread and the next
+  question read the history of another, so every follow-up to a general
+  question arrived alone. One function now decides the thread for both.
+- **A short follow-up is searched with the question it continues.** Search
+  used only the words of the current question, so *in an interview* after
+  a question about `toString` found interview notes, or nothing. A question
+  of at most three terms is now searched together with the one before it,
+  in Vault and in Wiki. A short question on a new subject can pull in one
+  note from the previous one; that is the price, and it is the cheaper
+  mistake.
+- **Wiki mode has two chips: Scan a folder and Find connections.** The
+  third, *Added this week?*, goes. Its answer was `index.md` with dates on
+  it, and it had been answering from a prompt — so the model was given a
+  dozen log lines and no idea what day it was, and named pages that had not
+  been added in a week that was not this one.
+- **The wiki prompt carries today's date.** A date question typed into the
+  box — *what did I add this week?* — is no longer answered blind.
+- **The README opens with how to start.** Quick start, who it is not for
+  and what it needs now come before the feature list, and there is an FAQ.
+  The long form of every feature moved to `docs/features.md`. The Japanese
+  README has the same quick start and FAQ.
+
 ## 1.0.22 — 2026-09-25
 
 The row under the chat box fits, whatever width the sidebar is.
@@ -27,14 +55,6 @@ The row under the chat box fits, whatever width the sidebar is.
 - **Wiki mode is back to three chips.** There were four, so the row wrapped.
   *What's still open?* goes: the skills menu already asks it of whatever the
   chat is grounded in, and the wiki-wide version is a sentence in the box.
-- **Wiki mode has two chips: Scan a folder and Find connections.** There
-  were four, so the row wrapped. *What's still open?* is the skills menu's
-  Find gaps, asked of the whole wiki in one typed sentence. *Added
-  recently?* was `index.md` with dates on it — and it had been answering
-  from a prompt, so the model was given a dozen log lines and no idea what
-  day it was, and named pages that had not been added in a week that was
-  not this one. The wiki prompt now carries today's date, so a date
-  question typed into the box is not answered blind.
 
 ## 1.0.21 — 2026-09-23
 
