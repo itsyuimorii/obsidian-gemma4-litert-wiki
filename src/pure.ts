@@ -423,17 +423,21 @@ const MIN_CLIPPED_ANSWER = 40;
  */
 function clipToCost(text: string, room: number, cost: (text: string) => number): string {
   if (cost(text) <= room) return text;
+  // Measured with the mark on: the mark costs too, and one token over is
+  // enough for the question in front of this answer to stop fitting — which
+  // takes the answer with it.
+  const cut = (n: number) => `${text.slice(0, n).trimEnd()}…`;
   let lo = 0;
   let hi = text.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (cost(text.slice(0, mid)) <= room) lo = mid;
+    if (cost(cut(mid)) <= room) lo = mid;
     else hi = mid - 1;
   }
   // Not half of a surrogate pair.
   const code = text.charCodeAt(lo - 1);
   if (code >= 0xd800 && code <= 0xdbff) lo--;
-  return `${text.slice(0, lo).trimEnd()}…`;
+  return cut(lo);
 }
 
 /** The fields of a recorded turn that decide whether and how it goes back to the model. */
