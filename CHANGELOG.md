@@ -4,6 +4,31 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## 1.0.24 — 2026-10-06
+
+The checks that keep the wiki honest look in the right places.
+
+- **The provenance spot-check reads the pages most likely to be wrong.** It
+  used to read the first eight pages in file order, every run, so a page past
+  the eighth was never checked. Every card is now matched against its source
+  note without the model, and the eight least borne out go to the model;
+  pages that tie take turns.
+- **A mention the note never uses is reported.** It is listed in the
+  provenance report, and it is a reason on the review board when the note
+  has not changed since ingest.
+- **Tidy lists the subjects that are ready for a concept page.** A tag or
+  mention shared by enough pages, with no page written above them yet, now
+  shows in the check with its page count.
+- **A long answer no longer costs the follow-up its history.** At a small
+  context window an answer longer than the history allowance was dropped
+  whole, and the next question arrived alone. The most recent answer is now
+  shortened to fit instead.
+- **The Developer commands setting describes all the `[Test]` commands.** It
+  said four and there are seven.
+- **The licence is GPL-3.0.** You may still use, study, change and share
+  the plugin; something built on it and distributed has to be offered under
+  the same licence, with its source. Versions up to 1.0.23 remain MIT.
+
 ## 1.0.23 — 2026-10-06
 
 A follow-up is answered as a follow-up, and Wiki mode knows what day it is.

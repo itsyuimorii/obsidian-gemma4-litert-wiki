@@ -1,4 +1,5 @@
-import { App, Modal } from 'obsidian';
+import { App, Modal, TFile } from 'obsidian';
+import { cardGrounding, mostSuspect } from './pure';
 import { fmOf, wikiDir } from './wiki-store';
 
 // Lint v2b (issue #21): provenance spot-check. Ingest can hallucinate a key
@@ -6,12 +7,19 @@ import { fmOf, wikiDir } from './wiki-store';
 // model, per page, which of its key points the SOURCE note does not actually
 // support — catching drift between a page and the note it claims to summarize.
 // Flag-only and bounded (sample a handful of pages, one model call each).
+//
+// Which handful is decided without the model (#159): every card is matched
+// against its source note, and the pages whose mentions and key points are
+// least borne out go first. The model is the slow, careful reader; matching
+// is what tells it where to look.
 
 export interface ProvenanceSample {
   linkPath: string;
   title: string;
   sourcePath: string;
   keyPoints: string[];
+  /** Mentions on the card that occur nowhere in the source note. A fact, not a guess. */
+  missingMentions: string[];
 }
 
 export interface ProvenanceFlag {
@@ -37,19 +45,33 @@ function parseKeyPoints(body: string): string[] {
     .filter(Boolean);
 }
 
-// Wiki pages that have a source note and parseable key points, up to `limit`.
+// The `limit` wiki pages most worth checking: those with a source note that
+// still exists and parseable key points, least borne out by that note first.
 export async function sampleWikiPages(app: App, limit: number): Promise<ProvenanceSample[]> {
-  const out: ProvenanceSample[] = [];
+  const all: (ProvenanceSample & { suspicion: number })[] = [];
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith(`${wikiDir()}/`)) continue;
-    const src = fmOf(app, f)?.source;
+    const fm = fmOf(app, f);
+    const src = fm?.source;
     if (typeof src !== 'string' || !src) continue;
+    // A page whose note is gone cannot be checked; it used to take one of
+    // the eight places and then be skipped.
+    const srcFile = app.vault.getAbstractFileByPath(src);
+    if (!(srcFile instanceof TFile)) continue;
     const keyPoints = parseKeyPoints(await app.vault.read(f));
     if (!keyPoints.length) continue;
-    out.push({ linkPath: f.path.replace(/\.md$/, ''), title: f.basename, sourcePath: src, keyPoints });
-    if (out.length >= limit) break;
+    const mentions = Array.isArray(fm?.mentions) ? fm.mentions.map((m) => String(m)) : [];
+    const grounding = cardGrounding({ keyPoints, mentions }, await app.vault.cachedRead(srcFile), srcFile.basename);
+    all.push({
+      linkPath: f.path.replace(/\.md$/, ''),
+      title: f.basename,
+      sourcePath: src,
+      keyPoints,
+      missingMentions: grounding.missingMentions,
+      suspicion: grounding.suspicion,
+    });
   }
-  return out;
+  return mostSuspect(all, limit).map(({ suspicion: _suspicion, ...sample }) => sample);
 }
 
 export class ProvenanceReportModal extends Modal {
@@ -70,7 +92,9 @@ export class ProvenanceReportModal extends Modal {
     contentEl.createEl('h3', { text: 'Provenance spot-check' });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
-      text: `Checked ${this.checked} page${this.checked === 1 ? '' : 's'}. ${this.flags.length} have key points the source note may not support — candidates to re-ingest, not verdicts.`,
+      text:
+        `Checked ${this.checked} page${this.checked === 1 ? '' : 's'}, the ones whose source note bears them out least. ` +
+        `${this.flags.length} have key points or mentions the note may not support — candidates to re-ingest, not verdicts.`,
     });
 
     // A page the model could not be read on is not a page that passed. Saying

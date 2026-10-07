@@ -1,6 +1,16 @@
 import { App, Modal } from 'obsidian';
-import { fmOf, indexPath, isWikiPage, logPath, wikiDir, readIndexEntries } from './wiki-store';
-import { findDuplicatePairs, type DuplicateCandidate, type DuplicatePair } from './pure';
+import {
+  conceptPagePath,
+  conceptSources,
+  fmOf,
+  indexPath,
+  isWikiPage,
+  logPath,
+  readIndexEntries,
+  readSchema,
+  wikiDir,
+} from './wiki-store';
+import { conceptClusters, findDuplicatePairs, type DuplicateCandidate, type DuplicatePair } from './pure';
 
 // Lint v1, deliberately model-free: orphans and index health are graph
 // facts the metadata cache already knows. LLM-driven lint phases
@@ -13,6 +23,13 @@ export interface LintReport {
   orphans: string[];
   missing: string[];
   unindexed: string[];
+  /**
+   * Subjects enough pages share for a concept page, with none written yet.
+   * Karpathy's lint step calls these "important concepts mentioned but
+   * lacking their own page". Reported, never built: writing one is a model
+   * call behind its own preview, and it has its own command.
+   */
+  conceptGaps: { label: string; pages: number }[];
 }
 
 export async function runLint(app: App): Promise<LintReport> {
@@ -40,7 +57,12 @@ export async function runLint(app: App): Promise<LintReport> {
   const entryPaths = new Set(entries.map((e) => `${e.linkPath}.md`));
   const unindexed = wikiFiles.filter((f) => !entryPaths.has(f.path)).map((f) => f.path);
 
-  return { pageCount: wikiFiles.length, orphans, missing, unindexed };
+  const { conceptThreshold } = await readSchema(app.vault);
+  const conceptGaps = conceptClusters(conceptSources(app, entries), Math.max(2, conceptThreshold))
+    .filter((c) => !app.vault.getAbstractFileByPath(conceptPagePath(c.label)))
+    .map((c) => ({ label: c.label, pages: c.members.length }));
+
+  return { pageCount: wikiFiles.length, orphans, missing, unindexed, conceptGaps };
 }
 
 
@@ -243,6 +265,18 @@ export class TidyModal extends Modal {
         `${this.report.unindexed.length} page${this.report.unindexed.length === 1 ? '' : 's'} missing from the index`,
         'Retrieval reads the index first, so these can never be found. Re-ingest the note behind each one.',
         this.report.unindexed
+      );
+    }
+
+    const gaps = this.report.conceptGaps;
+    if (gaps.length) {
+      const shown = gaps.slice(0, 8).map((g) => `${g.label} — ${g.pages} pages`);
+      if (gaps.length > 8) shown.push(`and ${gaps.length - 8} more`);
+      this.info(
+        `${gaps.length} subject${gaps.length === 1 ? '' : 's'} with enough pages for a concept page`,
+        'Each is a tag or mention that many pages share, with no page written above them yet. ' +
+          'Close this and run "Build a concept page from a tag or mention" to write one.',
+        shown
       );
     }
 

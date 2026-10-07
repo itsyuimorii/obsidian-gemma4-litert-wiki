@@ -410,6 +410,36 @@ export function groundingKeyFor(o: {
   return `note:${o.notePath}`;
 }
 
+/**
+ * The least of an answer worth sending as history, in tokens. Under this a
+ * clipped answer is a sentence fragment, and no history reads better than
+ * a broken one.
+ */
+const MIN_CLIPPED_ANSWER = 40;
+
+/**
+ * The longest opening of `text` that costs at most `room`, marked as cut.
+ * The opening rather than the end: an answer leads with what it answers.
+ */
+function clipToCost(text: string, room: number, cost: (text: string) => number): string {
+  if (cost(text) <= room) return text;
+  // Measured with the mark on: the mark costs too, and one token over is
+  // enough for the question in front of this answer to stop fitting — which
+  // takes the answer with it.
+  const cut = (n: number) => `${text.slice(0, n).trimEnd()}…`;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (cost(cut(mid)) <= room) lo = mid;
+    else hi = mid - 1;
+  }
+  // Not half of a surrogate pair.
+  const code = text.charCodeAt(lo - 1);
+  if (code >= 0xd800 && code <= 0xdbff) lo--;
+  return cut(lo);
+}
+
 /** The fields of a recorded turn that decide whether and how it goes back to the model. */
 export interface HistoryTurn {
   role: 'user' | 'assistant';
@@ -423,6 +453,13 @@ export interface HistoryTurn {
  * most recent first until `ceiling` tokens are spent, returned in the order
  * they were said. `cost` is the token estimate, passed in because the one
  * the plugin uses lives beside the vault code.
+ *
+ * The most recent answer is the one a follow-up continues, so it is the one
+ * turn that is shortened rather than dropped. At a small context window the
+ * ceiling is 600 tokens and an answer may run to 1024: stopping at the first
+ * turn that did not fit meant one long answer left the next question with no
+ * history at all (#162). It is cut to what is left after its own question,
+ * and kept only if a useful amount survives.
  */
 export function pickHistory(
   turns: readonly HistoryTurn[],
@@ -443,7 +480,17 @@ export function pickHistory(
         ? t.content.split(/\n\n---\n\*\*Gemma 4 E4B adds/)[0]
         : t.content);
     const c = cost(text);
-    if (spent + c > ceiling) break;
+    if (spent + c > ceiling) {
+      if (t.role !== 'assistant' || picked.some((p) => p.role === 'assistant')) break;
+      const question = turns.slice(0, i).reverse().find((q) => q.grounding === grounding);
+      if (question?.role !== 'user') break;
+      const room = ceiling - spent - cost(question.historyText ?? question.content);
+      if (room < MIN_CLIPPED_ANSWER) break;
+      const clipped = clipToCost(text, room, cost);
+      spent += cost(clipped);
+      picked.unshift({ role: t.role, content: clipped });
+      continue;
+    }
     spent += c;
     picked.unshift({ role: t.role, content: text });
   }
@@ -455,6 +502,170 @@ export function pickHistory(
   // answer under it invites the model to answer that one instead of this.
   while (picked.length && picked.at(-1)!.role === 'user') picked.pop();
   return picked;
+}
+
+/** How well a card is borne out by the note it was made from, without asking the model. */
+export interface CardGrounding {
+  /** Mentions that occur nowhere in the source note or in its name. */
+  missingMentions: string[];
+  /**
+   * The lowest share of any one key point's terms found in the source, 0 to
+   * 1. Null when no key point could be compared: too few terms, or the card
+   * and the note are in different scripts.
+   */
+  weakestPoint: number | null;
+  /** 0 when everything was found, up to 2. It orders pages; it decides nothing. */
+  suspicion: number;
+}
+
+/** Lower-cased and with spaces and hyphens removed, so "Web GPU" finds "WebGPU". */
+function compactForMatch(text: string): string {
+  return text.normalize('NFKC').toLowerCase().replace(/[\s\-_\u2010-\u2015]+/g, '');
+}
+
+/** The share of a text's letters that are Chinese or Japanese. */
+function cjkShare(text: string): number {
+  let cjk = 0;
+  let letters = 0;
+  for (const ch of text) {
+    if (!/\p{L}/u.test(ch)) continue;
+    letters++;
+    if (CJK_CHAR.test(ch)) cjk++;
+  }
+  return letters ? cjk / letters : 0;
+}
+
+/**
+ * What the source note bears out of a card, by matching alone.
+ *
+ * Two checks, of different strength. A mention is a name the ingest prompt
+ * asks for "in the note's own language", so one that appears nowhere in the
+ * note is a fact about the card, not a guess. A key point is a paraphrase:
+ * the share of its terms the note contains says how far it strayed, and a
+ * faithful point can still score low. So mentions are reported and key
+ * points only rank — this chooses which pages the model is asked about, it
+ * does not replace asking.
+ *
+ * `sourceName` is searched too: a note's subject is often only in its title.
+ */
+export function cardGrounding(
+  card: { keyPoints: readonly string[]; mentions: readonly string[] },
+  source: string,
+  sourceName = ''
+): CardGrounding {
+  const text = `${sourceName}\n${source}`.normalize('NFKC').toLowerCase();
+  const compact = compactForMatch(text);
+  const mentions = card.mentions.map((m) => m.trim()).filter((m) => compactForMatch(m));
+  const missingMentions = mentions.filter((m) => !compact.includes(compactForMatch(m)));
+
+  const sourceCjk = cjkShare(source);
+  let weakestPoint: number | null = null;
+  for (const point of card.keyPoints) {
+    // A point in one script about a note in another shares no words with it
+    // however faithful it is; that is not evidence of anything.
+    const pointCjk = CJK_CHAR.test(point);
+    if (pointCjk ? sourceCjk < 0.05 : sourceCjk > 0.5) continue;
+    const terms = queryTerms(point);
+    if (terms.length < 2) continue;
+    const found = terms.filter(
+      (term) =>
+        text.includes(term) ||
+        // "extraction" in the card, "extracts" in the note: the first
+        // seven tenths of a longer word is close enough to a stem to rank by.
+        (term.length >= 6 && !CJK_CHAR.test(term) && text.includes(term.slice(0, Math.max(5, Math.ceil(term.length * 0.7)))))
+    ).length;
+    const share = found / terms.length;
+    if (weakestPoint === null || share < weakestPoint) weakestPoint = share;
+  }
+
+  const suspicion =
+    (mentions.length ? missingMentions.length / mentions.length : 0) +
+    (weakestPoint === null ? 0 : 1 - weakestPoint);
+  return { missingMentions, weakestPoint, suspicion };
+}
+
+/**
+ * The `limit` most suspect of `items`, worst first.
+ *
+ * Ties are broken by `random`, and that is the point of it: most cards are
+ * fully borne out and tie at zero, and breaking the tie by file order is how
+ * the spot-check came to read the same eight pages on every run (#159).
+ */
+export function mostSuspect<T extends { suspicion: number }>(
+  items: readonly T[],
+  limit: number,
+  random: () => number = Math.random
+): T[] {
+  return items
+    .map((item) => ({ item, tie: random() }))
+    .sort((a, b) => b.item.suspicion - a.item.suspicion || a.tie - b.tie)
+    .slice(0, Math.max(0, limit))
+    .map((x) => x.item);
+}
+
+/** What one wiki page contributes to concept clustering. */
+export interface ConceptSource {
+  linkPath: string;
+  tags: string[];
+  mentions: string[];
+  /** A concept page is named by its subject, so it is never a member of one. */
+  isConcept: boolean;
+}
+
+export interface ConceptCluster {
+  /** slugify() of the subject: what groups spellings, and the page's filename. */
+  key: string;
+  /** The first spelling seen. */
+  label: string;
+  /** linkPaths of the pages that share the subject, in the order they were seen. */
+  members: string[];
+}
+
+/** Tags that mark what a page IS, not what it is about. */
+const CONCEPT_SKIP = new Set(['concept', 'answer', 'chat']);
+
+/**
+ * The subjects enough pages share to deserve a page above them.
+ *
+ * Pages are grouped by shared tag AND by shared mention (#48): mentions are
+ * the entities ingest already extracts, and "the things several pages talk
+ * about" is what a concept page is for. Grouped case-insensitively through
+ * slugify(); a page carrying one subject as both a tag and a mention counts
+ * once. Largest cluster first.
+ *
+ * Here rather than in the command, because two things ask this question: the
+ * picker that builds a concept page, and the Tidy check that reports the
+ * subjects still without one.
+ */
+export function conceptClusters(pages: readonly ConceptSource[], minMembers: number): ConceptCluster[] {
+  const clusters = new Map<string, ConceptCluster>();
+  const addTo = (key: string, label: string, linkPath: string) => {
+    let c = clusters.get(key);
+    if (!c) {
+      c = { key, label, members: [] };
+      clusters.set(key, c);
+    }
+    if (!c.members.includes(linkPath)) c.members.push(linkPath);
+  };
+  for (const page of pages) {
+    // On every rebuild the coffee concept landed in the coffee cluster and
+    // listed itself under ## Pages; skipping the 'concept' KEY was not
+    // enough, since the page also carries its own subject as a tag (#62).
+    if (page.isConcept) continue;
+    for (const t of page.tags) {
+      if (CONCEPT_SKIP.has(t)) continue;
+      addTo(slugify(t), t, page.linkPath);
+    }
+    for (const m of page.mentions) {
+      if (!m.trim()) continue;
+      const key = slugify(m);
+      if (!key || CONCEPT_SKIP.has(key)) continue;
+      addTo(key, m.trim(), page.linkPath);
+    }
+  }
+  return [...clusters.values()]
+    .filter((c) => c.members.length >= minMembers)
+    .sort((a, b) => b.members.length - a.members.length);
 }
 
 export function scoreEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
