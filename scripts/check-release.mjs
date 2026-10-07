@@ -50,9 +50,12 @@ console.log('\n== LICENSE ==');
 ok('exists', fs.existsSync('LICENSE'));
 const lic = fs.readFileSync('LICENSE', 'utf8');
 ok('non-empty', lic.trim().length > 400);
-ok('names a licence', /MIT License/.test(lic));
-ok('has a copyright holder', /Copyright \(c\) \d{4} \S+/.test(lic));
-ok('package.json declares the same', JSON.parse(fs.readFileSync('package.json','utf8')).license === 'MIT');
+ok('names a licence', /GNU GENERAL PUBLIC LICENSE\s+Version 3,/.test(lic));
+// The GPL is distributed verbatim, so the file names the FSF and nobody else.
+// The notice saying whose work this is lives in the README, where it is read.
+ok('README carries the copyright notice',
+   /Copyright \(C\) \d{4} \S+/.test(fs.readFileSync('README.md', 'utf8')));
+ok('package.json declares the same', JSON.parse(fs.readFileSync('package.json','utf8')).license === 'GPL-3.0-only');
 
 console.log('\n== release payload (the three files the store installs) ==');
 for (const f of ['main.js','manifest.json','styles.css']) {

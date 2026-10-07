@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm"><img src="https://img.shields.io/badge/Built%20with-Gemma%204%20E4B-7b6cd9?style=for-the-badge&logo=googlegemini&logoColor=white" alt="Built with Gemma 4 E4B"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0f766e?style=for-the-badge" alt="MIT licensed"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-0f766e?style=for-the-badge" alt="GPL-3.0 licensed"></a>
   <a href="#-privacy"><img src="https://img.shields.io/badge/Server-none-16a34a?style=for-the-badge" alt="No server"></a>
 </p>
 
@@ -77,6 +77,7 @@ If the first answer never arrives, run **Check setup (diagnostics)** from the co
 - [📊 Benchmarks](#-benchmarks)
 - [🗺️ Roadmap](#️-roadmap)
 - [🔒 Privacy](#-privacy)
+- [📜 License](#-license)
 - [💖 Credits](#-credits)
 
 ## 🚫 Not for you if
@@ -245,7 +246,7 @@ The first row is the only one this project can claim and the others cannot. Most
 | **Interface language** | English. This README is also in Japanese; the plugin's interface is not translated. | Often many. Eleven-language interfaces exist in this category. |
 | **What it costs to run** | ~3 GB of disk, once. | Free against a local daemon; per-token against a cloud provider. |
 | **Index on disk** | None. The wiki is plain Markdown in your vault: nothing is embedded, nothing is rebuilt when you open a note, nothing has to be regenerated on a second machine. | Commonly a separate embedding index — hundreds of megabytes per few thousand notes, rebuilt per device, and a second one if you run two such plugins. |
-| **Paid tier** | None. MIT, every feature, no account. | Free tiers with paid features are common in this category. |
+| **Paid tier** | None. GPL-3.0, every feature, no account. | Free tiers with paid features are common in this category. |
 | **The one moving part** | No inference API and nothing to configure — but the WebGPU runtime can only be handed multi-gigabyte weights over HTTP, so the plugin runs a loopback server on an ephemeral port to feed itself the model and runtime bytes off your own disk. It binds `127.0.0.1`, carries no inference endpoint, and lives only while the plugin is loaded. | `localhost:11434`, or a vendor's HTTPS endpoint — an address you configure, and on the cloud side a place your notes are sent. |
 
 None of this says local-in-renderer is *better*. Gemma 4 E4B inside Obsidian is weaker than a frontier model behind an API, reads fewer kinds of file, speaks fewer languages, and will never run on your phone. What it buys is that there is nothing else to install, nothing to keep alive, and nothing leaving the machine after the first download — and that only matters if the output holds up. Establishing that honestly, including where the approach is weaker, is what the benchmarks below are for.
@@ -373,6 +374,14 @@ The runtime's own JavaScript is **not** loaded over that server. Since v1.0.7 it
 </details>
 
 **Nothing else leaves your machine.** Your notes, your questions and every generated answer stay on-device: inference, caching and generation all happen inside Obsidian's own process. There is no server to upload them to.
+
+## 📜 License
+
+[GPL-3.0-only](LICENSE). Copyright (C) 2026 itsyuimorii.
+
+You may use, study, change and share this plugin. Anything you distribute that is built on it has to be offered under the same licence, with its source.
+
+Versions up to and including 1.0.23 were released under the MIT licence, and remain under it.
 
 ## 💖 Credits
 
