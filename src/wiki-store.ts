@@ -13,6 +13,7 @@ import {
   schemaBackupsToPrune,
   SCHEMA_BACKUP_KEEP,
   slugify,
+  type ConceptSource,
   type IndexEntry,
   type WikiSchema,
 } from './pure';
@@ -1306,6 +1307,33 @@ export function buildChatTranscript(
     `# ${opts.titleLabel}\n\n` +
     `${body.join('\n\n')}\n`
   );
+}
+
+/**
+ * Every indexed wiki page as concept clustering sees it: its tags, its
+ * mentions, and whether it is itself a concept page. A page missing from the
+ * index is left out, as it always was — it cannot be retrieved, so it cannot
+ * usefully be listed under a concept either.
+ */
+export function conceptSources(app: App, entries: readonly IndexEntry[]): ConceptSource[] {
+  const indexed = new Set(entries.map((e) => e.linkPath));
+  const out: ConceptSource[] = [];
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!isWikiPage(f)) continue;
+    const linkPath = f.path.replace(/\.md$/, '');
+    if (!indexed.has(linkPath)) continue;
+    const fm = fmOf(app, f);
+    const raw = fm?.tags;
+    const tags = Array.isArray(raw)
+      ? raw.map((t) => String(t))
+      : typeof raw === 'string'
+        ? raw.split(/[,\s]+/).filter(Boolean)
+        : [];
+    const rawMentions = fm?.mentions;
+    const mentions = Array.isArray(rawMentions) ? rawMentions.map((m) => String(m)) : [];
+    out.push({ linkPath, tags, mentions, isConcept: fm?.kind === 'concept' });
+  }
+  return out;
 }
 
 /**

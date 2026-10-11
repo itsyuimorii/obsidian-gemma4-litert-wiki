@@ -84,6 +84,50 @@ test('over the ceiling the oldest turns go first, and whole exchanges with them'
   assert.deepEqual(pick(turns, 'direct', 4), []);
 });
 
+// At a 4096 context the ceiling is 600 tokens and an answer may be 1024.
+// Stopping at the first turn that did not fit left the follow-up to one long
+// answer with nothing before it — the symptom 1.0.23 fixed for another cause.
+test('an answer longer than the ceiling is shortened, not dropped', () => {
+  const long = Array.from({ length: 300 }, (_, i) => `w${i}`).join(' ');
+  const turns: HistoryTurn[] = [
+    { role: 'user', content: 'old question here', grounding: 'direct' },
+    { role: 'assistant', content: 'old answer of five words', grounding: 'direct' },
+    { role: 'user', content: Q1, grounding: 'direct' }, // 8
+    { role: 'assistant', content: long, grounding: 'direct' }, // 300
+  ];
+  const picked = pick(turns, 'direct', 100);
+  assert.deepEqual(picked.map((t) => t.role), ['user', 'assistant']);
+  assert.equal(picked[0].content, Q1);
+  // The opening of the answer, marked as cut, and the pair fits the ceiling.
+  assert.ok(picked[1].content.startsWith('w0 w1 w2 '));
+  assert.ok(picked[1].content.endsWith('…'));
+  assert.ok(words(picked[0].content) + words(picked[1].content) <= 100);
+  // All the room that was left is used.
+  assert.equal(words(picked[1].content), 92);
+});
+
+test('only the newest answer is shortened', () => {
+  const long = Array.from({ length: 300 }, (_, i) => `w${i}`).join(' ');
+  const turns: HistoryTurn[] = [
+    { role: 'user', content: 'old question here', grounding: 'direct' },
+    { role: 'assistant', content: long, grounding: 'direct' },
+    { role: 'user', content: 'new question here', grounding: 'direct' },
+    { role: 'assistant', content: 'new answer of five words', grounding: 'direct' },
+  ];
+  assert.deepEqual(pick(turns, 'direct', 100).map((t) => t.content), ['new question here', 'new answer of five words']);
+});
+
+test('an answer is not shortened to a fragment', () => {
+  const long = Array.from({ length: 300 }, (_, i) => `w${i}`).join(' ');
+  const turns: HistoryTurn[] = [
+    { role: 'user', content: Q1, grounding: 'direct' }, // 8
+    { role: 'assistant', content: long, grounding: 'direct' },
+  ];
+  // 8 for the question leaves 39: under the least worth sending.
+  assert.deepEqual(pick(turns, 'direct', 47), []);
+  assert.equal(pick(turns, 'direct', 48).length, 2);
+});
+
 test('a question whose answer never came is not sent as history', () => {
   const turns: HistoryTurn[] = [
     { role: 'user', content: Q1, grounding: 'direct' },
