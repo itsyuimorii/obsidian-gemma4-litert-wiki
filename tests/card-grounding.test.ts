@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cardGrounding, mostSuspect } from '../src/pure.ts';
+import { cardGrounding, mostSuspect, pickForSpotCheck } from '../src/pure.ts';
 
 const NOTE =
   'The perfect espresso shot uses 18 grams of coffee and extracts for 28 seconds. ' +
@@ -85,4 +85,63 @@ test('pages that tie are not always taken in the same order', () => {
   };
   assert.deepEqual(pick(forwards), ['a', 'b']);
   assert.deepEqual(pick(backwards), ['d', 'c']);
+});
+
+// #168. The key-point score measured paraphrase distance: "operations",
+// "must", "occur" and "within" were counted as claims, and "read" and
+// "write" were dropped as instruction words. A faithful rewording became
+// the most suspect point in the wiki on every run.
+const TX_NOTE = 'All reads and writes happen inside a transaction.';
+
+test('a faithful paraphrase is not ranked as suspect', () => {
+  const g = cardGrounding({ keyPoints: ['All read and write operations must occur within a transaction.'], mentions: [] }, TX_NOTE);
+  assert.equal(g.weakestPoint, 1);
+  assert.equal(g.suspicion, 0);
+});
+
+test('a point the note never made is still ranked as suspect', () => {
+  const g = cardGrounding({ keyPoints: ['Deadlocked transactions are retried automatically by the scheduler.'], mentions: [] }, TX_NOTE);
+  assert.ok(g.weakestPoint !== null && g.weakestPoint < 0.5, `weakestPoint ${g.weakestPoint}`);
+});
+
+// A seeded generator, so the runs below are the same on every machine.
+function seeded(seed: number): () => number {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The wiki in #168: twelve cards, no two at the same score, eight places.
+const TWELVE = Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, suspicion: (12 - i) / 10 }));
+
+test('most places still go to the most suspect pages', () => {
+  const picked = pickForSpotCheck(TWELVE, 8, seeded(1)).map((p) => p.id);
+  assert.equal(picked.length, 8);
+  assert.equal(new Set(picked).size, 8);
+  assert.deepEqual(picked.slice(0, 5), ['p0', 'p1', 'p2', 'p3', 'p4']);
+});
+
+// Each of the seven pages below the top five has three chances in seven per
+// run, so the odds that one is still unread after ten runs are under 3%.
+test('every page is reached within ten runs, however low it scores', () => {
+  const random = seeded(7);
+  const seen = new Set<string>();
+  for (let run = 0; run < 10; run++) for (const p of pickForSpotCheck(TWELVE, 8, random)) seen.add(p.id);
+  assert.equal(seen.size, 12);
+});
+
+test('the places left over are not always given to the same pages', () => {
+  const random = seeded(3);
+  const sets = new Set<string>();
+  for (let run = 0; run < 6; run++) sets.add(pickForSpotCheck(TWELVE, 8, random).map((p) => p.id).sort().join(','));
+  assert.ok(sets.size > 2, `${sets.size} distinct sets`);
+});
+
+test('a small sample is all ranked, and a wiki smaller than the sample is checked whole', () => {
+  assert.deepEqual(pickForSpotCheck(TWELVE, 2, seeded(1)).map((p) => p.id), ['p0', 'p1']);
+  assert.equal(pickForSpotCheck(TWELVE.slice(0, 5), 8, seeded(1)).length, 5);
+  assert.deepEqual(pickForSpotCheck(TWELVE, 0, seeded(1)), []);
 });

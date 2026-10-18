@@ -294,9 +294,43 @@ const SEGMENTER: Intl.Segmenter | null =
  * search, so "related" means the same thing everywhere.
  */
 export function queryTerms(text: string): string[] {
+  return termsOf(text, (t) => !INSTRUCTION_STOP.has(t));
+}
+
+// The words a paraphrase adds without adding a claim: modals, linking verbs,
+// hedges. Not never, always or cannot: those turn a claim around. A card that says "all read and write operations must occur within
+// a transaction" for a note that says "all reads and writes happen inside a
+// transaction" has reworded the note, not invented anything (#168).
+const PARAPHRASE_STOP = new Set([
+  'must', 'may', 'might', 'shall', 'occur', 'occurs', 'occurred',
+  'occurring', 'happen', 'happens', 'happened', 'happening', 'within',
+  'inside', 'via', 'operation', 'operations', 'perform', 'performs',
+  'performed', 'performing', 'ensure', 'ensures', 'ensured', 'allow',
+  'allows', 'allowed', 'enable', 'enables', 'enabled', 'provide', 'provides',
+  'provided', 'involve', 'involves', 'involved', 'various', 'several',
+  'different', 'specific', 'particular', 'important', 'essential', 'key',
+  'typically', 'usually', 'often', 'generally', 'each',
+  'every', 'both', 'able', 'way', 'ways', 'approach', 'uses', 'helps',
+  'makes', 'takes', 'take', 'taken', 'per', 'well', 'need', 'needs',
+  'required', 'requires', 'while', 'like', 'keep', 'keeps', 'keeping',
+  'making',
+]);
+
+/**
+ * The terms a claim stands on, for comparing a card's key point with its
+ * note. queryTerms with two differences: instruction words are kept, since
+ * "read" and "write" in a key point are its subject, not a request; and the
+ * words a paraphrase adds are dropped, so rewording is not scored as
+ * straying.
+ */
+export function claimTerms(text: string): string[] {
+  return termsOf(text, (t) => !PARAPHRASE_STOP.has(t));
+}
+
+function termsOf(text: string, keep: (latin: string) => boolean): string[] {
   const q = text.toLowerCase();
   const out: string[] = [];
-  const keepLatin = (t: string) => t.length > 2 && !STOPWORDS.has(t) && !INSTRUCTION_STOP.has(t);
+  const keepLatin = (t: string) => t.length > 2 && !STOPWORDS.has(t) && keep(t);
   if (!SEGMENTER) {
     for (const t of q.split(/[^\p{L}\p{N}]+/u)) if (t && !CJK_CHAR.test(t) && keepLatin(t)) out.push(t);
     for (const run of q.match(CJK_RUN) ?? []) {
@@ -565,7 +599,7 @@ export function cardGrounding(
     // however faithful it is; that is not evidence of anything.
     const pointCjk = CJK_CHAR.test(point);
     if (pointCjk ? sourceCjk < 0.05 : sourceCjk > 0.5) continue;
-    const terms = queryTerms(point);
+    const terms = claimTerms(point);
     if (terms.length < 2) continue;
     const found = terms.filter(
       (term) =>
@@ -601,6 +635,38 @@ export function mostSuspect<T extends { suspicion: number }>(
     .sort((a, b) => b.item.suspicion - a.item.suspicion || a.tie - b.tie)
     .slice(0, Math.max(0, limit))
     .map((x) => x.item);
+}
+
+/**
+ * The pages a spot-check reads: most places to the most suspect, and the
+ * rest drawn at random from everything below them.
+ *
+ * Ranking alone reads the same pages on every run once scores stop tying,
+ * and on cards written by the real model they almost never tie: six runs
+ * over a twelve-card wiki checked seven pages every time and three never
+ * (#168). The score says where to look first; it is not good enough to
+ * decide that a page is never looked at. Three places in eight go to the
+ * draw, so a page anywhere in the order is read within a few runs.
+ *
+ * Below three places there is no draw: one or two places are worth more on
+ * the pages the score is surest about.
+ */
+export function pickForSpotCheck<T extends { suspicion: number }>(
+  items: readonly T[],
+  limit: number,
+  random: () => number = Math.random
+): T[] {
+  const n = Math.max(0, Math.min(limit, items.length));
+  const drawn = Math.floor((n * 3) / 8);
+  const ranked = mostSuspect(items, n - drawn, random);
+  const taken = new Set(ranked);
+  const rest = items.filter((item) => !taken.has(item));
+  const draw = rest
+    .map((item) => ({ item, roll: random() }))
+    .sort((a, b) => a.roll - b.roll)
+    .slice(0, drawn)
+    .map((x) => x.item);
+  return [...ranked, ...draw];
 }
 
 /** What one wiki page contributes to concept clustering. */
