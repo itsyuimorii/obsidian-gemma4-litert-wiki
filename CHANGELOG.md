@@ -4,6 +4,18 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## Unreleased
+
+- **Every page is reached by the provenance spot-check.** Once card scores
+  stopped tying, ranking alone read the same eight pages on every run and
+  never reached the lowest-scoring ones. Three of the eight places now go to
+  pages drawn at random from the rest, so a page anywhere in the order is
+  read within a few runs (#168).
+- **A reworded key point is no longer ranked as suspect.** The score counted
+  words such as "must", "occur" and "within" as claims and dropped "read" and
+  "write" as instruction words, so a faithful paraphrase scored as the most
+  suspect point in the wiki.
+
 ## 1.0.24 — 2026-10-06
 
 The checks that keep the wiki honest look in the right places.

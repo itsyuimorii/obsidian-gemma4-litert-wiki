@@ -1,5 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
-import { cardGrounding, mostSuspect } from './pure';
+import { cardGrounding, pickForSpotCheck } from './pure';
 import { fmOf, wikiDir } from './wiki-store';
 
 // Lint v2b (issue #21): provenance spot-check. Ingest can hallucinate a key
@@ -11,7 +11,8 @@ import { fmOf, wikiDir } from './wiki-store';
 // Which handful is decided without the model (#159): every card is matched
 // against its source note, and the pages whose mentions and key points are
 // least borne out go first. The model is the slow, careful reader; matching
-// is what tells it where to look.
+// is what tells it where to look. Not where never to look: some places go to
+// pages drawn at random, or the lowest-scoring ones are never read (#168).
 
 export interface ProvenanceSample {
   linkPath: string;
@@ -71,7 +72,7 @@ export async function sampleWikiPages(app: App, limit: number): Promise<Provenan
       suspicion: grounding.suspicion,
     });
   }
-  return mostSuspect(all, limit).map(({ suspicion: _suspicion, ...sample }) => sample);
+  return pickForSpotCheck(all, limit).map(({ suspicion: _suspicion, ...sample }) => sample);
 }
 
 export class ProvenanceReportModal extends Modal {
@@ -93,7 +94,8 @@ export class ProvenanceReportModal extends Modal {
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
       text:
-        `Checked ${this.checked} page${this.checked === 1 ? '' : 's'}, the ones whose source note bears them out least. ` +
+        `Checked ${this.checked} page${this.checked === 1 ? '' : 's'}: mostly the ones whose source note bears them out least, ` +
+        'and a few drawn at random so every page is read in time. ' +
         `${this.flags.length} have key points or mentions the note may not support — candidates to re-ingest, not verdicts.`,
     });
 
