@@ -1,14 +1,25 @@
-/* Chat panel — shadcn-inspired monochrome minimalism. No accent colors:
-   the palette is foreground/background/muted/hairline-border only, driven
-   by Obsidian theme variables so light and dark both stay pure neutral.
-   The one "strong" element is the user bubble: inverted foreground
-   (near-black on light themes, near-white on dark), shadcn primary-style. */
+/* Chat panel — shadcn-inspired minimalism: foreground/background/muted/
+   hairline-border, driven by Obsidian theme variables so light and dark both
+   stay neutral. One colour on top of that: the plugin's own violet, the one in
+   its logo, on the few things that are the panel's controls — the logo, the
+   scope button, Send, the selected mode. Fixed rather than the theme's
+   accent: a pink theme accent once turned Send pink, and a control that
+   changes colour with the theme is not recognisably this plugin's. */
 
 .gemma4-chat {
+  --gemma4-brand: #6655cc;
+  --gemma4-brand-text: #4c3db3;
+  --gemma4-brand-soft: rgba(123, 108, 217, 0.13);
   display: flex;
   flex-direction: column;
   height: 100%;
   padding: 0;
+}
+
+.theme-dark .gemma4-chat {
+  --gemma4-brand: #6f5ee0;
+  --gemma4-brand-text: #c4bbff;
+  --gemma4-brand-soft: rgba(123, 108, 217, 0.24);
 }
 
 /* ---------- Header ---------- */
@@ -27,7 +38,7 @@
 
 .gemma4-chat-title-icon {
   display: flex;
-  color: var(--text-normal);
+  color: var(--gemma4-brand);
 }
 
 .gemma4-chat-title-icon svg {
@@ -69,49 +80,172 @@
   min-width: 0;
 }
 
-/* shadcn pill buttons: rounded-full, active = inverted foreground fill,
-   inactive = hairline outline. Fixed equal height so nothing misaligns. */
 .gemma4-chat-mode-row {
   display: inline-flex;
+  align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
 
-.gemma4-chat .gemma4-chat-mode-btn {
+/* The scope button: names the mode, opens the menu of all three. Every state
+   locks the box, as the pills it replaced had to: a theme's styling of a
+   focused or pressed button otherwise changes its size. */
+.gemma4-chat .gemma4-chat-scope,
+.gemma4-chat .gemma4-chat-scope:hover,
+.gemma4-chat .gemma4-chat-scope:focus,
+.gemma4-chat .gemma4-chat-scope:active {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 5px;
   height: 26px;
   box-sizing: border-box;
   margin: 0;
-  vertical-align: middle;
-  background: transparent;
-  border: 1px solid var(--background-modifier-border);
+  padding: 0 6px 0 9px;
+  border: none;
+  border-radius: 7px;
   box-shadow: none;
-  border-radius: 999px;
-  padding: 0 14px;
+  transform: none;
+  background: var(--gemma4-brand-soft);
+  color: var(--gemma4-brand-text);
   font-size: var(--font-ui-smaller);
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1;
-  color: var(--text-muted);
   cursor: pointer;
-  transition: none;
 }
 
-.gemma4-chat .gemma4-chat-mode-btn:hover {
+.gemma4-chat .gemma4-chat-scope:hover {
+  filter: brightness(0.97);
+}
+
+.gemma4-chat .gemma4-chat-scope:focus-visible {
+  outline: 2px solid var(--gemma4-brand);
+  outline-offset: 1px;
+}
+
+.gemma4-chat-scope-icon,
+.gemma4-chat-scope-chevron {
+  display: inline-flex;
+}
+
+.gemma4-chat-scope-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.gemma4-chat-scope-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Pressed a mode in the empty panel: the button under the box is the same
+   switch, and the only one left once a question is sent. */
+.gemma4-chat .gemma4-chat-scope.is-pulsing {
+  animation: gemma4-scope-pulse 0.9s ease-out;
+}
+
+@keyframes gemma4-scope-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(123, 108, 217, 0.55); }
+  100% { box-shadow: 0 0 0 8px rgba(123, 108, 217, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gemma4-chat .gemma4-chat-scope.is-pulsing {
+    animation: none;
+    outline: 2px solid var(--gemma4-brand);
+  }
+}
+
+/* The scope menu: drawn by the plugin, above the scope button, because a
+   native macOS menu keeps only plain text. Placed by the view. */
+.gemma4-scope-menu {
+  position: absolute;
+  z-index: 3;
+  width: 300px;
+  max-width: calc(100% - 28px);
+  box-sizing: border-box;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-s);
+}
+
+.gemma4-scope-menu-heading {
+  padding: 6px 10px 4px;
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.gemma4-chat .gemma4-scope-menu-item,
+.gemma4-chat .gemma4-scope-menu-item:hover,
+.gemma4-chat .gemma4-scope-menu-item:focus,
+.gemma4-chat .gemma4-scope-menu-item:active {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 8px 10px;
+  text-align: left;
+  white-space: normal;
+  border: none;
+  border-radius: 6px;
+  box-shadow: none;
+  transform: none;
+  background: transparent;
   color: var(--text-normal);
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-scope-menu-item:hover,
+.gemma4-chat .gemma4-scope-menu-item:focus-visible,
+.gemma4-chat .gemma4-scope-menu-item.is-active {
   background: var(--background-modifier-hover);
 }
 
-.gemma4-chat .gemma4-chat-mode-btn.gemma4-chat-mode-active {
-  background: var(--text-normal);
-  color: var(--background-primary);
-  border-color: var(--text-normal);
+.gemma4-chat .gemma4-scope-menu-item:focus-visible {
+  outline: 2px solid var(--gemma4-brand);
+  outline-offset: -2px;
 }
 
-.gemma4-chat .gemma4-chat-mode-btn.gemma4-chat-mode-active:hover {
-  background: var(--text-normal);
-  color: var(--background-primary);
+.gemma4-scope-menu-icon,
+.gemma4-scope-menu-check {
+  display: flex;
+  flex-shrink: 0;
+  padding-top: 1px;
+  color: var(--gemma4-brand-text);
+}
+
+.gemma4-scope-menu-icon svg,
+.gemma4-scope-menu-check svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gemma4-scope-menu-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gemma4-scope-menu-name {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.gemma4-scope-menu-desc {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .gemma4-chat-note-chip {
@@ -429,6 +563,54 @@
   gap: 6px;
 }
 
+/* The buttons in it are the way forward, not a footnote: brand-tinted, with
+   the target mode's icon, so they do not read as one more source tag. Every
+   state pinned, as on the scope button — Obsidian's button rule outranks a
+   single class and painted these grey. */
+.gemma4-chat .gemma4-chat-route-btn,
+.gemma4-chat .gemma4-chat-route-btn:focus,
+.gemma4-chat .gemma4-chat-route-btn:active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  border: none;
+  border-radius: 999px;
+  box-shadow: none;
+  background: var(--gemma4-brand-soft);
+  color: var(--gemma4-brand-text);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-chat-route-btn:hover {
+  background: var(--gemma4-brand);
+  color: #ffffff;
+}
+
+.gemma4-chat .gemma4-chat-route-btn:focus-visible {
+  outline: 2px solid var(--gemma4-brand);
+  outline-offset: 2px;
+}
+
+.gemma4-chat .gemma4-chat-route-btn:disabled {
+  opacity: 0.5;
+  background: var(--gemma4-brand-soft);
+  color: var(--gemma4-brand-text);
+  cursor: default;
+}
+
+.gemma4-chat-route-btn-icon {
+  display: flex;
+}
+
+.gemma4-chat-route-btn-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* A route card that stands on its own row (the Direct precheck), not under
    an answer: give it the answer's left inset so it aligns with the thread. */
 .gemma4-chat-messages > .gemma4-chat-route {
@@ -492,46 +674,238 @@
 
 /* ---------- Empty state ---------- */
 
+/* Left-aligned, from the top. Centred, the panel's sentences broke into
+   single stranded words at sidebar widths, and the eye had to hunt for where
+   each line began. */
 .gemma4-chat-empty {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  text-align: center;
-  padding: 24px 14px;
-}
-
-.gemma4-chat-empty-icon {
-  color: var(--text-faint);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
-  padding: 10px;
-  display: flex;
-}
-
-.gemma4-chat-empty-icon svg {
-  width: 20px;
-  height: 20px;
+  align-items: stretch;
+  gap: 4px;
+  text-align: left;
+  padding: 22px 14px 12px;
 }
 
 .gemma4-chat-empty-title {
-  font-size: var(--font-ui-small);
+  font-size: var(--font-ui-medium);
   font-weight: 600;
   color: var(--text-normal);
-  margin-top: 4px;
 }
 
-/* As wide as the panel allows, and balanced: at 250px every sentence
-   ended with one word alone on its own line. */
 .gemma4-chat-empty-hint {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.gemma4-chat-scope-heading {
+  margin: 18px 0 4px;
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.gemma4-chat-scope-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* One row per mode. Real buttons, so every state is pinned against what a
+   theme does to a button. */
+.gemma4-chat .gemma4-chat-scope-row,
+.gemma4-chat .gemma4-chat-scope-row:hover,
+.gemma4-chat .gemma4-chat-scope-row:focus,
+.gemma4-chat .gemma4-chat-scope-row:active {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 9px 11px;
+  text-align: left;
+  white-space: normal;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: none;
+  transform: none;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-chat-scope-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-chat .gemma4-chat-scope-row.is-active,
+.gemma4-chat .gemma4-chat-scope-row.is-active:hover {
+  border-color: var(--gemma4-brand);
+  background: var(--gemma4-brand-soft);
+}
+
+.gemma4-chat .gemma4-chat-scope-row:focus-visible {
+  outline: 2px solid var(--gemma4-brand);
+  outline-offset: 1px;
+}
+
+.gemma4-chat-scope-row-icon,
+.gemma4-chat-scope-row-check {
+  display: flex;
+  flex-shrink: 0;
+  padding-top: 1px;
+  color: var(--gemma4-brand-text);
+}
+
+.gemma4-chat-scope-row-icon svg,
+.gemma4-chat-scope-row-check svg {
+  width: 15px;
+  height: 15px;
+}
+
+.gemma4-chat-scope-row-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.gemma4-chat-scope-row-name {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.gemma4-chat-scope-row-desc {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  max-width: 340px;
-  width: 100%;
-  line-height: 1.55;
-  text-wrap: pretty;
+  line-height: 1.4;
+}
+
+.gemma4-chat-scope-caption {
+  margin-top: 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.gemma4-chat-scope-caption b {
+  color: var(--gemma4-brand-text);
+  font-weight: 600;
+}
+
+/* The one-time pointer at the scope button, under a first answer. Placed by
+   the view, above wherever the toolbar has put the button. */
+.gemma4-chat-scope-hint {
+  position: absolute;
+  z-index: 2;
+  width: 250px;
+  max-width: calc(100% - 28px);
+  box-sizing: border-box;
+  padding: 11px 12px 9px;
+  border-radius: 10px;
+  background: var(--gemma4-brand);
+  color: #ffffff;
+  box-shadow: var(--shadow-s);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+}
+
+/* Until the panel has a layout to place it in. */
+.gemma4-chat-scope-hint.is-unplaced {
+  display: none;
+}
+
+.gemma4-chat-scope-hint::after {
+  content: '';
+  position: absolute;
+  left: 22px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: var(--gemma4-brand);
+  transform: rotate(45deg);
+}
+
+.gemma4-chat .gemma4-chat-scope-hint-ok {
+  display: block;
+  margin: 8px 0 0 auto;
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gemma4-chat .gemma4-chat-scope-hint-ok:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 🕘 Chat history: one row per past thread. */
+.gemma4-history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gemma4-history-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--gemma4-brand-text, var(--text-muted));
+}
+
+.gemma4-history-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.gemma4-history-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.gemma4-history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gemma4-history-meta {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.gemma4-history-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.gemma4-history-delete:hover {
+  color: var(--text-error);
+  background: var(--background-modifier-hover);
+}
+
+.gemma4-history-delete svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Shown only when Wiki mode has nothing to answer from — the one screen
@@ -549,68 +923,11 @@
   cursor: pointer;
 }
 
-/* The lines that name the other two modes, one each: the question that
-   belongs there, then the pill. The mode names are buttons that switch,
-   styled as the pills under the input are styled, so the two read as the
-   same control. */
-.gemma4-chat-empty-guide {
-  margin-top: 12px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-}
-
-.gemma4-chat-empty-guide-line {
-  display: block;
-  max-width: 340px;
-  width: 100%;
-  line-height: 1.8;
-  text-wrap: pretty;
-}
-
-.gemma4-chat-empty-guide-line .gemma4-chat-empty-guide-mode {
-  vertical-align: baseline;
-}
-
-/* The arrow belongs to the word after it, so a wrapping line never leaves
-   the arrow stranded at the start of its own row. */
-.gemma4-chat-empty-guide-jump {
-  white-space: nowrap;
-}
-
-/* A word in the sentence, not a control on top of it. The pill read as a
-   third button under a screen that already has a chip row and a pill row. */
-.gemma4-chat-empty-guide-mode {
-  font-size: inherit;
-  font-weight: 500;
-  color: var(--text-accent);
-  cursor: pointer;
-  /* A border, not text-decoration: the underline properties that place and
-     weight the line are only partially supported on the 1.11.4 floor (see
-     .gemma4-folder-path.is-link, which learned this first). A hairline
-     border sits at the same distance everywhere and passed the store's
-     stylesheet check in every release that carried it. */
-  border-bottom: 1px solid var(--text-accent);
-  padding-bottom: 1px;
-}
-
-.gemma4-chat-empty-guide-mode:hover {
-  color: var(--text-accent-hover);
-  border-bottom-color: var(--text-accent-hover);
-}
-
-.gemma4-chat-empty-guide-mode:focus-visible {
-  outline: 1px solid var(--text-accent);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
 /* ---------- Input area ---------- */
 
+/* Positioned, so the one-time scope hint can sit above the scope button. */
 .gemma4-chat-input-wrap {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -646,51 +963,41 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
+/* The scope button keeps the left edge and everything else goes right, Send
+   last. The push is on this row rather than on Send: Stop sits between them
+   while hidden, and "stop + send" took Send's push away. */
 .gemma4-composer-bar .gemma4-chat-mode-row {
-  margin-right: 6px;
-  /* The base rule pins this at flex-shrink: 0 so the pills never squash; in
-     the composer they may wrap instead, and the box beside them wraps with
-     them. */
+  margin-right: auto;
+  /* The base rule pins this at flex-shrink: 0 so the button never squashes;
+     in the composer the row may wrap instead, and the box beside it wraps
+     with it. */
   flex-shrink: 1;
   min-width: 0;
   flex-wrap: wrap;
   row-gap: 6px;
 }
 
-/* One size in every state. The selected pill was reported taller than the
-   other two and its label sitting low; the plugin's own rules give all three
-   the same box, so whatever enlarged the selected one came from outside —
-   a theme's or the app's styling of a focused or filled button. Rather than
-   find each source, every state locks the box: selected, hover, focus and
-   pressed, at a specificity above the plugin's own selected-state rule, with
-   the shadow, outline and transform a theme might add turned off. The line
-   height equals the box's inner height rather than 1: with 1, interface
-   fonts with tall ascenders (the Korean and Japanese system fonts) set the
-   glyphs about a pixel low in the 22px box; measured with Apple SD Gothic
-   Neo, this centres them to within a fifth of a pixel. */
-.gemma4-composer-bar .gemma4-chat-mode-btn,
-.gemma4-composer-bar .gemma4-chat-mode-btn.gemma4-chat-mode-active,
-.gemma4-composer-bar .gemma4-chat-mode-btn:hover,
-.gemma4-composer-bar .gemma4-chat-mode-btn:focus,
-.gemma4-composer-bar .gemma4-chat-mode-btn:focus-visible,
-.gemma4-composer-bar .gemma4-chat-mode-btn:active {
-  height: 22px;
-  min-height: 22px;
-  max-height: 22px;
-  padding: 0 10px;
-  font-size: 11px;
-  line-height: 20px;
-  box-shadow: none;
-  outline: none;
-  transform: none;
+/* The line height equals the button's height rather than 1: with 1,
+   interface fonts with tall ascenders (the Korean and Japanese system fonts)
+   set the label about a pixel low. Measured on the pills this button replaced,
+   with Apple SD Gothic Neo; the same holds here. */
+.gemma4-composer-bar .gemma4-chat-scope,
+.gemma4-composer-bar .gemma4-chat-scope:hover,
+.gemma4-composer-bar .gemma4-chat-scope:focus,
+.gemma4-composer-bar .gemma4-chat-scope:active {
+  line-height: 26px;
 }
 
-/* Tools inside the bar go quiet: no outline, hover background only. */
-.gemma4-composer-bar .gemma4-chat-attach,
-.gemma4-composer-bar .gemma4-chat-expand {
-  width: 26px;
-  height: 26px;
+/* Tools inside the bar go quiet: no outline, hover background only. Scoped
+   under .gemma4-chat as well: the outlined button rules further down share
+   this specificity and, coming later, put the borders back. */
+.gemma4-chat .gemma4-composer-bar .gemma4-chat-attach,
+.gemma4-chat .gemma4-composer-bar .gemma4-chat-expand {
+  width: 28px;
+  height: 28px;
   border: none;
+  box-shadow: none;
+  background: transparent;
   color: var(--text-muted);
   margin: 0;
 }
@@ -699,19 +1006,6 @@
 .gemma4-composer-bar .gemma4-chat-expand:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
-}
-
-/* Send hugs the right edge; stop sits just left of it. */
-.gemma4-composer-bar .gemma4-chat-send {
-  margin-left: auto;
-}
-
-.gemma4-composer-bar .gemma4-chat-stop {
-  margin-left: auto;
-}
-
-.gemma4-composer-bar .gemma4-chat-stop + .gemma4-chat-send {
-  margin-left: 0;
 }
 
 .gemma4-chat-input {
@@ -786,7 +1080,8 @@
   height: 13px;
 }
 
-/* Inverted-foreground send button, monochrome like the user bubble. */
+/* Send: a round button in the plugin's violet. White on it is 5.6:1 in the
+   light theme and 4.8:1 in the dark one. */
 .gemma4-chat .gemma4-chat-send {
   display: flex;
   align-items: center;
@@ -794,17 +1089,17 @@
   width: 30px;
   height: 30px;
   padding: 0;
-  border-radius: 8px;
-  background: var(--text-normal);
-  color: var(--background-primary);
+  border-radius: 999px;
+  background: var(--gemma4-brand);
+  color: #ffffff;
   border: none;
   box-shadow: none;
   cursor: pointer;
 }
 
 .gemma4-chat .gemma4-chat-send:hover {
-  background: var(--text-normal);
-  opacity: 0.85;
+  background: var(--gemma4-brand);
+  opacity: 0.88;
 }
 
 .gemma4-chat .gemma4-chat-send:disabled {
@@ -911,31 +1206,31 @@
   gap: 6px;
 }
 
-/* Clear-chat button, right-aligned in the title row. */
-.gemma4-chat .gemma4-chat-clear {
+/* Save, New chat, History — quiet icons, right-aligned in the title row. */
+.gemma4-chat .gemma4-chat-header-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  margin: 0 0 0 auto;
-  border-radius: 8px;
+  margin: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--text-muted);
-  border: 1px solid var(--background-modifier-border);
+  border: none;
   box-shadow: none;
   cursor: pointer;
 }
 
-.gemma4-chat .gemma4-chat-clear:hover {
+.gemma4-chat .gemma4-chat-header-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
 
-.gemma4-chat .gemma4-chat-clear svg {
-  width: 12px;
-  height: 12px;
+.gemma4-chat .gemma4-chat-header-btn svg {
+  width: 15px;
+  height: 15px;
 }
 
 .gemma4-chat .gemma4-chat-suggestion {
@@ -1524,19 +1819,6 @@
 .gemma4-chat .gemma4-chat-suggestion-disabled:hover {
   background: transparent;
   color: var(--text-muted);
-}
-
-/* The one-line nudge under the empty state, shown until the first message is
-   sent. Styled as a quiet aside, not a banner — it is a pointer at the chips
-   that are already there, not an announcement. */
-.gemma4-chat-empty-nudge {
-  margin-top: 14px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-  border-radius: 8px;
-  padding: 7px 12px;
-  line-height: 1.5;
 }
 
 /* Shown only when a preview would replace an existing file. "Will overwrite"

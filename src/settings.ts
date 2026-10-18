@@ -37,8 +37,8 @@ export interface GemmaWikiSettings {
    *
    * One thread, not a history: this exists so an accidental close, a restart,
    * or a plugin update does not cost you an exchange that took half a minute
-   * of GPU time to produce. A list of past threads is a different feature,
-   * with its own UI and its own delete semantics.
+   * of GPU time to produce. Past threads are the 🕘 history, kept in their
+   * own file in the plugin folder — see chat-archive.ts.
    *
    * Plugin data, deliberately — not a file in the vault. #96 spent its whole
    * diff moving chat transcripts OUT of the vault, and this is view state, not
@@ -71,6 +71,10 @@ export interface GemmaWikiSettings {
   // nudge in the empty panel; a chat plugin that keeps telling you how to chat
   // after you already have is just noise.
   hasChatted: boolean;
+  // Whether the pointer at the chat panel's mode button has been dismissed.
+  // Separate from hasChatted, because the button is new to people who have
+  // chatted for months: it replaced three pills they knew.
+  scopeHintSeen: boolean;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -89,6 +93,7 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   autoScanEnabled: false,
   autoScanIntervalHours: 6,
   hasChatted: false,
+  scopeHintSeen: false,
 };
 
 // Descriptions shared by the declarative page (1.13+) and the imperative one
