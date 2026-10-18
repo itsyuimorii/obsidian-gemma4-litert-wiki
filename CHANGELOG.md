@@ -4,7 +4,10 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
-## Unreleased
+## 1.0.25 — 2026-10-18
+
+The chat panel says where answers come from and keeps the chats you move on
+from, and Korean questions find the notes about their subject.
 
 - **The chat panel has one button for where answers come from.** The three
   mode pills under the box become **This note ▾**, which opens a menu of the
