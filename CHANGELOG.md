@@ -6,6 +6,26 @@ All notable changes to this plugin are recorded here. Versions follow
 
 ## Unreleased
 
+- **The chat panel has one button for where answers come from.** The three
+  mode pills under the box become **This note ▾**, which opens a menu of the
+  three modes with what each one reads. An empty panel lists them under
+  *Answer from*, so switching before the first question is one click, and
+  a hint points at the button once, until you press *Got it* or open it.
+- **＋ starts a new chat, and 🕘 brings an old one back.** ＋ moves the chat
+  on screen into a history list instead of deleting it; 🕘 opens the list,
+  searchable by any question asked, with a bin on each row. The last 30
+  chats are kept in the plugin's own folder, not in your vault.
+- **A refusal in This note offers the wiki and the vault more often.** An
+  answer such as "I cannot teach you Korean. It does not contain any
+  information about…" was not recognised as a refusal, so it came with no
+  way to ask somewhere that could answer.
+- **The panel's colours are its own.** Send, the mode button and the
+  *Ask the wiki* / *Ask across your vault* buttons are violet in every
+  theme, where Send was black, or took the theme's accent and turned pink.
+  The route buttons were grey and looked like one more source tag.
+- **Send sits at the right edge of the box.** The Stop button before it,
+  hidden while nothing runs, took away the space that was meant to push it
+  there; on a wide panel Send floated in the middle of the row.
 - **Every page is reached by the provenance spot-check.** Once card scores
   stopped tying, ranking alone read the same eight pages on every run and
   never reached the lowest-scoring ones. Three of the eight places now go to
