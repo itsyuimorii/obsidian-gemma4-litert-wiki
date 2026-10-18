@@ -33,9 +33,10 @@ The long form of [Features at a glance](../README.md#-features-at-a-glance): wha
 - **`chats/`** — a conversation you pressed save on, one file per thread, with its own `index.md` listing them newest first. **Nothing in it is retrieved, indexed, linted or scanned** — an answer is output, never input, and a chat sitting in the wiki index would be indistinguishable from a page. It is also the only thing under the wiki folder the plugin cannot rebuild from your notes, so move it out before clearing that folder.
 - **Every folder has a README** explaining what belongs in it, and the layout is shown in Settings with per-row state, generated from the same list the scaffold builds from.
 
-**Chat panel** — shadcn-inspired monochrome, theme-variable driven:
+**Chat panel** — shadcn-inspired, theme-variable driven, with the plugin's own violet on its controls:
 
-- **Two grounding modes**: *This note* (the open file) and *Wiki* (your ingested pages).
+- **Three grounding modes**: *This note* (the open file), *Vault* (every raw note, then the model) and *Wiki* (your ingested pages) — listed in the empty panel, and behind the scope button under the box once a conversation starts.
+- **＋ New chat and 🕘 history** — ＋ moves the current thread into history; the last 30 are kept in the plugin's own folder, searchable, reopened or deleted one at a time.
 - **Deterministic Sources row** on every answer — the plugin lists exactly what was used, clickable; citation is never left to the model.
 - **`+` attachments** — fuzzy-pick any notes as removable context pills, in either mode.
 - **⚡ Skills** — canned single-task prompts: *Quiz*, *Flashcards*, *Find gaps*, plus *Action items* and *Unclear bits* as editable files, plus anything else in `skills/`. A skill file is frontmatter and a prompt, so the menu holds *questions*; anything that **does** something (scan, file a note, reformat one) is a chip above the input instead.

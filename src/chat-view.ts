@@ -28,6 +28,7 @@ import {
   ItemView,
   Menu,
   MarkdownRenderer,
+  SuggestModal,
   getAllTags,
   setIcon,
   setTooltip,
@@ -36,6 +37,14 @@ import {
   normalizePath,
 } from 'obsidian';
 import type { Conversation } from '@litert-lm/core';
+import {
+  archiveThread,
+  capThread,
+  parseHistory,
+  removeThread,
+  serializeHistory,
+  type ArchivedThread,
+} from './chat-archive';
 import { textOf } from './model-output';
 import type LiteRtSpikePlugin from './main';
 import {
@@ -155,6 +164,79 @@ class NotePickerModal extends FuzzySuggestModal<TFile> {
   }
 }
 
+const newThreadId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+/**
+ * 🕘: past threads, most recent first, searchable by their questions. A
+ * SuggestModal rather than a dropdown of our own, so it looks, scrolls and
+ * takes the keyboard the way every other list in Obsidian does.
+ */
+class ChatHistoryModal extends SuggestModal<ArchivedThread> {
+  private threads: ArchivedThread[];
+  private handlers: { onPick: (t: ArchivedThread) => void; onDelete: (id: string) => void };
+
+  constructor(
+    app: App,
+    threads: ArchivedThread[],
+    handlers: { onPick: (t: ArchivedThread) => void; onDelete: (id: string) => void }
+  ) {
+    super(app);
+    this.threads = threads;
+    this.handlers = handlers;
+    this.setPlaceholder('Search past chats…');
+    this.emptyStateText = 'No past chat matches.';
+    this.setInstructions([
+      { command: '↵', purpose: 'reopen' },
+      { command: 'esc', purpose: 'close' },
+    ]);
+  }
+
+  getSuggestions(query: string): ArchivedThread[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return this.threads;
+    // Every question in the thread, not only the first: a chat is often
+    // remembered by where it ended up.
+    return this.threads.filter((t) =>
+      t.turns.some((turn) => turn.role === 'user' && turn.content.toLowerCase().includes(q))
+    );
+  }
+
+  renderSuggestion(thread: ArchivedThread, el: HTMLElement): void {
+    el.addClass('gemma4-history-item');
+    setIcon(el.createSpan({ cls: 'gemma4-history-icon' }), SCOPES[thread.mode].icon);
+    const text = el.createDiv({ cls: 'gemma4-history-text' });
+    text.createDiv({ cls: 'gemma4-history-title', text: thread.title });
+    const asked = thread.turns.filter((t) => t.role === 'user').length;
+    text.createDiv({
+      cls: 'gemma4-history-meta',
+      text: `${SCOPES[thread.mode].label} · ${asked} question${asked === 1 ? '' : 's'} · ${window.moment(thread.savedAt).fromNow()}`,
+    });
+    const del = el.createEl('button', {
+      cls: 'gemma4-history-delete',
+      attr: { 'aria-label': `Delete "${thread.title}"` },
+    });
+    setIcon(del, 'trash-2');
+    setTooltip(del, 'Delete this chat');
+    del.addEventListener('mousedown', (evt) => evt.stopPropagation());
+    del.addEventListener('click', (evt) => {
+      // The row underneath is "reopen"; this button must not also be that.
+      evt.preventDefault();
+      evt.stopPropagation();
+      this.handlers.onDelete(thread.id);
+      this.threads = this.threads.filter((t) => t.id !== thread.id);
+      if (!this.threads.length) {
+        this.close();
+        return;
+      }
+      this.inputEl.dispatchEvent(new Event('input'));
+    });
+  }
+
+  onChooseSuggestion(thread: ArchivedThread): void {
+    this.handlers.onPick(thread);
+  }
+}
+
 export const VIEW_TYPE_CHAT = 'gemma-litert-wiki-chat-view';
 
 // How much grounding content to feed per answer, derived from the configured
@@ -238,8 +320,8 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
     // live in this row and that one is the plugin's core loop.
     return [
       { label: 'Summarize', ask: 'Summarize this note' },
-      { label: 'Formatting', action: 'improve' },
-      { label: 'Ingest this note into wiki', action: 'ingest' },
+      { label: 'Tidy up formatting', action: 'improve' },
+      { label: 'Add to wiki', action: 'ingest' },
     ];
   }
   // Fixed, and the same whatever state the wiki is in.
@@ -344,57 +426,51 @@ const DIRECT_PROMPT =
   'say so plainly. Be concise. You may use markdown.';
 
 /**
- * What each mode is for, said in the empty panel: what it reads, what it is
- * good for, and — for the other two modes — the question that belongs there
- * instead. The three read three different things, and the pills alone do
- * not say which; this is the sentence that does, at the moment it is
- * needed. The wiki folder is named as the folder, not as "the wiki", so
- * that a reader who has never heard the word knows where to look.
+ * What each mode reads, said once per surface: as a row in the empty panel,
+ * and as an item in the menu behind the scope button under the box. The two
+ * are the same switch, so they share one table — the panel used to describe
+ * each mode in three places (the empty state, the placeholder and the pills),
+ * in three different wordings. `{wiki}` is filled in from the setting; the
+ * folder is named as a folder so a reader who has never heard the word
+ * "wiki" knows where to look.
  */
-/**
- * One sentence per mode, used wherever the other two are pointed at. Wiki
- * mode described Vault as "a note as you wrote it, filed or not" while This
- * note described it as "any note in your vault": two names for one mode on
- * two screens a pill apart. `{wiki}` is filled in from the setting.
- */
-const LINE_NOTE = 'For only the note you have open';
-const LINE_VAULT = 'For any note in your vault, or anything general';
-const LINE_WIKI = 'For the cards filed in {wiki}/, and what connects them';
-
-const MODE_GUIDE: Record<
-  ChatMode,
-  { title: string; reads: string; goodFor: string; others: [ChatMode, string, string][] }
-> = {
+const SCOPES: Record<ChatMode, { label: string; icon: string; desc: string; title: string }> = {
   note: {
-    title: 'Ask about the open note',
-    reads: 'Reads only the note you have open, as you wrote it.',
-    goodFor: 'Good for: what this note says, a summary, the action items, a term it uses.',
-    others: [
-      ['vault', 'Vault', LINE_VAULT],
-      ['wiki', 'Wiki', LINE_WIKI],
-    ],
+    label: 'This note',
+    icon: 'file-text',
+    desc: 'Only the note you have open',
+    title: 'Ask about this note',
   },
   vault: {
+    label: 'Vault',
+    icon: 'database',
+    desc: 'Any note in your vault, or anything general',
     title: 'Ask anything',
-    reads:
-      'Searches every note in your vault as written; then Gemma 4 E4B adds its own answer, ' +
-      'marked as its own.',
-    goodFor: 'Good for: finding a note, what you wrote about something, anything general.',
-    others: [
-      ['note', 'This note', LINE_NOTE],
-      ['wiki', 'Wiki', LINE_WIKI],
-    ],
   },
   wiki: {
+    label: 'Wiki',
+    icon: 'library',
+    desc: 'Cards in {wiki}/ and what connects them',
     title: 'Ask the cards in {wiki}/',
-    reads: '',
-    goodFor: 'Good for: what connects the cards, and what your filed pages say together.',
-    others: [
-      ['vault', 'Vault', LINE_VAULT],
-      ['note', 'This note', LINE_NOTE],
-    ],
   },
 };
+
+const SCOPE_ORDER: ChatMode[] = ['note', 'vault', 'wiki'];
+
+/**
+ * A button in a route card: the next step after a refusal, so it reads as
+ * one — the brand colour and the target mode's icon. In the hatch's grey it
+ * was the same pill as the source tag above it.
+ */
+function routeButton(parent: HTMLElement, label: string, icon: string): HTMLButtonElement {
+  const btn = parent.createEl('button', { cls: 'gemma4-chat-route-btn' });
+  setIcon(btn.createSpan({ cls: 'gemma4-chat-route-btn-icon' }), icon);
+  btn.createSpan({ text: label });
+  return btn;
+}
+
+/** Where past threads live: the plugin's own folder, never the vault. */
+const HISTORY_FILE = 'chat-history.json';
 
 export class ChatView extends ItemView {
   private plugin: LiteRtSpikePlugin;
@@ -414,7 +490,16 @@ export class ChatView extends ItemView {
   // index.md on every one of those would be a file read per keystroke-ish
   // event for a boolean that changes about once.
   private wikiEmpty = true;
-  private modeButtons: { note: HTMLElement; wiki: HTMLElement; vault: HTMLElement } | null = null;
+  /** The one mode switch under the box: names the mode, opens the menu of all three. */
+  private scopeButton: HTMLButtonElement | null = null;
+  private inputWrap!: HTMLElement;
+  /** The one-time pointer at the scope button, shown under a first answer. */
+  private scopeHintEl: HTMLElement | null = null;
+  /** The open scope menu, and what removes its outside-click listener. */
+  private scopeMenuEl: HTMLElement | null = null;
+  private scopeMenuCleanup: (() => void) | null = null;
+  /** History writes run one after another, so two quick ＋ presses cannot interleave. */
+  private historyWrite: Promise<void> = Promise.resolve();
   /** Set by Stop; a two-part Vault answer checks it before starting part two. */
   private stopRequested = false;
   /** The "Searching N notes…" line, while a Vault search runs; the expansion is written into it. */
@@ -512,80 +597,238 @@ export class ChatView extends ItemView {
     const el = this.emptyStateEl;
     if (!el) return;
     el.empty();
-    const icon = el.createDiv({ cls: 'gemma4-chat-empty-icon' });
-    setIcon(icon, 'gemma-wiki-logo');
 
-    // Kept, because knowing the wiki is empty before you ask is worth a file
-    // read. Not kept: the two buttons that used to be here. The chip row above
-    // the input carries Scan permanently now, and a screen with the same two
-    // buttons twice is a screen that has not decided where they live.
-    const guide = MODE_GUIDE[this.mode];
-    const wikiEmpty = this.mode === 'wiki' && this.wikiEmpty;
-    // An empty wiki gets the same screen as every other mode — what it
-    // reads, what it is good for, where else to go — under a title that
-    // says it is empty and one line that says how to fill it. The earlier
-    // screen said only "empty" and left the difference from Vault unsaid.
-    // The wiki folder is a setting, so every line that names it is written
-    // with {wiki} and filled in here.
+    // Two lines about the mode you are in — what it is, and exactly what it
+    // reads, naming the note or the folder rather than describing them — then
+    // the three modes as one switch. The panel used to explain the other two
+    // modes in prose, again in the placeholder, and again as the pills; a new
+    // user read three paragraphs and still had to find the buttons.
+    const scope = SCOPES[this.mode];
     const named = (text: string) => text.replace('{wiki}', wikiDir());
+    const wikiEmpty = this.mode === 'wiki' && this.wikiEmpty;
+    const file = this.app.workspace.getActiveFile();
     el.createDiv({
       cls: 'gemma4-chat-empty-title',
-      text: wikiEmpty ? named('Nothing is filed in {wiki}/ yet') : named(guide.title),
+      text: wikiEmpty ? named('Nothing is filed in {wiki}/ yet') : named(scope.title),
     });
-    // The wiki line names the folder, which is a setting, so it is built here.
     const reads =
       this.mode === 'wiki'
-        ? `Reads only ${wikiDir()}/ — the cards and concept pages this plugin builds from your notes` +
-          (wikiEmpty ? '. Nothing is there yet.' : ', reviewed by you.')
-        : guide.reads;
+        ? wikiEmpty
+          ? 'Press Scan a folder below to draft cards from your notes.'
+          : 'Reads only the cards and concept pages you approved.'
+        : this.mode === 'vault'
+          ? 'Searches every note in your vault, then Gemma 4 E4B adds its own answer — marked as its own.'
+          : file
+            ? `Reads only ${file.basename}, as you wrote it.`
+            : 'Open a note to ask about it.';
     el.createDiv({ cls: 'gemma4-chat-empty-hint', text: reads });
-    el.createDiv({ cls: 'gemma4-chat-empty-hint', text: named(guide.goodFor) });
-    if (wikiEmpty) {
-      el.createDiv({ cls: 'gemma4-chat-empty-hint', text: 'Press Scan a folder below to build it.' });
-    }
 
-    // The other two modes, one line each: the question that belongs there,
-    // then the pill. The pills under the input are the same switch; this
-    // is the sentence that explains them, at the moment it is needed.
-    const lines = el.createDiv({ cls: 'gemma4-chat-empty-guide' });
-    for (const [mode, label, what] of guide.others) {
-      const line = lines.createDiv({ cls: 'gemma4-chat-empty-guide-line' });
-      line.appendText(named(what) + ' ');
-      // Arrow and name in one unbreakable span, so a line that wraps does
-      // not put the arrow alone at the start of the next row.
-      const jump = line.createSpan({ cls: 'gemma4-chat-empty-guide-jump' });
-      jump.appendText('→ ');
-      // A span, not a button. Obsidian and every theme style the button
-      // element itself — a background, a radius, a shadow — and a rule that
-      // turns all of that off is a rule each new theme can put back. This is
-      // a word in a sentence, so it is marked up as one and given the button
-      // role and key handling by hand.
-      const b = jump.createSpan({ cls: 'gemma4-chat-empty-guide-mode', text: label });
-      b.setAttribute('role', 'button');
-      b.setAttribute('tabindex', '0');
-      b.addEventListener('click', () => this.setMode(mode));
-      b.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          this.setMode(mode);
-        }
+    // The switch itself. Real buttons in a radio group, so Tab and the
+    // screen reader both find them; the scope button under the box is the
+    // same switch for once the conversation has started.
+    // Named by its heading through aria-labelledby, not aria-label: Obsidian
+    // turns every aria-label into a hover tooltip, and "Answer from" floated
+    // over the rows whenever the pointer crossed them.
+    const headingId = `gemma4-scope-heading-${newThreadId()}`;
+    el.createDiv({ cls: 'gemma4-chat-scope-heading', text: 'Answer from', attr: { id: headingId } });
+    const group = el.createDiv({
+      cls: 'gemma4-chat-scope-list',
+      attr: { role: 'radiogroup', 'aria-labelledby': headingId },
+    });
+    for (const mode of SCOPE_ORDER) {
+      const s = SCOPES[mode];
+      const on = mode === this.mode;
+      const row = group.createEl('button', {
+        cls: on ? 'gemma4-chat-scope-row is-active' : 'gemma4-chat-scope-row',
+        attr: { role: 'radio', 'aria-checked': on ? 'true' : 'false' },
+      });
+      setIcon(row.createSpan({ cls: 'gemma4-chat-scope-row-icon' }), s.icon);
+      const text = row.createSpan({ cls: 'gemma4-chat-scope-row-text' });
+      text.createSpan({ cls: 'gemma4-chat-scope-row-name', text: s.label });
+      text.createSpan({ cls: 'gemma4-chat-scope-row-desc', text: named(s.desc) });
+      if (on) setIcon(row.createSpan({ cls: 'gemma4-chat-scope-row-check' }), 'check');
+      row.addEventListener('click', () => {
+        if (mode !== this.mode) this.setMode(mode);
+        // Point at the button under the box: the same switch, and the only one
+        // left once a question has been sent.
+        this.pulseScopeButton();
       });
     }
+    const caption = el.createDiv({ cls: 'gemma4-chat-scope-caption' });
+    caption.appendText('Change it any time with ');
+    caption.createEl('b', { text: `${scope.label} ▾` });
+    caption.appendText(' under the box.');
+  }
 
-    // Until the first message is sent, point at the chips. Someone opening this
-    // for the first time is not short of explanation — there is a setup card, a
-    // tooltip and a README — they are short of a first move. The chips already
-    // are that move; they just look like decoration until something says so.
-    if (!this.plugin.settings.hasChatted) {
-      const nudge = this.emptyStateEl.createDiv({ cls: 'gemma4-chat-empty-nudge' });
-      // Name a chip that is actually on screen. This said "press Summarize"
-      // in both modes, and Wiki mode has no Summarize chip — a first-run hint
-      // pointing at a button that is not there is worse than no hint.
-      const first = suggestionsFor(this.mode)[0];
-      nudge.appendText('New here? Press ');
-      nudge.createEl('b', { text: first?.label ?? 'a chip' });
-      nudge.appendText(' below, or just ask a question.');
+  /** Draw the scope button under the box for the current mode. */
+  private renderScopeButton() {
+    const btn = this.scopeButton;
+    if (!btn) return;
+    const s = SCOPES[this.mode];
+    btn.empty();
+    setIcon(btn.createSpan({ cls: 'gemma4-chat-scope-icon' }), s.icon);
+    btn.createSpan({ text: s.label });
+    setIcon(btn.createSpan({ cls: 'gemma4-chat-scope-chevron' }), 'chevron-down');
+    btn.setAttribute('aria-label', `Answer from: ${s.label}. Change`);
+    setTooltip(btn, 'Where answers come from — click to change');
+  }
+
+  /**
+   * The menu behind the scope button, drawn by the plugin rather than with
+   * Obsidian's Menu. With native menus on (the macOS default), Menu is handed
+   * to the OS, which keeps only plain text: the icons went, and each mode's
+   * name and description ran together on one line.
+   */
+  private openScopeMenu() {
+    if (this.scopeMenuEl) {
+      this.closeScopeMenu();
+      return;
     }
+    this.dismissScopeHint();
+    const btn = this.scopeButton;
+    if (!btn) return;
+    // aria-labelledby, not aria-label, which Obsidian shows as a tooltip.
+    const headingId = `gemma4-scope-menu-heading-${newThreadId()}`;
+    const menu = this.inputWrap.createDiv({
+      cls: 'gemma4-scope-menu',
+      attr: { role: 'menu', 'aria-labelledby': headingId },
+    });
+    menu.createDiv({ cls: 'gemma4-scope-menu-heading', text: 'Answer from', attr: { id: headingId } });
+    const items: HTMLButtonElement[] = [];
+    for (const mode of SCOPE_ORDER) {
+      const s = SCOPES[mode];
+      const on = mode === this.mode;
+      const item = menu.createEl('button', {
+        cls: on ? 'gemma4-scope-menu-item is-active' : 'gemma4-scope-menu-item',
+        attr: { role: 'menuitemradio', 'aria-checked': on ? 'true' : 'false' },
+      });
+      setIcon(item.createSpan({ cls: 'gemma4-scope-menu-icon' }), s.icon);
+      const text = item.createSpan({ cls: 'gemma4-scope-menu-text' });
+      text.createSpan({ cls: 'gemma4-scope-menu-name', text: s.label });
+      text.createSpan({ cls: 'gemma4-scope-menu-desc', text: s.desc.replace('{wiki}', wikiDir()) });
+      if (on) setIcon(item.createSpan({ cls: 'gemma4-scope-menu-check' }), 'check');
+      item.addEventListener('click', () => {
+        this.closeScopeMenu();
+        if (mode !== this.mode) this.setMode(mode);
+        btn.focus();
+      });
+      items.push(item);
+    }
+    menu.addEventListener('keydown', (evt) => {
+      const at = items.indexOf(activeDocument.activeElement as HTMLButtonElement);
+      if (evt.key === 'ArrowDown' || evt.key === 'ArrowUp') {
+        evt.preventDefault();
+        const step = evt.key === 'ArrowDown' ? 1 : items.length - 1;
+        items[(at + step) % items.length].focus();
+      } else if (evt.key === 'Escape') {
+        evt.preventDefault();
+        evt.stopPropagation();
+        this.closeScopeMenu();
+        btn.focus();
+      } else if (evt.key === 'Tab') {
+        this.closeScopeMenu();
+      }
+    });
+    // Above the button, wherever the toolbar has wrapped it to.
+    const wrap = this.inputWrap.getBoundingClientRect();
+    const at = btn.getBoundingClientRect();
+    menu.setCssStyles({ left: `${at.left - wrap.left}px`, bottom: `${wrap.bottom - at.top + 6}px` });
+    // A press anywhere else closes it, the way a menu does.
+    const onPointer = (evt: MouseEvent) => {
+      const target = evt.target as Node;
+      if (!menu.contains(target) && !btn.contains(target)) this.closeScopeMenu();
+    };
+    activeDocument.addEventListener('mousedown', onPointer, true);
+    this.scopeMenuCleanup = () => activeDocument.removeEventListener('mousedown', onPointer, true);
+    this.scopeMenuEl = menu;
+    btn.setAttribute('aria-expanded', 'true');
+    items[SCOPE_ORDER.indexOf(this.mode)]?.focus();
+  }
+
+  private closeScopeMenu() {
+    this.scopeMenuCleanup?.();
+    this.scopeMenuCleanup = null;
+    this.scopeMenuEl?.remove();
+    this.scopeMenuEl = null;
+    this.scopeButton?.setAttribute('aria-expanded', 'false');
+  }
+
+  /** Draw the eye to the scope button, without moving anything. */
+  private pulseScopeButton() {
+    const btn = this.scopeButton;
+    if (!btn) return;
+    btn.removeClass('is-pulsing');
+    // Restart the animation even when it is already running.
+    void btn.offsetWidth;
+    btn.addClass('is-pulsing');
+    window.setTimeout(() => btn.removeClass('is-pulsing'), 900);
+  }
+
+  /**
+   * The pointer at the scope button, shown from the first time the panel
+   * opens until it is answered: Got it, or opening the menu it points at.
+   * Once the first question is sent, the empty panel and its three rows are
+   * gone and this button is the only switch left — and a button that names
+   * the current mode reads, unexplained, as a label.
+   */
+  private showScopeHint() {
+    if (this.plugin.settings.scopeHintSeen || this.scopeHintEl || !this.scopeButton) return;
+    const hint = this.inputWrap.createDiv({ cls: 'gemma4-chat-scope-hint', attr: { role: 'status' } });
+    hint.createDiv({ cls: 'gemma4-chat-scope-hint-text' });
+    const ok = hint.createEl('button', { cls: 'gemma4-chat-scope-hint-ok', text: 'Got it' });
+    ok.addEventListener('click', () => this.dismissScopeHint());
+    this.scopeHintEl = hint;
+    this.renderScopeHintText();
+    this.placeScopeHint();
+  }
+
+  /** The hint names the current mode and the other two, so it follows a switch. */
+  private renderScopeHintText() {
+    const text = this.scopeHintEl?.querySelector('.gemma4-chat-scope-hint-text');
+    if (!(text instanceof HTMLElement)) return;
+    const others = SCOPE_ORDER.filter((m) => m !== this.mode).map((m) => SCOPES[m].label);
+    text.empty();
+    text.appendText('Answers come from ');
+    text.createEl('b', { text: SCOPES[this.mode].label });
+    text.appendText(`. Switch to ${others.join(' or ')} here.`);
+  }
+
+  /**
+   * Above the button it points at, wherever the toolbar has wrapped it to.
+   * A panel opened collapsed has no layout yet; onResize places it once it
+   * has one.
+   */
+  private placeScopeHint() {
+    const hint = this.scopeHintEl;
+    const btn = this.scopeButton;
+    if (!hint || !btn) return;
+    const at = btn.getBoundingClientRect();
+    hint.toggleClass('is-unplaced', at.width === 0);
+    if (at.width === 0) return;
+    const wrap = this.inputWrap.getBoundingClientRect();
+    hint.setCssStyles({ left: `${at.left - wrap.left}px`, bottom: `${wrap.bottom - at.top + 10}px` });
+  }
+
+  /**
+   * Close the pointer for good: it has been seen, and said what it had to.
+   * Not if it never got on screen — a pointer nobody saw has not done its job.
+   */
+  private dismissScopeHint() {
+    const hint = this.scopeHintEl;
+    if (!hint) return;
+    const seen = !hint.hasClass('is-unplaced');
+    hint.remove();
+    this.scopeHintEl = null;
+    if (seen && !this.plugin.settings.scopeHintSeen) {
+      this.plugin.settings.scopeHintSeen = true;
+      void this.plugin.saveSettings();
+    }
+  }
+
+  onResize(): void {
+    this.placeScopeHint();
+    // A menu left open while the panel changes width would point at nothing.
+    this.closeScopeMenu();
   }
 
   // Suggestion chips live above the input, permanently — they used to sit
@@ -724,32 +967,108 @@ export class ChatView extends ItemView {
     }, 'Review note before writing').open();
   }
 
-  private clearChat() {
-    if (this.busy) this.activeConversation?.cancel();
+  /**
+   * ＋: move the thread on screen into history and start an empty one.
+   *
+   * This replaced a bin that deleted the thread outright. Starting over is
+   * the common case and should cost nothing; deleting is the rare one, and
+   * lives in the history list, one thread at a time.
+   */
+  private async newChat() {
+    if (this.busy) {
+      this.stopRequested = true;
+      this.activeConversation?.cancel();
+    }
+    await this.updateHistory((h) => archiveThread(h, this.turns, Date.now(), newThreadId));
+    this.showEmptyThread();
+    this.inputEl.focus();
+  }
+
+  private showEmptyThread() {
     this.lastQuestion = null;
     this.turns = [];
     this.messagesEl.empty();
     this.buildEmptyState();
-    // Clear means clear. Leaving the saved copy behind would resurrect the
-    // thread on the next open, which is the opposite of what the button says.
+    // The saved copy goes too, or the next open would bring the thread back.
     void this.persistThread();
   }
 
+  private historyPath(): string {
+    const dir = this.plugin.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}`;
+    return normalizePath(`${dir}/${HISTORY_FILE}`);
+  }
+
+  private async loadHistory(): Promise<ArchivedThread[]> {
+    const adapter = this.app.vault.adapter;
+    const path = this.historyPath();
+    try {
+      return (await adapter.exists(path)) ? parseHistory(await adapter.read(path)) : [];
+    } catch (err) {
+      console.error('[gemma-litert-wiki] reading chat history failed', err);
+      return [];
+    }
+  }
+
   /**
-   * Keep the thread across a close (#100).
-   *
-   * Two caps, because unbounded plugin data is how a data.json becomes
-   * megabytes without anyone noticing: the most recent exchanges only, and a
-   * character ceiling on top for the case where a few answers are enormous.
-   * Trimmed from the front so what survives is what you were last looking at.
+   * Read, change and write the history file as one step. Queued, so a second
+   * change starts from what the first one wrote rather than from the same
+   * stale read.
+   */
+  private updateHistory(change: (h: ArchivedThread[]) => ArchivedThread[]): Promise<void> {
+    const run = async () => {
+      const before = await this.loadHistory();
+      const after = change(before);
+      if (after === before) return;
+      try {
+        await this.app.vault.adapter.write(this.historyPath(), serializeHistory(after));
+      } catch (err) {
+        console.error('[gemma-litert-wiki] writing chat history failed', err);
+        notify('error', `Could not save chat history — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    this.historyWrite = this.historyWrite.then(run, run);
+    return this.historyWrite;
+  }
+
+  private async openHistory() {
+    await this.historyWrite;
+    const history = await this.loadHistory();
+    if (!history.length) {
+      notify('noop', 'No past chats yet. ＋ starts a new chat and moves this one here.');
+      return;
+    }
+    new ChatHistoryModal(this.app, history, {
+      onPick: (thread) => void this.reopenThread(thread),
+      onDelete: (id) => void this.updateHistory((h) => removeThread(h, id)),
+    }).open();
+  }
+
+  /**
+   * Put a past thread back on screen. The one on screen goes into history
+   * in its place, so reopening never loses anything, and the reopened one
+   * leaves the list — it is the live thread now, and ＋ files it again.
+   */
+  private async reopenThread(thread: ArchivedThread) {
+    if (this.busy) {
+      notify('noop', 'Wait for the answer to finish, or press Stop, then reopen it.');
+      return;
+    }
+    await this.updateHistory((h) =>
+      archiveThread(removeThread(h, thread.id), this.turns, Date.now(), newThreadId)
+    );
+    this.showEmptyThread();
+    this.setMode(thread.mode);
+    await this.renderThread(thread.turns, 'history');
+    await this.persistThread();
+  }
+
+  /**
+   * Keep the thread across a close (#100). Capped by capThread, because
+   * unbounded plugin data is how a data.json becomes megabytes without anyone
+   * noticing.
    */
   private async persistThread(): Promise<void> {
-    const MAX_TURNS = 20;
-    const MAX_CHARS = 60_000;
-    let kept = this.turns.slice(-MAX_TURNS);
-    while (kept.length && kept.reduce((n, t) => n + t.content.length, 0) > MAX_CHARS) kept.shift();
-    // A lone assistant turn restores as an answer to nothing.
-    while (kept.length && kept[0].role === 'assistant') kept.shift();
+    const kept = capThread(this.turns);
     const next = kept.length ? kept : undefined;
     const before = JSON.stringify(this.plugin.settings.lastThread ?? null);
     if (JSON.stringify(next ?? null) === before) return;
@@ -768,6 +1087,10 @@ export class ChatView extends ItemView {
   private async restoreThread(): Promise<void> {
     const saved = this.plugin.settings.lastThread;
     if (!saved?.length) return;
+    await this.renderThread(saved, 'session');
+  }
+
+  private async renderThread(saved: ChatTurnRecord[], from: 'session' | 'history'): Promise<void> {
     this.turns = saved.map((t) => ({ ...t }));
     this.emptyStateEl.hide();
     for (let i = 0; i < saved.length; i++) {
@@ -813,8 +1136,9 @@ export class ChatView extends ItemView {
     // grounded in a note the user does not have open.
     if (was?.startsWith('note:') && now.startsWith('note:') && now !== 'note:' && was !== now) {
       const name = was.slice('note:'.length).split('/').pop()?.replace(/\.md$/, '') ?? 'another note';
+      const lead = from === 'session' ? 'Restored from your last session.' : 'Reopened from your chat history.';
       this.appendInfoMessage(
-        `Restored from your last session. Those answers are about "${name}"; this panel is now ` +
+        `${lead} Those answers are about "${name}"; this panel is now ` +
           'grounded in the note you have open, so a follow-up will be answered from that one.'
       );
     }
@@ -860,6 +1184,7 @@ export class ChatView extends ItemView {
    * every chip and command disabled with nothing left to finish and clear it.
    */
   async onClose(): Promise<void> {
+    this.closeScopeMenu();
     this.activeConversation?.cancel();
     this.plugin.setChatBusy(false);
     await this.persistThread();
@@ -891,30 +1216,23 @@ export class ChatView extends ItemView {
     setIcon(titleIcon, 'gemma-wiki-logo');
     titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma Wiki' });
     titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: 'local' });
-    // Grouped at the right so the two icons sit together, not pushed to
-    // opposite ends by the title's auto margin.
+    // Grouped at the right so the icons sit together, not pushed to opposite
+    // ends by the title's auto margin.
     const headerActions = titleRow.createDiv({ cls: 'gemma4-chat-header-actions' });
-    // Beside the bin, where it used to be. The per-message save keeps one
-    // answer; this keeps the thread — including the questions, which are the
-    // half you cannot reconstruct from the answers.
-    const saveConvBtn = headerActions.createEl('button', {
-      cls: 'gemma4-chat-clear',
-      attr: { 'aria-label': 'Save conversation as a note' },
-    });
-    setIcon(saveConvBtn, 'save');
-    setTooltip(saveConvBtn, 'Save conversation as a note');
-    saveConvBtn.addEventListener('click', () => void this.saveConversation());
+    const headerButton = (icon: string, label: string, run: () => void) => {
+      const btn = headerActions.createEl('button', { cls: 'gemma4-chat-header-btn', attr: { 'aria-label': label } });
+      setIcon(btn, icon);
+      setTooltip(btn, label);
+      btn.addEventListener('click', run);
+    };
+    // The per-message save keeps one answer; this keeps the thread — including
+    // the questions, which are the half you cannot reconstruct from the answers.
+    headerButton('save', 'Save conversation as a note', () => void this.saveConversation());
+    headerButton('plus', 'New chat', () => void this.newChat());
+    headerButton('history', 'Chat history', () => void this.openHistory());
 
-    const clearBtn = headerActions.createEl('button', {
-      cls: 'gemma4-chat-clear',
-      attr: { 'aria-label': 'Clear chat' },
-    });
-    setIcon(clearBtn, 'trash-2');
-    setTooltip(clearBtn, 'Clear chat');
-    clearBtn.addEventListener('click', () => this.clearChat());
-
-    // Mode pills live in the composer toolbar (concept D); the header
-    // keeps only the context chip.
+    // The mode switch lives in the composer toolbar; the header keeps only
+    // the context chip.
     this.noteChipEl = header.createDiv({ cls: 'gemma4-chat-note-chip' });
 
     // Message list with an empty-state hint shown until the first send.
@@ -923,8 +1241,9 @@ export class ChatView extends ItemView {
 
     // Input area, concept D: suggestion chips above one unified composer
     // card (Claudian-style) holding context pills, a borderless textarea,
-    // and a hairline toolbar — mode pills left, tools middle, send right.
+    // and a hairline toolbar — the scope button left, tools middle, send right.
     const inputWrap = container.createDiv({ cls: 'gemma4-chat-input-wrap' });
+    this.inputWrap = inputWrap;
     this.suggestionRow = inputWrap.createDiv({ cls: 'gemma4-chat-suggestion-row' });
     const composer = inputWrap.createDiv({ cls: 'gemma4-composer' });
     this.contextRow = composer.createDiv({ cls: 'gemma4-chat-context-row' });
@@ -936,31 +1255,19 @@ export class ChatView extends ItemView {
     const buttonRow = composer.createDiv({ cls: 'gemma4-composer-bar' });
 
     const modeRow = buttonRow.createDiv({ cls: 'gemma4-chat-mode-row' });
-    // "This note", not "Note": users repeatedly read "Note" as "search my
-    // notes" and were confused when it only saw the open file.
-    const noteBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'This note' });
-    // Second, and the default: every raw note in the vault, then the model
-    // on its own — the one to type into without thinking. Wiki is last
-    // because it is the one that needs building first.
-    const vaultBtn = modeRow.createEl('button', {
-      cls: 'gemma4-chat-mode-btn',
-      text: 'Vault',
+    // One button that names the mode and opens a menu of all three, in place
+    // of three pills. The pills were the widest thing in the toolbar and,
+    // with the empty panel and the placeholder, the third place the panel
+    // explained the modes. "This note", not "Note": users repeatedly read
+    // "Note" as "search my notes" and were confused when it only saw the
+    // open file.
+    this.scopeButton = modeRow.createEl('button', {
+      cls: 'gemma4-chat-scope',
+      attr: { 'aria-haspopup': 'menu' },
     });
-    const wikiBtn = modeRow.createEl('button', { cls: 'gemma4-chat-mode-btn', text: 'Wiki' });
-    this.modeButtons = { note: noteBtn, wiki: wikiBtn, vault: vaultBtn };
-    // Blur after a click: a pill is a segmented control, and a theme's focus
-    // styling lingering on the one just pressed read as that pill being a
-    // different size. Keyboard focus (Tab) is untouched, since it never
-    // passes through a click.
-    const pick = (mode: ChatMode) => (evt: MouseEvent) => {
-      this.setMode(mode);
-      (evt.currentTarget as HTMLElement | null)?.blur();
-    };
-    noteBtn.addEventListener('click', pick('note'));
-    wikiBtn.addEventListener('click', pick('wiki'));
-    vaultBtn.addEventListener('click', pick('vault'));
+    this.scopeButton.addEventListener('click', () => this.openScopeMenu());
 
-    // Beside the pills, Vault only. A statement of what will happen, not a
+    // Beside the scope button, Vault only. A statement of what will happen, not a
     // setting name: ticked, the notes are searched first; unticked, the
     // model answers alone and the chip above says so.
     this.searchBoxRow = modeRow.createEl('label', { cls: 'gemma4-chat-search-toggle' });
@@ -1176,7 +1483,13 @@ export class ChatView extends ItemView {
       }
     });
 
-    this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateNoteChip()));
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', () => {
+        this.updateNoteChip();
+        // The empty panel names the open note, so it follows it.
+        if (this.mode === 'note') void this.renderEmptyState();
+      })
+    );
     // A pill for a note that has been deleted is a pill that will fail the
     // next question, and every question after it. Drop it when the note goes,
     // and redraw so the row on screen matches what will actually be read.
@@ -1199,6 +1512,8 @@ export class ChatView extends ItemView {
 
     // Last, so the restored thread lands in a panel that is fully built.
     await this.restoreThread();
+    // After layout, so the pointer can be placed over the button it means.
+    window.requestAnimationFrame(() => this.showScopeHint());
   }
 
   /**
@@ -1233,24 +1548,22 @@ export class ChatView extends ItemView {
     if (this.searchBoxRow) this.searchBoxRow.hidden = mode !== 'vault';
     this.searchBoxRow?.removeClass('is-off');
     if (this.searchBox) this.searchBox.checked = true;
-    this.modeButtons?.note.toggleClass('gemma4-chat-mode-active', mode === 'note');
-    this.modeButtons?.wiki.toggleClass('gemma4-chat-mode-active', mode === 'wiki');
-    this.modeButtons?.vault.toggleClass('gemma4-chat-mode-active', mode === 'vault');
-    // The Direct placeholder says where the answer comes from rather than what
-    // to type, because that is the one thing that changes about an answer here
-    // and the Sources row — which says it everywhere else — is absent.
-    // Each placeholder names the other two modes, because the wrong mode is
-    // the commonest way a first question goes badly: a vault question typed
-    // into This note gets "unclear", a general one typed into Wiki gets "not
-    // in your wiki", and a vault question typed into Direct gets "I do not
-    // have access to your files". The pills are the fix, and they are three
-    // small buttons under the box that nothing else points at.
+    this.renderScopeButton();
+    // The hint stays: a switch from the empty panel's rows, a route card or
+    // the history list is not the button it points at. It names the new mode.
+    this.renderScopeHintText();
+    this.closeScopeMenu();
+    // The placeholder says what to type into this mode and nothing more. It
+    // used to name the other two modes as well — "Wiki or Vault above", for
+    // pills that were below — which the empty panel's rows and the scope
+    // button now do. Vault's says whether the notes will be searched, the
+    // one thing that changes about its answers.
     this.inputEl?.setAttribute(
       'placeholder',
       mode === 'note'
-        ? 'Ask about this note… (Enter to send) — Wiki or Vault above for anything else'
+        ? 'Ask about this note… (Enter to send)'
         : mode === 'wiki'
-          ? `Ask across the cards in ${wikiDir()}/… (Enter to send) — This note or Vault for anything else`
+          ? `Ask across the cards in ${wikiDir()}/… (Enter to send)`
           : this.vaultPlaceholder()
     );
     this.renderSuggestions();
@@ -1689,8 +2002,6 @@ export class ChatView extends ItemView {
     if (typed) this.inputEl.value = '';
     this.autoGrowInput();
     this.lastQuestion = question;
-    // One message is enough: the nudge has done its job and should not come
-    // back on the next empty panel.
     if (!this.plugin.settings.hasChatted) {
       this.plugin.settings.hasChatted = true;
       void this.plugin.saveSettings();
@@ -1717,7 +2028,7 @@ export class ChatView extends ItemView {
         t === 'wiki' ? 'Ask the wiki'
         : t === 'note' ? 'Ask the open note'
         : 'Ask across your vault';
-      const btn = bar.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: label });
+      const btn = routeButton(bar, label, SCOPES[t].icon);
       buttons.push(btn);
       btn.addEventListener('click', () => {
         if (this.busy) return;
@@ -2681,7 +2992,7 @@ export class ChatView extends ItemView {
             cls: 'gemma4-chat-route-text',
             text: `Questions across your whole collection are what Wiki is for — you have ${cards} card${cards === 1 ? '' : 's'}.`,
           });
-          const b = card.createDiv({ cls: 'gemma4-chat-route-actions' }).createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Ask the wiki' });
+          const b = routeButton(card.createDiv({ cls: 'gemma4-chat-route-actions' }), 'Ask the wiki', SCOPES.wiki.icon);
           b.addEventListener('click', () => {
             if (this.busy) return;
             b.disabled = true;
@@ -2693,7 +3004,7 @@ export class ChatView extends ItemView {
             cls: 'gemma4-chat-route-text',
             text: `Questions across your whole collection are what Wiki is for. Build cards with Scan a folder first — nothing is in ${wikiDir()}/ yet.`,
           });
-          const b = card.createDiv({ cls: 'gemma4-chat-route-actions' }).createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Scan a folder' });
+          const b = routeButton(card.createDiv({ cls: 'gemma4-chat-route-actions' }), 'Scan a folder', 'folder-search');
           b.addEventListener('click', () => this.runSuggestion({ label: 'Scan a folder', action: 'scan' }));
         }
       }
