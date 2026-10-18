@@ -88,6 +88,42 @@ preserved, **stays Japanese** (no English translation).
 Expect: spacing tidied, `[[闭包]]` / `` `TTL` `` / callout preserved, **stays
 Chinese** (no English translation), no mid-sentence truncation.
 
+## Fixture KO
+
+Korean was added with #169. Run the same two commands on it, then the search
+check below.
+
+```markdown
+## 캐시 에 대한   노트
+
+캐시는 결국 데이터가 어디에 있는가의 문제다.  [[클로저]]는 자기 복사본을
+가진다. 캐시 무효화는 두 가지 어려운 문제 중 하나 이다.
+
+- `TTL` 기반 만료
+- LRU 방식의 퇴출
+
+> [!note] 이 콜아웃은 남아 있어야 한다
+
+띄어쓰기 가 이상한 문장 을 고친다.
+```
+
+Expect: spacing tidied, `[[클로저]]` / `` `TTL` `` / callout preserved, **stays
+Korean** (no English translation), no mid-sentence truncation.
+
+### Korean search check (Vault mode)
+
+Create three notes, one per line below, each titled by its subject:
+
+- **커피 로스팅**: 커피 로스팅은 생두를 가열해 향을 만드는 과정이다. 로스팅을 길게 하면 쓴맛이 강해진다.
+- **수면과 기억**: 수면과 기억에 대해 쓴 노트는 많지 않다. 어느 날 밤 잠을 충분히 자면 기억이 정리된다.
+- **복리**: 복리는 이자에 다시 이자가 붙는 구조이다.
+
+Ask, with the search box ticked: `커피 로스팅에 대해 쓴 노트는 어느 것인가요`
+
+Expect: the answer is a list (the question asks which notes), the coffee note
+is first, and the sleep note is not listed even though it uses 대해, 쓴, 노트는
+and 어느.
+
 ---
 
 ## Result log (fill in after running)
@@ -97,3 +133,4 @@ Chinese** (no English translation), no mid-sentence truncation.
 | EN  |  |  |  |  |  |
 | JA  |  |  |  |  |  |
 | ZH  |  |  |  |  |  |
+| KO  |  |  |  |  |  |
