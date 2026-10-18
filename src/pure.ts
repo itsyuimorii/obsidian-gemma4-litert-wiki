@@ -267,6 +267,50 @@ const CJK_STOP = new Set([
 ]);
 
 const CJK_CHAR = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]/;
+// Hangul syllables. They fall inside CJK_CHAR's third range, which starts at
+// U+8C48 rather than U+F900, so Korean takes the same path as Chinese and
+// Japanese: a segment is a word, not three letters or more. Korean then
+// needs two things of its own, below.
+const HANGUL = /[\uAC00-\uD7A3]/;
+
+// Particles Korean attaches to the noun, longest first. 로스팅에 in a
+// question and 로스팅을 in a note are the same word; the note contains the
+// stem, so the stem is the term (#169).
+const KO_PARTICLES = [
+  '에서는', '에서도', '에게서', '으로는', '으로도', '에서', '에게', '한테', '으로',
+  '까지', '부터', '보다', '처럼', '이나', '에는', '에도', '와는', '과는',
+  '은', '는', '이', '가', '을', '를', '에', '의', '로', '와', '과', '도', '만', '들',
+];
+
+/**
+ * A Hangul word without its particles: at most two, so 노트들은 is 노트.
+ * Never below `min` syllables, so 사과 (apple) is not 사 with 과 attached.
+ */
+function koreanStem(word: string, min = 2): string {
+  let w = word;
+  for (let i = 0; i < 2; i++) {
+    const p = KO_PARTICLES.find((x) => w.endsWith(x) && w.length - x.length >= min);
+    if (!p) break;
+    w = w.slice(0, -p.length);
+  }
+  return w;
+}
+
+// Korean question scaffolding, as stems: "which note did I write about X"
+// around X. Checked against the word and its shortest stem, so 것은 and
+// 노트는 go as well as 것 and 노트.
+const KO_STOP = new Set([
+  '대해', '대한', '관해', '관한', '관련', '관련된', '쓴', '썼던', '썼어', '썼나',
+  '쓰다', '써줘', '작성', '작성한', '노트', '메모', '문서', '파일', '볼트', '위키',
+  '글', '어느', '어떤', '무슨', '무엇', '뭐', '뭔가', '뭐야', '것', '거', '거야',
+  '것인가요', '것인가', '인가요', '있나요', '있는', '있어', '있다', '없다', '내',
+  '나', '제', '저', '우리', '알려줘', '알려주세요', '알려', '설명', '설명해',
+  '설명해줘', '정리', '정리해줘', '요약', '요약해줘', '찾아줘', '찾아', '보여줘',
+  '목록', '최근', '요즘', '이번', '지난', '오늘', '어제', '모든', '전체', '사이',
+  '좀', '그리고', '또는', '및', '그', '이것', '그것', '수', '등', '때',
+  '왜', '어떻게', '언제', '어디', '하는', '하다', '해줘', '주세요', '줘', '몇',
+  '개', '추가한', '편집한',
+]);
 const CJK_RUN = /[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]+/g;
 
 // Word segmentation from ICU, which Chromium (so Obsidian) and Node both
@@ -358,7 +402,14 @@ function termsOf(text: string, keep: (latin: string) => boolean): string[] {
     for (const piece of seg.segment.split(/['’]/)) {
       const t = piece.trim();
       if (!t) continue;
-      if (CJK_CHAR.test(t)) {
+      if (HANGUL.test(t)) {
+        flush();
+        const stem = koreanStem(t);
+        // A particle on its own is what ICU leaves of React에서 or JS를:
+        // the Latin word is a segment, the particle another.
+        const particle = KO_PARTICLES.includes(t);
+        if (!particle && !KO_STOP.has(t) && !KO_STOP.has(stem) && !KO_STOP.has(koreanStem(t, 1))) out.push(stem);
+      } else if (CJK_CHAR.test(t)) {
         if (CJK_STOP.has(t)) {
           flush();
         } else if (t.length === 1 && /[㐀-鿿]/.test(t)) {
@@ -1773,6 +1824,9 @@ export function asksAboutOwnNotes(question: string): boolean {
     /(?:vault|valut|wiki|笔记|筆記)\s*(?:里|裡|中|内|里面|裡面)/,
     /我(?:写|寫|加|存|记|記|收藏|剪藏|保存)(?:过|了|的)/,
     /\bwo\s*de\b/i,
+    /(?:내|나의|제|저의|우리)\s*(?:노트|메모|볼트|위키|문서|파일|글)/,
+    /(?:노트|메모|볼트|위키)\s*(?:에서|에는|속에?|안에?)(?![가-힣])/,
+    /(?:내가|제가)[^.?!]{0,20}(?:쓴|썼|작성|저장|추가|메모)/,
     /\b(?:what|which|how many)\b[^.?!]{0,40}\bI\s+(?:wrote|write|added|add|saved|save|clipped|clip|filed|file|noted|note|ingested|ingest|have)\b/i,
     /(?:私|僕|俺|自分)(?:が|は)[^。？?]{0,24}(?:書い|保存し|追加し|クリップし|メモし)/,
     // "mes notes", "meine Notizen", "mis notas" — and the vault itself.
@@ -1818,6 +1872,11 @@ export function looksLikeRefusal(answer: string): boolean {
     /无法(?:访问|訪問|获取|獲取|查看|找到|回答|确定|確定)/,
     /没有(?:提到|提及|包含|相关|相關|找到|涉及|明确)/,
     /(?:不清楚|不明确|不明確|无法理解|無法理解)/,
+    /(?:언급|정보|내용|기록|설명)(?:이|은|는)?\s*(?:없습니다|없어요|없네요|없다)/,
+    /(?:찾을|확인할|알|답변할|접근할|판단할)\s*수\s*(?:없습니다|없어요|없네요|없다)/,
+    /(?:포함|언급|기재|명시|기록)(?:되어|돼)\s*있지\s*않/,
+    /(?:명확하지|분명하지)\s*않/,
+    /(?:이해하지\s*못했|이해할\s*수\s*없)/,
   ];
   return patterns.some((p) => p.test(head));
 }
@@ -2531,7 +2590,14 @@ export function looksLikeRecentQuery(question: string): boolean {
   const notesJa = /(?:ノート|メモ|書い|編集|追加|作業|触っ)/;
   const timeZh = /(?:最近|这周|这星期|本周|上周|这个月|今天|昨天|这几天|近期)/;
   const notesZh = /(?:笔记|文章|文件|写|编辑|改|加|新增|做)/;
-  return (time.test(q) && notes.test(q)) || (timeJa.test(q) && notesJa.test(q)) || (timeZh.test(q) && notesZh.test(q));
+  const timeKo = /(?:최근|요즘|요새|이번\s*주|지난\s*주|이번\s*달|지난\s*달|오늘|어제|며칠)/;
+  const notesKo = /(?:노트|메모|글|문서|파일|썼|쓴|작성|편집|추가|수정|작업)/;
+  return (
+    (time.test(q) && notes.test(q)) ||
+    (timeJa.test(q) && notesJa.test(q)) ||
+    (timeZh.test(q) && notesZh.test(q)) ||
+    (timeKo.test(q) && notesKo.test(q))
+  );
 }
 
 /**
@@ -2553,6 +2619,12 @@ export function looksLikeListQuery(question: string): boolean {
     /(?:何件|いくつ)の?(?:ノート|記事|ファイル|メモ)/,
     /(?:哪些|哪几篇|哪几个|哪一篇|有几篇|有多少篇|列出|列一下|找一下|找找|找出|搜一下|搜索)/,
     /(?:笔记|筆記|文章|文件|页面|頁面)(?:有哪些|都有什么|都有啥|有什么|提到)/,
+    // Korean: "which note", "the notes are which", "list the notes".
+    /(?:어느|어떤|무슨)\s*(?:노트|메모|문서|글|파일)/,
+    /(?:노트|메모|문서|파일)(?:들)?(?:는|은|가|이|를|을)?\s*(?:어느|어떤|뭐|무엇|몇)/,
+    /(?:노트|메모|문서|파일)\s*(?:목록|리스트)/,
+    /몇\s*개의?\s*(?:노트|메모|문서|파일)/,
+    /(?:노트|메모|문서|파일)[^.?!]{0,10}(?:찾아\s*줘|찾아\s*주|보여\s*줘|보여\s*주|나열해|검색해)/,
     // French, German, Spanish. \b is ASCII-only, so an accented word
     // ("qué", "quelles" before "é") is bounded by letter lookarounds.
     /(?<!\p{L})(?:quels?|quelles?|lesquel(?:le)?s?)\s+(?:de\s+mes\s+)?(?:notes?|fichiers?|pages?|articles?|documents?)(?!\p{L})/iu,
@@ -2653,7 +2725,14 @@ export function looksLikeCollectionQuery(question: string): boolean {
   const en = /\b(?:connect|connects|connections|connected|in\s+common|common\s+threads?|themes?|patterns?|across\s+(?:my|all|the)\s+(?:notes|vault|pages|cards)|overall|big\s+picture|overview\s+of\s+(?:my|all)|missing|gaps?|still\s+open|unanswered|contradict|contradictions?|disagree|inconsistent|what\s+did\s+i\s+add|added\s+this\s+week|what\s+have\s+i\s+been\s+(?:writing|working))\b/i;
   const ja = /(?:つながり|関連|共通|全体|傾向|テーマ|パターン|足りない|抜け|欠け|矛盾|食い違|今週追加|追加したもの)/;
   const zh = /(?:联系|關聯|关联|共同|主题|主題|整体|整體|全局|规律|模式|缺|少了|没写完|未完成|矛盾|冲突|衝突|不一致|这周加|本周加|新增了)/;
-  return en.test(q) || ja.test(q) || zh.test(q);
+  // A hit sends the question to the vault overview instead of search, so
+  // Korean relation words count only next to a word for notes: 연결 is also
+  // a database connection and 패턴 a design pattern, both subjects.
+  const koWhole = /(?:전체적으로|전반적으로|이번\s*주에?\s*추가)/;
+  const koNotes = String.raw`(?:노트|메모|글|볼트|위키)`;
+  const koRelation = String.raw`(?:연결|공통|공통점|빠진|빠져|누락|모순|상충|일치하지)`;
+  const ko = new RegExp(`${koNotes}[^.?!]{0,15}${koRelation}|${koRelation}[^.?!]{0,15}${koNotes}`);
+  return en.test(q) || ja.test(q) || zh.test(q) || koWhole.test(q) || ko.test(q);
 }
 
 /**
