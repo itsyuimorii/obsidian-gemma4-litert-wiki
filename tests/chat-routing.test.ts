@@ -89,6 +89,28 @@ test('other honest refusals are caught', () => {
   ]) assert.ok(looksLikeRefusal(a), a);
 });
 
+test('a general question asked of one note is a refusal, however it is worded', () => {
+  for (const a of [
+    // From the field: "teach me korean", asked in This note of a planning note.
+    'I cannot teach you Korean. The note you provided is a technical document detailing an optimization ' +
+      'plan for a project called "Gemma Wiki," referencing another project called "obsidian-local-llm-hub." ' +
+      'It does not contain any information about the Korean language.',
+    "I can't help with that — the note is about coffee.",
+    'I am unable to explain this from the material provided.',
+    "It doesn't contain any details on that.",
+    'The note does not contain any information about Rome.',
+    "This note doesn't mention Rome.",
+  ]) assert.ok(looksLikeRefusal(a), a);
+});
+
+test('an answer that merely uses those words is not a refusal', () => {
+  for (const a of [
+    'I cannot stress enough how much grind size matters: finer grounds extract faster.',
+    'Decaf does not contain any caffeine to speak of — about 2 mg a cup.',
+    'It does not matter which kettle you use, as long as the water is 93 °C.',
+  ]) assert.equal(looksLikeRefusal(a), false, a.slice(0, 40));
+});
+
 test('a real answer is not a refusal, even with a caveat later', () => {
   for (const a of [
     'Finer grounds expose more surface, so water extracts faster — too fine and you cross into bitterness. Your note pins the target window at 18–22%.',

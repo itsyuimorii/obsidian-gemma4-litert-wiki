@@ -1803,9 +1803,16 @@ export function looksLikeRefusal(answer: string): boolean {
   const head = para.slice(0, 240);
   if (!head) return false;
   const patterns: RegExp[] = [
-    /\bI\s+(?:do\s+not|don't|did\s+not|didn't|cannot|can't|could\s+not|couldn't|am\s+unable\s+to|was\s+unable\s+to)\s+(?:have\s+)?(?:access|follow|find|see|tell|determine|locate|answer|identify)\b/i,
+    // The verbs a model declines with. "Teach", "help" and "explain" came from
+    // a general question asked in This note: "I cannot teach you Korean. The
+    // note … does not contain any information about the Korean language."
+    /\bI\s+(?:do\s+not|don't|did\s+not|didn't|cannot|can't|could\s+not|couldn't|am\s+unable\s+to|was\s+unable\s+to)\s+(?:have\s+)?(?:access|follow|find|see|tell|determine|locate|answer|identify|teach|help|explain|provide|give|assist)\b/i,
     /\b(?:is|are|seems|remains)\s+unclear\b/i,
-    /\b(?:the|this|your|these)\s+(?:note|notes|wiki|material|page|pages|text|document|documents|content)\s+(?:does|do|did)\s+not\s+(?:mention|say|contain|cover|include|address|discuss|provide|specify|explain)\b/i,
+    /\b(?:the|this|your|these)\s+(?:note|notes|wiki|material|page|pages|text|document|documents|content)\s+(?:does|do|did)(?:\s+not|n't)\s+(?:mention|say|contain|cover|include|address|discuss|provide|specify|explain)\b/i,
+    // "It does not contain any information about…": the subject is the note,
+    // named a sentence earlier. Only with a word for information after it, so
+    // "decaf does not contain any caffeine" stays an answer.
+    /\b(?:it|this|that)\s+(?:does|do|did)(?:\s+not|n't)\s+(?:contain|include|have|provide|offer|give)\s+any\s+(?:information|mention|details?|reference|content|discussion)\b/i,
     /\bnot\s+(?:mentioned|covered|present|included|found|addressed|discussed|described)\s+(?:in|anywhere\s+in)\s+(?:the|this|your|these)\b/i,
     /\bno\s+(?:information|mention|details?|reference|content)\s+(?:about|on|regarding|of)\b/i,
     /\bnothing\s+in\s+(?:the|this|your|these)\s+(?:note|notes|wiki|material|page|pages)\b/i,
