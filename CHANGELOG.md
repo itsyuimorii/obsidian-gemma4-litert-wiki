@@ -15,6 +15,12 @@ All notable changes to this plugin are recorded here. Versions follow
   words such as "must", "occur" and "within" as claims and dropped "read" and
   "write" as instruction words, so a faithful paraphrase scored as the most
   suspect point in the wiki.
+- **Korean questions find the notes about their subject.** Particles stay on
+  the noun in Korean, so 로스팅에 in a question never matched 로스팅을 in a
+  note, and the words of the question's grammar outweighed its subject. Terms
+  are now matched on the stem, Korean question scaffolding is ignored, and a
+  Korean list, recent, collection or own-notes question is recognised, as is
+  a Korean refusal (#169).
 
 ## 1.0.24 — 2026-10-06
 
