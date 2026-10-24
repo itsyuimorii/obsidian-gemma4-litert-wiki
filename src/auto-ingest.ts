@@ -1,4 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
+import { keepOpenOnOutsideClick } from './modal-guard';
 import { contentHash, getIngestedSourceHashes, getIngestedSourcePaths, precheckNote, wikiDir } from './wiki-store';
 
 // Semi-automatic ingest: the plugin does the tedious parts — finding new or
@@ -143,6 +144,7 @@ export class AutoIngestReviewModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
+    keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-lint-modal');
     contentEl.createEl('h3', { text: 'Review drafts before they enter the wiki' });
     contentEl.createDiv({

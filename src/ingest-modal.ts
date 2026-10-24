@@ -1,5 +1,6 @@
 import { App, MarkdownRenderer, Modal, Component, setIcon } from 'obsidian';
 import { formatDiagnostics, type Check, type DiagnosticFacts } from './pure';
+import { keepOpenOnOutsideClick } from './modal-guard';
 
 // A small yes/no gate. Resolves true if the user confirms, false otherwise
 // (including closing the modal). Used e.g. when a note is already ingested and
@@ -82,6 +83,7 @@ export class IngestPreviewModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
+    keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-ingest-modal');
     // The heading used to be hard-coded to "Review wiki page before writing",
     // which was wrong for Improve: that path previews the user's OWN note, so
@@ -139,6 +141,7 @@ export class RelinkPreviewModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
+    keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-ingest-modal');
     contentEl.createEl('h3', { text: 'Review related-link additions' });
     contentEl.createDiv({
@@ -192,6 +195,7 @@ export class SuggestTagsLinksModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
+    keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-ingest-modal');
     contentEl.createEl('h3', { text: 'Review tags & links before writing' });
     contentEl.createDiv({
