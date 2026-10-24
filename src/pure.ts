@@ -2857,3 +2857,176 @@ export function parseExpansion(raw: string, subject: string): string[] {
   }
   return out;
 }
+
+// --------------------------------------------------------------------------
+// Ingest: the extraction prompt
+// --------------------------------------------------------------------------
+
+/** Where an extraction prompt's variable parts come from. */
+export interface ExtractionPromptInput {
+  /** The note as it will be sent, after cleaning and clamping. */
+  note: string;
+  /** Tags the wiki already uses, in order of authority (schema, pending, use). */
+  vocabulary: readonly string[];
+  /** The schema.md naming rule for new tags, or '' when there is none. */
+  naming: string;
+}
+
+/** What one extraction is asked for, and how much room it gets to answer. */
+export interface ExtractionPrompt {
+  system: string;
+  keyPoints: number;
+  outputTokens: number;
+}
+
+/** Text the model reads as prose, without what a language guess should ignore. */
+function proseOf(note: string): string {
+  return note
+    .replace(/^---\n[\s\S]*?\n---\n/, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`\n]*`/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/\[\[[^\]|]*\|?/g, ' ');
+}
+
+/**
+ * The language a card should be written in, when it is a CJK one.
+ *
+ * Without this the card came out in English for notes written in Chinese:
+ * the prompt is English and nothing said otherwise. "The language of the
+ * note" is not enough on its own, because most notes in Chinese or Japanese
+ * also carry English terms, headings and code, and the model then picks
+ * whichever it saw last. So the share is measured here and the language
+ * named outright.
+ *
+ * A CJK character carries about as much as a short English word, so a fifth
+ * of the letters being CJK already makes it the language of the prose.
+ * Latin-script notes return null and are left to "the language of the note",
+ * which the model handles well for English, French and the rest.
+ */
+export function noteLanguage(note: string): 'Chinese' | 'Japanese' | 'Korean' | null {
+  let han = 0;
+  let kana = 0;
+  let hangul = 0;
+  let latin = 0;
+  for (const ch of proseOf(note)) {
+    if (/[぀-ヿｦ-ﾟ]/.test(ch)) kana++;
+    else if (/[㐀-鿿豈-﫿]/.test(ch)) han++;
+    else if (/[가-힣]/.test(ch)) hangul++;
+    else if (/[A-Za-zÀ-ɏ]/.test(ch)) latin++;
+  }
+  const cjk = han + kana + hangul;
+  if (!cjk || cjk / (cjk + latin) < 0.2) return null;
+  if (hangul > han + kana) return 'Korean';
+  // Japanese is written in kanji too; kana is what only Japanese has. A few
+  // percent is enough, since particles alone put kana in every sentence.
+  return kana >= (han + kana) * 0.05 ? 'Japanese' : 'Chinese';
+}
+
+const MIN_KEY_POINTS = 3;
+const MAX_KEY_POINTS = 12;
+
+/**
+ * How many key points a note's card should have.
+ *
+ * It was three to five for every note, so a 25 KB note with fifty sections
+ * got the same card as a paragraph, and whole sections never appeared on it.
+ * The count now follows the note: one per section heading (## or ###), or
+ * one per ~800 tokens for notes without headings, between 3 and 12. Twelve is
+ * where a card stops being a summary; the note is still there for the rest.
+ */
+export function keyPointTarget(note: string): number {
+  let headings = 0;
+  let fenced = false;
+  for (const line of note.split('\n')) {
+    if (/^\s*```/.test(line)) fenced = !fenced;
+    else if (!fenced && /^#{2,3}\s+\S/.test(line)) headings++;
+  }
+  const byLength = Math.ceil(estimateImproveTokens(note) / 800);
+  return Math.min(MAX_KEY_POINTS, Math.max(MIN_KEY_POINTS, headings, byLength));
+}
+
+/** The output room a card with `keyPoints` points starts with. */
+export function extractionOutputTokens(keyPoints: number): number {
+  // 768 has always been enough for five points. Each one past that gets 90:
+  // a sentence in Chinese costs roughly twice the tokens of one in English.
+  return 768 + Math.max(0, keyPoints - 5) * 90;
+}
+
+/**
+ * The wiki's tags, split into those the note names and the rest.
+ *
+ * The list used to be one line in order of authority, and the model took
+ * from the front of it: a note on JavaScript's data types was tagged
+ * data-science and software-architecture, the first two tags in the list,
+ * and a note on compound interest was tagged programming. Splitting it puts
+ * the tags with evidence where position favours them, and stops the prompt
+ * from implying that the first of the rest is the likeliest. Nothing is
+ * removed, because reuse across different words is the point of the list:
+ * a note on golden sets should still find llm-evaluation.
+ *
+ * A tag counts as named only when every word of it appears. Half a match is
+ * no evidence: "data" is in most notes, and ranking data-science up for it
+ * put it back at the front for half the vault.
+ */
+export function splitVocabulary(
+  vocabulary: readonly string[],
+  note: string
+): { named: string[]; others: string[] } {
+  const text = note.normalize('NFKC').toLowerCase();
+  const named = (w: string) =>
+    new RegExp(`(^|[^\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u').test(text);
+  const out = { named: [] as string[], others: [] as string[] };
+  for (const tag of vocabulary) {
+    const words = tag.split('-').filter((w) => w.length >= 3);
+    (words.length && words.every(named) ? out.named : out.others).push(tag);
+  }
+  return out;
+}
+
+/** The system prompt for one ingest extraction, and the budget that goes with it. */
+export function extractionPrompt(input: ExtractionPromptInput): ExtractionPrompt {
+  const keyPoints = keyPointTarget(input.note);
+  const language = noteLanguage(input.note);
+  const { named, others } = splitVocabulary(input.vocabulary, input.note);
+
+  const vocabLine =
+    (named.length ? ` Tags in the wiki that this note names: ${named.join(', ')}.` : '') +
+    (others.length ? ` Other tags in the wiki: ${others.join(', ')}.` : '') +
+    (input.vocabulary.length
+      ? ' Reuse a listed tag, with its exact spelling, only when the note is mainly about that topic. ' +
+        'A listed tag that merely shares a word with the note, or names a neighbouring field, is wrong; ' +
+        'coin a new tag instead.'
+      : '');
+  const namingLine = input.naming
+    ? ` When you must coin a new tag, name it following this convention: ${input.naming}.`
+    : '';
+  const languageLine = language
+    ? ` Write summary and key_points in ${language}, the language of the note, keeping code, names and ` +
+      'technical terms as the note writes them.'
+    : ' Write summary and key_points in the language of the note.';
+
+  const system =
+    'You extract structured metadata from a note. Respond with ONLY a single JSON object, ' +
+    'no markdown fences, no explanation: ' +
+    '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."], ' +
+    '"confidence": "high", "mentions": ["Name or Concept", "..."]}. ' +
+    '1 to 3 tags. The first tag names the main subject: the specific technology, field or thing the ' +
+    'note is mostly about. A tag names a TOPIC — a subject several notes could share — using domain ' +
+    "terminology, NOT the note's fine details and NOT a generic process word (extraction, editing, " +
+    'motion) that means different things in different fields. One good topic tag beats three narrow ones. ' +
+    `About ${keyPoints} key_points, fewer only if the note has less to say, following its sections in ` +
+    'order. Each is ONE self-contained sentence stating a specific fact from the note — a rule, a ' +
+    'number, a pitfall, a comparison, a definition — not a description of what the note covers. If the ' +
+    'note has a section of pitfalls, exam points or interview questions, include them. confidence is ' +
+    '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
+    'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
+    'misread). mentions: 0 to 6 salient named entities or concepts the note actually ' +
+    "refers to (proper nouns, technologies, specific concepts), in the note's own " +
+    'language; [] if none stand out.' +
+    languageLine +
+    vocabLine +
+    namingLine;
+
+  return { system, keyPoints, outputTokens: extractionOutputTokens(keyPoints) };
+}

@@ -64,6 +64,7 @@ import {
   diffUsage,
   suggestRelated,
   estimateImproveTokens,
+  extractionPrompt,
   formatUsageReport,
   improveOutputBudget,
   migrateSettings,
@@ -95,9 +96,6 @@ import {
   textOf,
   type ParseFailure,
 } from './model-output';
-
-/** The output budget one extraction starts with. A card is a small object. */
-const INGEST_OUTPUT_TOKENS = 768;
 
 /** What a provenance check on one page produced, including the ways it can fail. */
 type ProvenanceCheck = { ok: true; unsupported: string[] } | { ok: false; reason: string };
@@ -3650,24 +3648,16 @@ export default class LiteRtSpikePlugin extends Plugin {
       vocab.push(tag);
       if (vocab.length >= VOCAB_CAP) break;
     }
-    const vocabLine = vocab.length
-      ? ` Prefer tags from this list when one fits, reusing the exact spelling: ${vocab.join(', ')}. Only coin a new tag if none of these apply.`
-      : '';
     // Naming rule (issue #40): the schema.md "Naming" section's `concept:` rule
-    // actually shapes new tag names by guiding the model — so editing that line
-    // changes output, instead of being a dead descriptive note. (kebab-case is
-    // still enforced mechanically by slugify; this covers the rest, e.g.
-    // "singular noun", and works for any language the model handles.)
-    const namingLine = schema.naming.concept
-      ? ` When you must coin a new tag, name it following this convention: ${schema.naming.concept}.`
-      : '';
-
+    // shapes new tag names by guiding the model. kebab-case is still enforced
+    // mechanically by slugify; this covers the rest, e.g. "singular noun".
+    const prompt = extractionPrompt({ note: noteContent, vocabulary: vocab, naming: schema.naming.concept ?? '' });
     // The second attempt used to run with exactly the same parameters as the
     // first: try again and hope. It now knows why the first one failed, which
     // is enough to widen the output budget in the one case where more room is
     // the actual fix — and, more importantly, to NOT widen in the case that
     // looks identical from the outside. See nextOutputCap.
-    let cap = INGEST_OUTPUT_TOKENS;
+    let cap = prompt.outputTokens;
     let failure: { reason: ParseFailure | null; repetitive: boolean } | null = null;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -3680,23 +3670,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             messages: [
               {
                 role: 'system',
-                content:
-                  'You extract structured metadata from a note. Respond with ONLY a single JSON object, ' +
-                  'no markdown fences, no explanation: ' +
-                  '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."], ' +
-                  '"confidence": "high", "mentions": ["Name or Concept", "..."]}. ' +
-                  '1 to 3 tags. A tag names the note\'s TOPIC — a subject several notes could ' +
-                  'share — using domain terminology, NOT the note\'s fine details and NOT a generic ' +
-                  'process word (extraction, editing, motion) that means different things in ' +
-                  'different fields. One good topic tag beats three narrow ones. 3 to 5 key_points, each ONE short ' +
-                  'self-contained sentence stating concrete content from the note. confidence is ' +
-                  '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
-                  'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
-                  'misread). mentions: 0 to 6 salient named entities or concepts the note actually ' +
-                  "refers to (proper nouns, technologies, specific concepts), in the note's own " +
-                  'language; [] if none stand out.' +
-                  vocabLine +
-                  namingLine,
+                content: prompt.system,
               },
             ],
           },
