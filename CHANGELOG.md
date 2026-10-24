@@ -25,6 +25,11 @@ All notable changes to this plugin are recorded here. Versions follow
   *Pages read this run* folds out to each page, linked, and why it was
   read: least borne out by its note, or drawn at random. A clean report
   could not be told apart from one that read the same pages as last time.
+- **A running task's notice stays until the task ends.** Clicking the
+  progress notice in the top-right corner closed it, and with it the only
+  sign that an ingest, a scan or a test command was still running. It now
+  ignores clicks while the task runs; the notice with the result still
+  closes on a click.
 
 ## 1.0.25 — 2026-10-18
 

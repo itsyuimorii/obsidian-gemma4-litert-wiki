@@ -125,6 +125,22 @@ export function notifyAndLog(vault: Vault, kind: NoticeKind, text: string, durat
 }
 
 /**
+ * Keep a progress toast on screen when it is clicked, and return the undo.
+ *
+ * Obsidian closes any notice on a click. On a toast that is the only sign an
+ * operation is still running, one click left a run of minutes with nothing
+ * on screen, and no way to tell a finished run from a running one. So a
+ * running toast ignores clicks; the toast with the outcome closes on a click
+ * as usual. Capture on the notice itself stops the click before Obsidian's
+ * own listener sees it.
+ */
+export function holdOnClick(notice: Notice): () => void {
+  const hold = (e: MouseEvent) => e.stopImmediatePropagation();
+  notice.containerEl.addEventListener('click', hold, true);
+  return () => notice.containerEl.removeEventListener('click', hold, true);
+}
+
+/**
  * A long-running operation that reports as it goes and then says how it ended.
  *
  * Progress toasts used to be a bare `new Notice(text, 0)` whose later
@@ -135,9 +151,11 @@ export function notifyAndLog(vault: Vault, kind: NoticeKind, text: string, durat
  */
 export class Progress {
   private readonly notice: Notice;
+  private readonly release: () => void;
 
   constructor(text: string) {
     this.notice = notify('progress', text);
+    this.release = holdOnClick(this.notice);
   }
 
   /** Replace the running message. Still ⏳. */
@@ -174,6 +192,7 @@ export class Progress {
   }
 
   private finish(kind: NoticeKind, text: string, durationMs: number) {
+    this.release();
     this.notice.setMessage(mark(kind, text));
     window.setTimeout(() => this.notice.hide(), durationMs);
   }
