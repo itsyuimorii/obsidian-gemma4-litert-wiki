@@ -62,7 +62,10 @@ export interface FsApi {
   statSync(p: string): Stats;
   statfsSync(p: string): FsStats;
   renameSync(from: string, to: string): void;
-  rmSync(p: string, opts?: { force?: boolean }): void;
+  // `recursive` is for an old runtime's version folder under wasm/ (#167).
+  // It stays inside the root: the path is checked like every other, and Node
+  // removes a symlink inside the folder rather than following it.
+  rmSync(p: string, opts?: { force?: boolean; recursive?: boolean }): void;
   writeFileSync(p: string, data: string): void;
   openSync(p: string, flags: string): number;
   writeSync(fd: number, data: Bytes, offset?: number, length?: number): number;

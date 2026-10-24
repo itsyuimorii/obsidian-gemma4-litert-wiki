@@ -5,7 +5,14 @@ import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
 import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, DiagnosticsModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
-import { ensureCommonJsMarker, ensureRuntimeFile, isRuntimeFile, runtimeBytesOnDisk } from './wasm-store';
+import {
+  ensureCommonJsMarker,
+  ensureRuntimeFile,
+  isRuntimeFile,
+  removeStaleRuntimes,
+  runtimeBytesOnDisk,
+  runtimeDir,
+} from './wasm-store';
 import { setWasmScriptResolver } from './wasm-loader';
 import {
   appendLog,
@@ -3920,7 +3927,7 @@ export default class LiteRtSpikePlugin extends Plugin {
     }
     let runtimeBytes = 0;
     try {
-      runtimeBytes = runtimeBytesOnDisk(path.join(dir, 'wasm'));
+      runtimeBytes = runtimeBytesOnDisk(runtimeDir(dir));
     } catch {
       /* no wasm/ yet is the normal fresh-install state, and reads as zero */
     }
@@ -4107,14 +4114,18 @@ export default class LiteRtSpikePlugin extends Plugin {
     if (!(adapter instanceof FileSystemAdapter)) {
       throw new Error('Not running on desktop FileSystemAdapter — cannot resolve a local wasm path.');
     }
-    const wasmDir = path.join(adapter.getBasePath(), this.manifest.dir ?? '', 'wasm');
+    const pluginDir = path.join(adapter.getBasePath(), this.manifest.dir ?? '');
+    removeStaleRuntimes(pluginDir);
+    const wasmDir = runtimeDir(pluginDir);
     this.wasmDir = wasmDir;
     log('Serving wasm dir:', wasmDir);
 
     this.server = http.createServer((req, res) => {
       const reqPath = decodeURIComponent((req.url ?? '/').split('?')[0]);
       const filePath = path.join(wasmDir, path.normalize(reqPath));
-      if (!filePath.startsWith(wasmDir)) {
+      // With the separator: wasm/0.18.1 is also a prefix of a sibling
+      // wasm/0.18.10, and only this version's folder is served.
+      if (!filePath.startsWith(wasmDir + path.sep)) {
         res.writeHead(403).end();
         return;
       }
