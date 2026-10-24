@@ -21,6 +21,10 @@ All notable changes to this plugin are recorded here. Versions follow
   file per language, keyed, with English as the fallback for any key a
   language lacks. A test holds every file to the keys and placeholders of
   `en.ts`, so a new language is checked without a new test.
+- **The spot-check report lists the pages it read.** Under the summary,
+  *Pages read this run* folds out to each page, linked, and why it was
+  read: least borne out by its note, or drawn at random. A clean report
+  could not be told apart from one that read the same pages as last time.
 
 ## 1.0.25 — 2026-10-18
 

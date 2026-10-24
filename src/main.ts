@@ -1968,7 +1968,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.statusFail('Provenance check', err);
       return;
     }
-    new ProvenanceReportModal(this.app, flags, samples.length - unchecked, unchecked).open();
+    new ProvenanceReportModal(this.app, flags, samples.length - unchecked, unchecked, samples).open();
   }
 
   // One strict-JSON call: given the tags currently in use (with counts),

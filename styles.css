@@ -1270,6 +1270,17 @@
   margin-bottom: 14px;
 }
 
+/* Which pages a spot-check read, folded away under the summary. */
+.gemma4-lint-sampled {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.gemma4-lint-sampled summary {
+  cursor: pointer;
+}
+
 .gemma4-lint-section-title {
   font-size: var(--font-ui-small);
   font-weight: 600;
