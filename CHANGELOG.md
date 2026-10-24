@@ -4,6 +4,13 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## Unreleased
+
+- **The spot-check report lists the pages it read.** Under the summary,
+  *Pages read this run* folds out to each page, linked, and why it was
+  read: least borne out by its note, or drawn at random. A clean report
+  could not be told apart from one that read the same pages as last time.
+
 ## 1.0.25 — 2026-10-18
 
 The chat panel says where answers come from and keeps the chats you move on

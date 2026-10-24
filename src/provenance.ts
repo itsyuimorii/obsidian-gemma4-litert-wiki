@@ -1,5 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
-import { cardGrounding, pickForSpotCheck } from './pure';
+import { cardGrounding, pickForSpotCheck, rankedPlaces } from './pure';
 import { fmOf, wikiDir } from './wiki-store';
 
 // Lint v2b (issue #21): provenance spot-check. Ingest can hallucinate a key
@@ -21,6 +21,8 @@ export interface ProvenanceSample {
   keyPoints: string[];
   /** Mentions on the card that occur nowhere in the source note. A fact, not a guess. */
   missingMentions: string[];
+  /** Chosen for scoring among the least borne out, or drawn at random (#168). */
+  picked: 'ranked' | 'drawn';
 }
 
 export interface ProvenanceFlag {
@@ -49,7 +51,7 @@ function parseKeyPoints(body: string): string[] {
 // The `limit` wiki pages most worth checking: those with a source note that
 // still exists and parseable key points, least borne out by that note first.
 export async function sampleWikiPages(app: App, limit: number): Promise<ProvenanceSample[]> {
-  const all: (ProvenanceSample & { suspicion: number })[] = [];
+  const all: (Omit<ProvenanceSample, 'picked'> & { suspicion: number })[] = [];
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith(`${wikiDir()}/`)) continue;
     const fm = fmOf(app, f);
@@ -72,19 +74,47 @@ export async function sampleWikiPages(app: App, limit: number): Promise<Provenan
       suspicion: grounding.suspicion,
     });
   }
-  return pickForSpotCheck(all, limit).map(({ suspicion: _suspicion, ...sample }) => sample);
+  const chosen = pickForSpotCheck(all, limit);
+  const ranked = rankedPlaces(chosen.length);
+  return chosen.map(({ suspicion: _suspicion, ...sample }, i) => ({
+    ...sample,
+    picked: i < ranked ? 'ranked' : 'drawn',
+  }));
 }
 
 export class ProvenanceReportModal extends Modal {
   private flags: ProvenanceFlag[];
   private checked: number;
   private unchecked: number;
+  private samples: ProvenanceSample[];
 
-  constructor(app: App, flags: ProvenanceFlag[], checked: number, unchecked = 0) {
+  constructor(app: App, flags: ProvenanceFlag[], checked: number, unchecked = 0, samples: ProvenanceSample[] = []) {
     super(app);
     this.flags = flags;
     this.checked = checked;
     this.unchecked = unchecked;
+    this.samples = samples;
+  }
+
+  /**
+   * Which pages this run read, and why each one. Without it a clean report
+   * cannot be told apart from one that read the same pages as last time, and
+   * the draw that reaches every page in turn (#168) is invisible.
+   */
+  private renderSampled(parent: HTMLElement) {
+    if (!this.samples.length) return;
+    const details = parent.createEl('details', { cls: 'gemma4-lint-sampled' });
+    details.createEl('summary', { text: `Pages read this run (${this.samples.length})` });
+    const ul = details.createEl('ul', { cls: 'gemma4-lint-list' });
+    for (const s of this.samples) {
+      const li = ul.createEl('li');
+      const link = li.createEl('a', { text: s.title });
+      link.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        void this.app.workspace.openLinkText(s.linkPath, '', false);
+      });
+      li.appendText(s.picked === 'ranked' ? ' — least borne out by its note' : ' — drawn at random');
+    }
   }
 
   onOpen() {
@@ -110,6 +140,8 @@ export class ProvenanceReportModal extends Modal {
           'reply was unusable or ran out of room. Those pages were not verified; run the check again to retry them.',
       });
     }
+
+    this.renderSampled(contentEl);
 
     if (!this.flags.length) {
       contentEl.createDiv({
