@@ -6,6 +6,9 @@ import {
   keyPointTarget,
   noteLanguage,
   splitVocabulary,
+  applyTagCheck,
+  tagCheckPrompt,
+  tagsToVerify,
 } from '../src/pure.ts';
 
 const CHINESE_WITH_TERMS = [
@@ -107,4 +110,32 @@ test('extractionPrompt: an empty wiki offers no list and a Latin note no named l
   assert.doesNotMatch(p.system, /tags in the wiki/i);
   assert.doesNotMatch(p.system, /convention/);
   assert.match(p.system, /in the language of the note/);
+});
+
+test('tagsToVerify: only listed tags the note does not name', () => {
+  const vocab = ['data-science', 'software-architecture', 'javascript'];
+  assert.deepEqual(tagsToVerify(['javascript', 'data-science', 'three-js'], vocab, ['javascript']), ['data-science']);
+  assert.deepEqual(tagsToVerify(['three-js'], vocab, []), []);
+});
+
+test('tagCheckPrompt: lists every tag in the reply shape', () => {
+  assert.match(tagCheckPrompt(['data-science', 'touchdesigner']), /\{"data-science": true, "touchdesigner": true\}/);
+});
+
+test('applyTagCheck: drops only explicit false, keeps order', () => {
+  const tags = ['touchdesigner', 'software-architecture', 'arduino'];
+  assert.deepEqual(applyTagCheck(tags, { 'software-architecture': false, arduino: true }), ['touchdesigner', 'arduino']);
+  assert.deepEqual(applyTagCheck(tags, { 'software-architecture': 'false' }), ['touchdesigner', 'arduino']);
+});
+
+test('applyTagCheck: a missing or garbled verdict keeps the tag', () => {
+  const tags = ['espresso', 'coffee-brewing'];
+  assert.deepEqual(applyTagCheck(tags, {}), tags);
+  assert.deepEqual(applyTagCheck(tags, { espresso: 'maybe' }), tags);
+});
+
+test('applyTagCheck: a card never ends with no tag', () => {
+  assert.deepEqual(applyTagCheck(['data-science', 'programming'], { 'data-science': false, programming: false }), [
+    'data-science',
+  ]);
 });

@@ -3030,3 +3030,61 @@ export function extractionPrompt(input: ExtractionPromptInput): ExtractionPrompt
 
   return { system, keyPoints, outputTokens: extractionOutputTokens(keyPoints) };
 }
+
+/**
+ * The tags on a fresh card that need a second look: those taken from the
+ * wiki's list that the note does not name.
+ *
+ * The A/B run over sixteen notes showed why the prompt alone is not enough.
+ * Splitting the list halved the wrong tags, but the first few "other" tags
+ * still landed on notes they had nothing to do with — data-science and
+ * software-architecture on a TouchDesigner piece and a 3D diary for
+ * children — because a small model's pull towards the front of a list is
+ * stronger than a sentence telling it not to. A tag the note names, or one
+ * the model coined, is the model's own reading and is left alone.
+ */
+export function tagsToVerify(
+  tags: readonly string[],
+  vocabulary: readonly string[],
+  named: readonly string[]
+): string[] {
+  const listed = new Set(vocabulary.map(slugify));
+  const evident = new Set(named.map(slugify));
+  return tags.filter((t) => listed.has(slugify(t)) && !evident.has(slugify(t)));
+}
+
+/**
+ * The system prompt for checking reused tags against what the card says.
+ *
+ * It reads the card, not the note: a summary and its key points are a few
+ * hundred tokens, so the check costs a second or two, and the card is what
+ * the tag will be filed under. It is a yes-or-no per tag rather than a
+ * second pick, because choosing again from a list is the step that failed.
+ */
+export function tagCheckPrompt(tags: readonly string[]): string {
+  return (
+    'You check topic tags on a summary card. For each tag, answer true only if the card is mainly ' +
+    'about that topic: a reader browsing that tag would expect to find this card. Answer false if the ' +
+    'tag only shares a word with the card, names a neighbouring field, or fits loosely. Respond with ' +
+    'ONLY a JSON object mapping each tag to true or false, no markdown fences, no explanation: ' +
+    `{${tags.map((t) => `"${t}": true`).join(', ')}}.`
+  );
+}
+
+/**
+ * The tags that survive the check, in their original order.
+ *
+ * Only a tag answered with an explicit false is dropped; anything missing or
+ * unreadable in the reply keeps its tag, so a garbled check costs nothing.
+ * A card always keeps at least one tag: if every tag was rejected, the first
+ * stays, because an index entry with no topic at all is worse than a loose one.
+ */
+export function applyTagCheck(tags: readonly string[], verdicts: Record<string, unknown>): string[] {
+  const rejected = new Set(
+    Object.entries(verdicts)
+      .filter(([, v]) => v === false || v === 'false')
+      .map(([k]) => slugify(k))
+  );
+  const kept = tags.filter((t) => !rejected.has(slugify(t)));
+  return kept.length ? kept : tags.slice(0, 1);
+}

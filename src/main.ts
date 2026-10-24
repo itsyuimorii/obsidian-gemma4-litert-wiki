@@ -64,7 +64,11 @@ import {
   diffUsage,
   suggestRelated,
   estimateImproveTokens,
+  applyTagCheck,
   extractionPrompt,
+  splitVocabulary,
+  tagCheckPrompt,
+  tagsToVerify,
   formatUsageReport,
   improveOutputBudget,
   migrateSettings,
@@ -3616,6 +3620,38 @@ export default class LiteRtSpikePlugin extends Plugin {
   // planning. Validated shape, one retry on parse failure. This is the
   // engineering rule the whole MVP is built on: small local models are
   // unreliable at chaining steps and reliable at filling one schema.
+  /**
+   * Ask whether each reused tag fits the card; see tagsToVerify for why.
+   *
+   * Never throws. The extraction it follows has already succeeded, and a
+   * check that fails must not cost the card, so any failure reads as "no
+   * verdicts" and every tag stays.
+   */
+  private async checkReusedTags(
+    engine: Engine,
+    card: NoteExtraction,
+    tags: string[]
+  ): Promise<Record<string, unknown>> {
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      const { SamplerType } = await import('@litert-lm/core');
+      const conv = await engine.createConversation({
+        preface: { messages: [{ role: 'system', content: tagCheckPrompt(tags) }] },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 128 },
+      });
+      conversation = conv;
+      const cardText = `${card.summary}\n\n${card.key_points.map((p) => `- ${p}`).join('\n')}`;
+      const message = await timed('ingest', () => conv.sendMessage(cardText));
+      const read = parseModelJson<Record<string, unknown>>(textOf(message.content));
+      return read.ok && read.value && typeof read.value === 'object' ? read.value : {};
+    } catch (err) {
+      console.warn('[gemma-litert-wiki] tag check failed; keeping every tag', err);
+      return {};
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
   async extractNoteMetadata(
     noteContent: string,
     onProgress: (text: string) => void
@@ -3741,6 +3777,11 @@ export default class LiteRtSpikePlugin extends Plugin {
             : [];
           // A banned tag never lands on a page, no matter what the model says.
           parsed.tags = parsed.tags.filter((t) => !rejectedTags.has(slugify(t)));
+          const unsure = tagsToVerify(parsed.tags, vocab, splitVocabulary(vocab, noteContent).named);
+          if (unsure.length) {
+            onProgress('Checking tags…');
+            parsed.tags = applyTagCheck(parsed.tags, await this.checkReusedTags(engine, parsed, unsure));
+          }
           // Force the summary to a single line: index.md is one-entry-per-line,
           // so a multi-line summary would break across lines and pollute the
           // index with non-entry junk.
