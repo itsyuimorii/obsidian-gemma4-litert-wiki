@@ -25,6 +25,17 @@ All notable changes to this plugin are recorded here. Versions follow
   *Pages read this run* folds out to each page, linked, and why it was
   read: least borne out by its note, or drawn at random. A clean report
   could not be told apart from one that read the same pages as last time.
+- **The LiteRT-LM runtime moves from 0.15.0 to 0.18.0** (#167). The
+  calls this plugin makes, the runtime's file names and the GPU it asks
+  for (`high-performance`) are the same in both. 0.18.1 is skipped: npm
+  marks it deprecated because its WebAssembly does not match its JS, and
+  the dependency is pinned exactly so it cannot be pulled in.
+- **An update to a new runtime downloads it once, by itself.** The runtime
+  now lives in `wasm/<version>/` inside the plugin folder. The file names
+  are the same in every release, so the flat `wasm/` used until now would
+  have served the new plugin the old runtime. On the first start after
+  updating, the 0.15 files are deleted and the 0.18 ones are fetched the
+  first time you ask something, about 20-31 MB, as on a fresh install.
 
 ## 1.0.25 — 2026-10-18
 

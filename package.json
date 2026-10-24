@@ -21,6 +21,6 @@
     "typescript-eslint": "^8.71.2"
   },
   "dependencies": {
-    "@litert-lm/core": "^0.15.0"
+    "@litert-lm/core": "0.18.0"
   }
 }

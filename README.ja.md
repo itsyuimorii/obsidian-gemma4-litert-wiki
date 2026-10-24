@@ -331,7 +331,7 @@ Windows が Obsidian を内蔵 GPU で動かしているのかもしれません
 | ホスト | 何を | いつ |
 | --- | --- | --- |
 | `huggingface.co` | [Gemma 4 E4B モデル](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)（約 3 GB） | **Download model** を押したとき、一度だけ |
-| `cdn.jsdelivr.net` | LiteRT-LM の WebAssembly ランタイム（約 20〜31 MB）。このビルドがコンパイル対象としたピン留め済みの `@litert-lm/core` バージョンから | 初回使用時、一度だけ |
+| `cdn.jsdelivr.net` | LiteRT-LM の WebAssembly ランタイム（約 20〜31 MB）。このビルドがコンパイル対象としたピン留め済みの `@litert-lm/core` バージョンから | 初回使用時に一度。ランタイムのバージョンが上がる更新の後にもう一度 |
 
 ランタイムを同梱せず取得しているのは、合計約 101 MB の 4 バイアントで配布されているのに、あなたのマシンが読み込むのはライブラリ自身の機能検査が選ぶちょうど 1 つだけだからです。4 つすべてを同梱すれば、その 5 分の 1 を使うために 101 MB のペイロードをすべてのインストールに載せることになります。受け入れられるのは `litertlm_wasm_*internal.{js,wasm}` に一致するファイルだけで、ここでプラグイン自体が更新されることはありません。バージョンはビルド時に固定されます。
 
