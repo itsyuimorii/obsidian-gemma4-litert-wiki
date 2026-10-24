@@ -3016,7 +3016,7 @@ export function extractionPrompt(input: ExtractionPromptInput): ExtractionPrompt
     "terminology, NOT the note's fine details and NOT a generic process word (extraction, editing, " +
     'motion) that means different things in different fields. One good topic tag beats three narrow ones. ' +
     `About ${keyPoints} key_points, fewer only if the note has less to say, following its sections in ` +
-    'order. Each is ONE self-contained sentence stating a specific fact from the note — a rule, a ' +
+    'order. Each is ONE short, self-contained sentence stating a specific fact from the note — a rule, a ' +
     'number, a pitfall, a comparison, a definition — not a description of what the note covers. If the ' +
     'note has a section of pitfalls, exam points or interview questions, include them. confidence is ' +
     '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
