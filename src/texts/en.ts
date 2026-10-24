@@ -178,7 +178,7 @@ const texts = {
   'settings.language.desc':
     'The language of the chat panel. Follows Obsidian by default. Prompts and what the plugin writes into your vault stay in English.',
   'settings.language.auto': 'Same as Obsidian',
-  'settings.language.reopen': 'Reopen the chat panel to see it in the new language.',
+  'settings.language.reopen': 'The chat panel is answering; reopen it afterwards to see the new language.',
 };
 
 export type TextKey = keyof typeof texts;

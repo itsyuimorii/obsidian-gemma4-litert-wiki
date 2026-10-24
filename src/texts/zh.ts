@@ -167,6 +167,6 @@ export const zh: Language = {
     'settings.language.name': '界面语言',
     'settings.language.desc': '聊天面板的语言。默认跟随 Obsidian。发给模型的提示词和插件写进仓库的内容仍是英文。',
     'settings.language.auto': '跟随 Obsidian',
-    'settings.language.reopen': '重新打开聊天面板即可看到新语言。',
+    'settings.language.reopen': '聊天面板正在回答，结束后重新打开即可看到新语言。',
   },
 };

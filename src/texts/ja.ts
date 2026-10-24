@@ -169,6 +169,6 @@ export const ja: Language = {
     'settings.language.desc':
       'チャットパネルの言語です。既定では Obsidian に合わせます。モデルへのプロンプトと、プラグインが保管庫に書き込む内容は英語のままです。',
     'settings.language.auto': 'Obsidian と同じ',
-    'settings.language.reopen': '新しい言語で表示するには、チャットパネルを開き直してください。',
+    'settings.language.reopen': 'チャットパネルが回答中です。終わったら開き直すと新しい言語で表示されます。',
   },
 };

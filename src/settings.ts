@@ -433,7 +433,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     if (key === 'language') {
       this.plugin.applyLanguage();
-      notify('info', t('settings.language.reopen'));
+      if (!(await this.plugin.redrawChatPanels())) notify('info', t('settings.language.reopen'));
     } else if (key === 'contextTokens') {
       notify('done', 'Context window saved — reload the plugin (toggle it off/on) to apply.', DURATION.NORMAL);
     } else if (key === 'devCommands') {
@@ -781,7 +781,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             this.plugin.settings.language = v;
             await this.plugin.saveSettings();
             this.plugin.applyLanguage();
-            notify('info', t('settings.language.reopen'));
+            if (!(await this.plugin.redrawChatPanels())) notify('info', t('settings.language.reopen'));
           })
       );
 

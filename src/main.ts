@@ -3803,10 +3803,30 @@ export default class LiteRtSpikePlugin extends Plugin {
   /**
    * Show the interface in the language the setting names, or in Obsidian's
    * own when it says 'auto' (#166). What is already drawn keeps its words
-   * until it is drawn again, which for the chat panel means reopening it.
+   * until it is drawn again; redrawChatPanels does that for the chat panel.
    */
   applyLanguage(): void {
     setLanguage(resolveLanguage(this.settings.language, getLanguage()));
+  }
+
+  /**
+   * Rebuild every open chat panel in place, so a language change shows at
+   * once instead of only in the one line that happens to redraw itself.
+   *
+   * Swapping the leaf to an empty view and back closes the panel and opens a
+   * new one in the same spot: the thread is saved on close and restored on
+   * open, and the events the old panel registered go with it. A panel that is
+   * answering is left alone, because closing it cancels the answer; returns
+   * false then, so the caller can say to reopen it later.
+   */
+  async redrawChatPanels(): Promise<boolean> {
+    if (this.chatBusy) return false;
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)) {
+      const state = leaf.getViewState();
+      await leaf.setViewState({ type: 'empty' });
+      await leaf.setViewState(state);
+    }
+    return true;
   }
 
   async loadSettings() {
