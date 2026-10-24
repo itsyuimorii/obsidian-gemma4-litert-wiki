@@ -1,4 +1,5 @@
-import { addIcon, apiVersion, App, FileSystemAdapter, FuzzySuggestModal, MarkdownView, Notice, Platform, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, apiVersion, App, FileSystemAdapter, FuzzySuggestModal, getLanguage, MarkdownView, Notice, Platform, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { resolveLanguage, setLanguage } from './i18n';
 import { confineFilesystemTo, fs, http, path, type Bytes, type HttpServer } from './node-api';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
@@ -563,6 +564,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       confineFilesystemTo(this.pluginAbsDir());
     }
     await this.loadSettings();
+    this.applyLanguage();
     setWikiDir(this.settings.wikiDir);
     this.addSettingTab(new GemmaWikiSettingTab(this.app, this));
 
@@ -3796,6 +3798,15 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     }
     throw new Error('unreachable');
+  }
+
+  /**
+   * Show the interface in the language the setting names, or in Obsidian's
+   * own when it says 'auto' (#166). What is already drawn keeps its words
+   * until it is drawn again, which for the chat panel means reopening it.
+   */
+  applyLanguage(): void {
+    setLanguage(resolveLanguage(this.settings.language, getLanguage()));
   }
 
   async loadSettings() {

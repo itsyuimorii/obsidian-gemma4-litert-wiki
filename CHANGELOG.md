@@ -4,6 +4,24 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## Unreleased
+
+- **The chat panel speaks Japanese and Simplified Chinese** (#166). It
+  follows Obsidian's language; **Interface language** under Chat in
+  settings picks one instead. Everything the panel shows is translated:
+  the three modes and their menu, the chips, placeholders, the context
+  chip, buttons and tooltips, the history list and the messages in the
+  thread. The questions the chips send stay in English for now, because a
+  translated question is classified differently by search: the Japanese
+  and Chinese "draft an outline" were read as questions about the whole
+  collection. Prompts to the model and what is written into the vault
+  stay in English. Settings, notices, the other dialogs and command names
+  follow in later changes.
+- **Adding a language is one file.** The text lives in `src/texts/`, one
+  file per language, keyed, with English as the fallback for any key a
+  language lacks. A test holds every file to the keys and placeholders of
+  `en.ts`, so a new language is checked without a new test.
+
 ## 1.0.25 — 2026-10-18
 
 The chat panel says where answers come from and keeps the chats you move on

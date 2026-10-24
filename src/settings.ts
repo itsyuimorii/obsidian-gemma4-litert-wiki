@@ -12,6 +12,8 @@ import { ConfirmModal } from './ingest-modal';
 import type LiteRtSpikePlugin from './main';
 import { DEFAULT_WIKI_DIR, wikiScaffoldPaths, type ChatTurnRecord } from './wiki-store';
 import { DURATION, notify } from './notify';
+import { t } from './i18n';
+import { LANGUAGES } from './texts/index';
 
 export interface GemmaWikiSettings {
   /**
@@ -75,6 +77,9 @@ export interface GemmaWikiSettings {
   // Separate from hasChatted, because the button is new to people who have
   // chatted for months: it replaced three pills they knew.
   scopeHintSeen: boolean;
+  // The interface language (#166): a code from src/texts/, or 'auto' to
+  // follow Obsidian's own language setting.
+  language: string;
 }
 
 export const DEFAULT_SETTINGS: GemmaWikiSettings = {
@@ -94,7 +99,15 @@ export const DEFAULT_SETTINGS: GemmaWikiSettings = {
   autoScanIntervalHours: 6,
   hasChatted: false,
   scopeHintSeen: false,
+  language: 'auto',
 };
+
+/** The language dropdown: Obsidian's choice first, then each language by its own name. */
+function languageOptions(): Record<string, string> {
+  const options: Record<string, string> = { auto: t('settings.language.auto') };
+  for (const l of LANGUAGES) options[l.code] = l.name;
+  return options;
+}
 
 // Descriptions shared by the declarative page (1.13+) and the imperative one
 // (before 1.13), so a wording change lands on both.
@@ -297,6 +310,12 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         heading: 'Chat',
         items: [
           {
+            name: t('settings.language.name'),
+            desc: t('settings.language.desc'),
+            aliases: ['language', 'locale', 'japanese', 'chinese', 'translation'],
+            control: { type: 'dropdown', key: 'language', options: languageOptions() },
+          },
+          {
             name: 'Default mode',
             desc: 'Which mode a freshly opened chat panel starts in.',
             aliases: ['this note', 'wiki mode', 'vault', 'direct'],
@@ -412,7 +431,10 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     s[key] = key === 'contextTokens' ? parseInt(String(value), 10) || 64000 : value;
     await this.plugin.saveSettings();
 
-    if (key === 'contextTokens') {
+    if (key === 'language') {
+      this.plugin.applyLanguage();
+      notify('info', t('settings.language.reopen'));
+    } else if (key === 'contextTokens') {
       notify('done', 'Context window saved — reload the plugin (toggle it off/on) to apply.', DURATION.NORMAL);
     } else if (key === 'devCommands') {
       notify('info', 'Reload the plugin (toggle it off and on) for this to take effect.');
@@ -747,6 +769,21 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
   /** The remainder of the imperative page, unchanged: rows the declarative page also declares. */
   private legacyRedrawRest(containerEl: HTMLElement): void {
+
+    new Setting(containerEl)
+      .setName(t('settings.language.name'))
+      .setDesc(t('settings.language.desc'))
+      .addDropdown((dd) =>
+        dd
+          .addOptions(languageOptions())
+          .setValue(this.plugin.settings.language)
+          .onChange(async (v) => {
+            this.plugin.settings.language = v;
+            await this.plugin.saveSettings();
+            this.plugin.applyLanguage();
+            notify('info', t('settings.language.reopen'));
+          })
+      );
 
     new Setting(containerEl)
       .setName('Default mode')
