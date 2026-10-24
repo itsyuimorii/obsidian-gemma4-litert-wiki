@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cardGrounding, mostSuspect, pickForSpotCheck } from '../src/pure.ts';
+import { cardGrounding, mostSuspect, pickForSpotCheck, rankedPlaces } from '../src/pure.ts';
 
 const NOTE =
   'The perfect espresso shot uses 18 grams of coffee and extracts for 28 seconds. ' +
@@ -144,4 +144,18 @@ test('a small sample is all ranked, and a wiki smaller than the sample is checke
   assert.deepEqual(pickForSpotCheck(TWELVE, 2, seeded(1)).map((p) => p.id), ['p0', 'p1']);
   assert.equal(pickForSpotCheck(TWELVE.slice(0, 5), 8, seeded(1)).length, 5);
   assert.deepEqual(pickForSpotCheck(TWELVE, 0, seeded(1)), []);
+});
+
+// The report labels each page "least borne out" or "drawn at random" by its
+// position, so the ranked pages have to be the ones that come first.
+test('the first rankedPlaces pages of a pick are the ranked ones, whatever the size', () => {
+  for (let limit = 0; limit <= 12; limit++) {
+    const picked = pickForSpotCheck(TWELVE, limit, seeded(limit + 1)).map((p) => p.id);
+    const ranked = rankedPlaces(picked.length);
+    const want = TWELVE.slice(0, ranked).map((p) => p.id);
+    assert.deepEqual(picked.slice(0, ranked), want, `limit ${limit}`);
+  }
+  assert.equal(rankedPlaces(8), 5);
+  assert.equal(rankedPlaces(2), 2);
+  assert.equal(rankedPlaces(0), 0);
 });

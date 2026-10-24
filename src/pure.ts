@@ -702,13 +702,21 @@ export function mostSuspect<T extends { suspicion: number }>(
  * Below three places there is no draw: one or two places are worth more on
  * the pages the score is surest about.
  */
+/**
+ * How many of `n` spot-check places go by rank. pickForSpotCheck returns
+ * those first and the drawn ones after, so the report can say which is which.
+ */
+export function rankedPlaces(n: number): number {
+  return n - Math.floor((n * 3) / 8);
+}
+
 export function pickForSpotCheck<T extends { suspicion: number }>(
   items: readonly T[],
   limit: number,
   random: () => number = Math.random
 ): T[] {
   const n = Math.max(0, Math.min(limit, items.length));
-  const drawn = Math.floor((n * 3) / 8);
+  const drawn = n - rankedPlaces(n);
   const ranked = mostSuspect(items, n - drawn, random);
   const taken = new Set(ranked);
   const rest = items.filter((item) => !taken.has(item));
