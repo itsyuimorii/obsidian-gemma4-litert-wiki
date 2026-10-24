@@ -46,6 +46,7 @@ import {
   type ArchivedThread,
 } from './chat-archive';
 import { textOf } from './model-output';
+import { t, tn } from './i18n';
 import type LiteRtSpikePlugin from './main';
 import {
   appendLog,
@@ -148,7 +149,7 @@ class NotePickerModal extends FuzzySuggestModal<TFile> {
     super(app);
     this.exclude = exclude;
     this.onPick = onPick;
-    this.setPlaceholder('Attach a note as context…');
+    this.setPlaceholder(t('chat.attachPlaceholder'));
   }
 
   getItems(): TFile[] {
@@ -183,11 +184,11 @@ class ChatHistoryModal extends SuggestModal<ArchivedThread> {
     super(app);
     this.threads = threads;
     this.handlers = handlers;
-    this.setPlaceholder('Search past chats…');
-    this.emptyStateText = 'No past chat matches.';
+    this.setPlaceholder(t('chat.history.placeholder'));
+    this.emptyStateText = t('chat.history.noMatch');
     this.setInstructions([
-      { command: '↵', purpose: 'reopen' },
-      { command: 'esc', purpose: 'close' },
+      { command: '↵', purpose: t('chat.history.reopen') },
+      { command: 'esc', purpose: t('chat.history.close') },
     ]);
   }
 
@@ -203,20 +204,23 @@ class ChatHistoryModal extends SuggestModal<ArchivedThread> {
 
   renderSuggestion(thread: ArchivedThread, el: HTMLElement): void {
     el.addClass('gemma4-history-item');
-    setIcon(el.createSpan({ cls: 'gemma4-history-icon' }), SCOPES[thread.mode].icon);
+    setIcon(el.createSpan({ cls: 'gemma4-history-icon' }), scopes()[thread.mode].icon);
     const text = el.createDiv({ cls: 'gemma4-history-text' });
     text.createDiv({ cls: 'gemma4-history-title', text: thread.title });
     const asked = thread.turns.filter((t) => t.role === 'user').length;
     text.createDiv({
       cls: 'gemma4-history-meta',
-      text: `${SCOPES[thread.mode].label} · ${asked} question${asked === 1 ? '' : 's'} · ${window.moment(thread.savedAt).fromNow()}`,
+      text: tn('chat.history.meta', asked, {
+        mode: scopes()[thread.mode].label,
+        when: window.moment(thread.savedAt).fromNow(),
+      }),
     });
     const del = el.createEl('button', {
       cls: 'gemma4-history-delete',
-      attr: { 'aria-label': `Delete "${thread.title}"` },
+      attr: { 'aria-label': t('chat.history.delete', { title: thread.title }) },
     });
     setIcon(del, 'trash-2');
-    setTooltip(del, 'Delete this chat');
+    setTooltip(del, t('chat.history.deleteTip'));
     del.addEventListener('mousedown', (evt) => evt.stopPropagation());
     del.addEventListener('click', (evt) => {
       // The row underneath is "reopen"; this button must not also be that.
@@ -307,9 +311,9 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
     // All three fill rather than ask: each is a sentence with the important
     // word missing, and that word is yours. The ellipsis in the label says so.
     return [
-      { label: 'Find my notes on…', fill: 'Which of my notes are about: ' },
-      { label: 'Explain a term…', fill: 'Explain, in plain terms: ' },
-      { label: 'Draft an outline…', fill: 'Draft a short outline for: ' },
+      { label: t('chat.chip.findNotes'), fill: 'Which of my notes are about: ' },
+      { label: t('chat.chip.explain'), fill: 'Explain, in plain terms: ' },
+      { label: t('chat.chip.outline'), fill: 'Draft a short outline for: ' },
     ];
   }
   if (mode === 'note') {
@@ -319,9 +323,9 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
     // the note you are looking at into the wiki, even though actions can ONLY
     // live in this row and that one is the plugin's core loop.
     return [
-      { label: 'Summarize', ask: 'Summarize this note' },
-      { label: 'Tidy up formatting', action: 'improve' },
-      { label: 'Add to wiki', action: 'ingest' },
+      { label: t('chat.chip.summarize'), ask: 'Summarize this note' },
+      { label: t('chat.chip.tidy'), action: 'improve' },
+      { label: t('chat.chip.addToWiki'), action: 'ingest' },
     ];
   }
   // Fixed, and the same whatever state the wiki is in.
@@ -343,9 +347,9 @@ export function suggestionsFor(mode: ChatMode): SuggestionSpec[] {
   // recently?" too: that list is index.md, dated, without asking anything.
   // "What's still open?" went the same way, to the ⚡ menu's Find gaps.
   return [
-    { label: 'Scan a folder', action: 'scan' },
+    { label: t('chat.chip.scan'), action: 'scan' },
     {
-      label: 'Find connections',
+      label: t('chat.chip.connections'),
       ask: 'What connections or common themes link the pages in my wiki? Cite the pages.',
       wholeWiki: true,
     },
@@ -434,26 +438,34 @@ const DIRECT_PROMPT =
  * folder is named as a folder so a reader who has never heard the word
  * "wiki" knows where to look.
  */
-const SCOPES: Record<ChatMode, { label: string; icon: string; desc: string; title: string }> = {
+const scopes = (): Record<ChatMode, { label: string; icon: string; desc: string; title: string }> => ({
   note: {
-    label: 'This note',
+    label: t('chat.scope.note.label'),
     icon: 'file-text',
-    desc: 'Only the note you have open',
-    title: 'Ask about this note',
+    desc: t('chat.scope.note.desc'),
+    title: t('chat.scope.note.title'),
   },
   vault: {
-    label: 'Vault',
+    label: t('chat.scope.vault.label'),
     icon: 'database',
-    desc: 'Any note in your vault, or anything general',
-    title: 'Ask anything',
+    desc: t('chat.scope.vault.desc'),
+    title: t('chat.scope.vault.title'),
   },
   wiki: {
-    label: 'Wiki',
+    label: t('chat.scope.wiki.label'),
     icon: 'library',
-    desc: 'Cards in {wiki}/ and what connects them',
-    title: 'Ask the cards in {wiki}/',
+    desc: t('chat.scope.wiki.desc', { wiki: wikiDir() }),
+    title: t('chat.scope.wiki.title', { wiki: wikiDir() }),
   },
-};
+});
+
+/** Append a translated sentence whose `{b}` is a bold word. */
+function appendWithBold(el: HTMLElement, sentence: string, bold: string): void {
+  const [before, after = ''] = sentence.split('{b}');
+  el.appendText(before);
+  el.createEl('b', { text: bold });
+  el.appendText(after);
+}
 
 const SCOPE_ORDER: ChatMode[] = ['note', 'vault', 'wiki'];
 
@@ -526,7 +538,7 @@ export class ChatView extends ItemView {
       pill.createSpan({ text: f.basename });
       const x = pill.createEl('button', {
         cls: 'gemma4-chat-context-pill-x',
-        attr: { 'aria-label': 'Remove' },
+        attr: { 'aria-label': t('chat.removeAttached') },
       });
       setIcon(x, 'x');
       x.addEventListener('click', () => {
@@ -603,24 +615,24 @@ export class ChatView extends ItemView {
     // the three modes as one switch. The panel used to explain the other two
     // modes in prose, again in the placeholder, and again as the pills; a new
     // user read three paragraphs and still had to find the buttons.
-    const scope = SCOPES[this.mode];
-    const named = (text: string) => text.replace('{wiki}', wikiDir());
+    const all = scopes();
+    const scope = all[this.mode];
     const wikiEmpty = this.mode === 'wiki' && this.wikiEmpty;
     const file = this.app.workspace.getActiveFile();
     el.createDiv({
       cls: 'gemma4-chat-empty-title',
-      text: wikiEmpty ? named('Nothing is filed in {wiki}/ yet') : named(scope.title),
+      text: wikiEmpty ? t('chat.empty.wikiEmptyTitle', { wiki: wikiDir() }) : scope.title,
     });
     const reads =
       this.mode === 'wiki'
         ? wikiEmpty
-          ? 'Press Scan a folder below to draft cards from your notes.'
-          : 'Reads only the cards and concept pages you approved.'
+          ? t('chat.empty.wikiEmpty')
+          : t('chat.empty.wiki')
         : this.mode === 'vault'
-          ? 'Searches every note in your vault, then Gemma 4 E4B adds its own answer — marked as its own.'
+          ? t('chat.empty.vault')
           : file
-            ? `Reads only ${file.basename}, as you wrote it.`
-            : 'Open a note to ask about it.';
+            ? t('chat.empty.note', { note: file.basename })
+            : t('chat.empty.noNote');
     el.createDiv({ cls: 'gemma4-chat-empty-hint', text: reads });
 
     // The switch itself. Real buttons in a radio group, so Tab and the
@@ -630,13 +642,13 @@ export class ChatView extends ItemView {
     // turns every aria-label into a hover tooltip, and "Answer from" floated
     // over the rows whenever the pointer crossed them.
     const headingId = `gemma4-scope-heading-${newThreadId()}`;
-    el.createDiv({ cls: 'gemma4-chat-scope-heading', text: 'Answer from', attr: { id: headingId } });
+    el.createDiv({ cls: 'gemma4-chat-scope-heading', text: t('chat.scope.heading'), attr: { id: headingId } });
     const group = el.createDiv({
       cls: 'gemma4-chat-scope-list',
       attr: { role: 'radiogroup', 'aria-labelledby': headingId },
     });
     for (const mode of SCOPE_ORDER) {
-      const s = SCOPES[mode];
+      const s = all[mode];
       const on = mode === this.mode;
       const row = group.createEl('button', {
         cls: on ? 'gemma4-chat-scope-row is-active' : 'gemma4-chat-scope-row',
@@ -645,7 +657,7 @@ export class ChatView extends ItemView {
       setIcon(row.createSpan({ cls: 'gemma4-chat-scope-row-icon' }), s.icon);
       const text = row.createSpan({ cls: 'gemma4-chat-scope-row-text' });
       text.createSpan({ cls: 'gemma4-chat-scope-row-name', text: s.label });
-      text.createSpan({ cls: 'gemma4-chat-scope-row-desc', text: named(s.desc) });
+      text.createSpan({ cls: 'gemma4-chat-scope-row-desc', text: s.desc });
       if (on) setIcon(row.createSpan({ cls: 'gemma4-chat-scope-row-check' }), 'check');
       row.addEventListener('click', () => {
         if (mode !== this.mode) this.setMode(mode);
@@ -655,22 +667,20 @@ export class ChatView extends ItemView {
       });
     }
     const caption = el.createDiv({ cls: 'gemma4-chat-scope-caption' });
-    caption.appendText('Change it any time with ');
-    caption.createEl('b', { text: `${scope.label} ▾` });
-    caption.appendText(' under the box.');
+    appendWithBold(caption, t('chat.scope.caption'), `${scope.label} ▾`);
   }
 
   /** Draw the scope button under the box for the current mode. */
   private renderScopeButton() {
     const btn = this.scopeButton;
     if (!btn) return;
-    const s = SCOPES[this.mode];
+    const s = scopes()[this.mode];
     btn.empty();
     setIcon(btn.createSpan({ cls: 'gemma4-chat-scope-icon' }), s.icon);
     btn.createSpan({ text: s.label });
     setIcon(btn.createSpan({ cls: 'gemma4-chat-scope-chevron' }), 'chevron-down');
-    btn.setAttribute('aria-label', `Answer from: ${s.label}. Change`);
-    setTooltip(btn, 'Where answers come from — click to change');
+    btn.setAttribute('aria-label', t('chat.scope.buttonLabel', { mode: s.label }));
+    setTooltip(btn, t('chat.scope.buttonTip'));
   }
 
   /**
@@ -693,10 +703,11 @@ export class ChatView extends ItemView {
       cls: 'gemma4-scope-menu',
       attr: { role: 'menu', 'aria-labelledby': headingId },
     });
-    menu.createDiv({ cls: 'gemma4-scope-menu-heading', text: 'Answer from', attr: { id: headingId } });
+    menu.createDiv({ cls: 'gemma4-scope-menu-heading', text: t('chat.scope.heading'), attr: { id: headingId } });
     const items: HTMLButtonElement[] = [];
+    const all = scopes();
     for (const mode of SCOPE_ORDER) {
-      const s = SCOPES[mode];
+      const s = all[mode];
       const on = mode === this.mode;
       const item = menu.createEl('button', {
         cls: on ? 'gemma4-scope-menu-item is-active' : 'gemma4-scope-menu-item',
@@ -705,7 +716,7 @@ export class ChatView extends ItemView {
       setIcon(item.createSpan({ cls: 'gemma4-scope-menu-icon' }), s.icon);
       const text = item.createSpan({ cls: 'gemma4-scope-menu-text' });
       text.createSpan({ cls: 'gemma4-scope-menu-name', text: s.label });
-      text.createSpan({ cls: 'gemma4-scope-menu-desc', text: s.desc.replace('{wiki}', wikiDir()) });
+      text.createSpan({ cls: 'gemma4-scope-menu-desc', text: s.desc });
       if (on) setIcon(item.createSpan({ cls: 'gemma4-scope-menu-check' }), 'check');
       item.addEventListener('click', () => {
         this.closeScopeMenu();
@@ -775,7 +786,7 @@ export class ChatView extends ItemView {
     if (this.plugin.settings.scopeHintSeen || this.scopeHintEl || !this.scopeButton) return;
     const hint = this.inputWrap.createDiv({ cls: 'gemma4-chat-scope-hint', attr: { role: 'status' } });
     hint.createDiv({ cls: 'gemma4-chat-scope-hint-text' });
-    const ok = hint.createEl('button', { cls: 'gemma4-chat-scope-hint-ok', text: 'Got it' });
+    const ok = hint.createEl('button', { cls: 'gemma4-chat-scope-hint-ok', text: t('chat.scope.gotIt') });
     ok.addEventListener('click', () => this.dismissScopeHint());
     this.scopeHintEl = hint;
     this.renderScopeHintText();
@@ -786,11 +797,14 @@ export class ChatView extends ItemView {
   private renderScopeHintText() {
     const text = this.scopeHintEl?.querySelector('.gemma4-chat-scope-hint-text');
     if (!(text instanceof HTMLElement)) return;
-    const others = SCOPE_ORDER.filter((m) => m !== this.mode).map((m) => SCOPES[m].label);
+    const all = scopes();
+    const others = SCOPE_ORDER.filter((m) => m !== this.mode).map((m) => all[m].label);
     text.empty();
-    text.appendText('Answers come from ');
-    text.createEl('b', { text: SCOPES[this.mode].label });
-    text.appendText(`. Switch to ${others.join(' or ')} here.`);
+    appendWithBold(
+      text,
+      t('chat.scope.hint', { others: others.join(t('chat.scope.hintOr')) }),
+      all[this.mode].label
+    );
   }
 
   /**
@@ -867,9 +881,9 @@ export class ChatView extends ItemView {
       improve: 'wand-2',
     };
     const TIP: Record<string, string> = {
-      scan: 'Pick folders, see how many notes each holds, then draft a page for each',
-      ingest: 'Draft one wiki page from the note you have open — you review it before anything is written',
-      improve: 'Edits this note — you review before anything is written',
+      scan: t('chat.chip.scanTip'),
+      ingest: t('chat.chip.ingestTip'),
+      improve: t('chat.chip.improveTip'),
     };
     const scanning = this.plugin.isScanning();
     // Something else is already spending the engine. Rather than let you press
@@ -883,7 +897,7 @@ export class ChatView extends ItemView {
       // it and getting "a scan is already running — use the other command" was
       // the button refusing to be the thing it obviously is.
       const isScanChip = spec.action === 'scan';
-      const label = isScanChip && scanning ? 'Stop scan' : spec.label;
+      const label = isScanChip && scanning ? t('chat.chip.stopScan') : spec.label;
       const chip = this.suggestionRow.createEl('button', {
         cls: spec.action ? 'gemma4-chat-suggestion gemma4-chat-suggestion-write' : 'gemma4-chat-suggestion',
       });
@@ -891,17 +905,17 @@ export class ChatView extends ItemView {
       chip.createSpan({ text: label });
       if (isScanChip && scanning) {
         chip.addClass('gemma4-chat-suggestion-running');
-        setTooltip(chip, 'Stop after the note being drafted right now finishes');
+        setTooltip(chip, t('chat.chip.stopScanTip'));
         chip.addEventListener('click', () => {
           this.plugin.cancelScan();
-          notify('info', 'Stopping — the note being drafted right now will finish first.');
+          notify('info', t('chat.chip.stopping'));
         });
         continue;
       }
       if (busy) {
         chip.disabled = true;
         chip.addClass('gemma4-chat-suggestion-disabled');
-        setTooltip(chip, `Busy: ${this.plugin.runningLabel() ?? 'something is running'}`);
+        setTooltip(chip, t('chat.busy', { what: this.plugin.runningLabel() ?? t('chat.busySomething') }));
         continue;
       }
       if (spec.action) setTooltip(chip, TIP[spec.action]);
@@ -924,7 +938,7 @@ export class ChatView extends ItemView {
     const turns = [...this.turns];
     while (turns.length && turns.at(-1)!.role === 'user') turns.pop();
     if (!turns.length) {
-      notify('noop', 'Nothing to save yet — ask something first.');
+      notify('noop', t('chat.saveNothing'));
       return;
     }
     const firstQ = turns.find((t) => t.role === 'user')?.content ?? 'conversation';
@@ -959,12 +973,12 @@ export class ChatView extends ItemView {
         // read as material by wiki-mode retrieval.
         await rebuildChatsIndex(this.app.vault, this.app);
         await appendLog(this.app.vault, 'chat', notePath);
-        notify('done', `Saved: ${notePath}`);
+        notify('done', t('chat.saved', { path: notePath }));
       })().catch((err) => {
         console.error('[gemma-litert-wiki] saving the conversation failed', err);
-        notify('error', `Could not save the conversation — ${err instanceof Error ? err.message : String(err)}`);
+        notify('error', t('chat.saveFailed', { reason: err instanceof Error ? err.message : String(err) }));
       });
-    }, 'Review note before writing').open();
+    }, t('chat.reviewBeforeWriting')).open();
   }
 
   /**
@@ -1023,7 +1037,7 @@ export class ChatView extends ItemView {
         await this.app.vault.adapter.write(this.historyPath(), serializeHistory(after));
       } catch (err) {
         console.error('[gemma-litert-wiki] writing chat history failed', err);
-        notify('error', `Could not save chat history — ${err instanceof Error ? err.message : String(err)}`);
+        notify('error', t('chat.history.saveFailed', { reason: err instanceof Error ? err.message : String(err) }));
       }
     };
     this.historyWrite = this.historyWrite.then(run, run);
@@ -1034,7 +1048,7 @@ export class ChatView extends ItemView {
     await this.historyWrite;
     const history = await this.loadHistory();
     if (!history.length) {
-      notify('noop', 'No past chats yet. ＋ starts a new chat and moves this one here.');
+      notify('noop', t('chat.history.none'));
       return;
     }
     new ChatHistoryModal(this.app, history, {
@@ -1050,7 +1064,7 @@ export class ChatView extends ItemView {
    */
   private async reopenThread(thread: ArchivedThread) {
     if (this.busy) {
-      notify('noop', 'Wait for the answer to finish, or press Stop, then reopen it.');
+      notify('noop', t('chat.history.busy'));
       return;
     }
     await this.updateHistory((h) =>
@@ -1108,7 +1122,7 @@ export class ChatView extends ItemView {
         const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
         warnRow.createSpan({
           cls: 'gemma4-chat-sources-label',
-          text: '⚠ Gemma general knowledge — not from your notes',
+          text: t('chat.generalKnowledge'),
         });
       } else if (sources.length) {
         const sourcesRow = body.createDiv({ cls: 'gemma4-chat-sources' });
@@ -1135,12 +1149,10 @@ export class ChatView extends ItemView {
     // open the key is a bare "note:", and the notice would claim the panel is
     // grounded in a note the user does not have open.
     if (was?.startsWith('note:') && now.startsWith('note:') && now !== 'note:' && was !== now) {
-      const name = was.slice('note:'.length).split('/').pop()?.replace(/\.md$/, '') ?? 'another note';
-      const lead = from === 'session' ? 'Restored from your last session.' : 'Reopened from your chat history.';
-      this.appendInfoMessage(
-        `${lead} Those answers are about "${name}"; this panel is now ` +
-          'grounded in the note you have open, so a follow-up will be answered from that one.'
-      );
+      const name =
+        was.slice('note:'.length).split('/').pop()?.replace(/\.md$/, '') ?? t('chat.restored.anotherNote');
+      const lead = from === 'session' ? t('chat.restored.session') : t('chat.restored.history');
+      this.appendInfoMessage(t('chat.restored.moved', { lead, name }));
     }
     this.scrollToBottom();
   }
@@ -1161,7 +1173,7 @@ export class ChatView extends ItemView {
     this.inputExpanded = !this.inputExpanded;
     this.inputEl.toggleClass('gemma4-chat-input-tall', this.inputExpanded);
     setIcon(this.expandButton, this.inputExpanded ? 'minimize-2' : 'maximize-2');
-    setTooltip(this.expandButton, this.inputExpanded ? 'Shrink input' : 'Expand input');
+    setTooltip(this.expandButton, this.inputExpanded ? t('chat.input.shrink') : t('chat.input.expand'));
     if (this.inputExpanded) {
       // Hand the height back to the stylesheet; the expanded class owns it.
       this.inputEl.setCssStyles({ height: '' });
@@ -1195,7 +1207,7 @@ export class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return 'Chat with note';
+    return t('chat.viewTitle');
   }
 
   getIcon(): string {
@@ -1215,7 +1227,7 @@ export class ChatView extends ItemView {
     // and a spark.
     setIcon(titleIcon, 'gemma-wiki-logo');
     titleRow.createSpan({ cls: 'gemma4-chat-title', text: 'Gemma Wiki' });
-    titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: 'local' });
+    titleRow.createSpan({ cls: 'gemma4-chat-title-badge', text: t('chat.badge') });
     // Grouped at the right so the icons sit together, not pushed to opposite
     // ends by the title's auto margin.
     const headerActions = titleRow.createDiv({ cls: 'gemma4-chat-header-actions' });
@@ -1227,9 +1239,9 @@ export class ChatView extends ItemView {
     };
     // The per-message save keeps one answer; this keeps the thread — including
     // the questions, which are the half you cannot reconstruct from the answers.
-    headerButton('save', 'Save conversation as a note', () => void this.saveConversation());
-    headerButton('plus', 'New chat', () => void this.newChat());
-    headerButton('history', 'Chat history', () => void this.openHistory());
+    headerButton('save', t('chat.header.save'), () => void this.saveConversation());
+    headerButton('plus', t('chat.header.new'), () => void this.newChat());
+    headerButton('history', t('chat.header.history'), () => void this.openHistory());
 
     // The mode switch lives in the composer toolbar; the header keeps only
     // the context chip.
@@ -1250,7 +1262,7 @@ export class ChatView extends ItemView {
     this.contextRow.hide();
     this.inputEl = composer.createEl('textarea', {
       cls: 'gemma4-chat-input',
-      attr: { placeholder: 'Ask about this note… (Enter to send)', rows: '3' },
+      attr: { placeholder: t('chat.input.note'), rows: '3' },
     });
     const buttonRow = composer.createDiv({ cls: 'gemma4-composer-bar' });
 
@@ -1277,8 +1289,8 @@ export class ChatView extends ItemView {
     // thing in the row and what pushed Send out of a sidebar narrower than
     // 480px. The full sentence is the tooltip, and the chip under the title
     // says the same thing at length while the box is off.
-    this.searchBoxRow.appendText('Notes first');
-    setTooltip(this.searchBoxRow, 'Search my notes first. Untick to ask Gemma 4 E4B directly, without searching.');
+    this.searchBoxRow.appendText(t('chat.notesFirst'));
+    setTooltip(this.searchBoxRow, t('chat.notesFirstTip'));
     this.searchBox.addEventListener('change', () => {
       this.searchNotes = !!this.searchBox?.checked;
       this.refreshVaultSurface();
@@ -1286,10 +1298,10 @@ export class ChatView extends ItemView {
 
     const attachBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
-      attr: { 'aria-label': 'Add note as context' },
+      attr: { 'aria-label': t('chat.attach') },
     });
     setIcon(attachBtn, 'plus');
-    setTooltip(attachBtn, 'Add note as context');
+    setTooltip(attachBtn, t('chat.attach'));
     attachBtn.addEventListener('click', () => {
       const exclude = new Set(this.attachedFiles.map((f) => f.path));
       const active = this.app.workspace.getActiveFile();
@@ -1305,10 +1317,10 @@ export class ChatView extends ItemView {
     // the "wiki as input for repeat work" pattern from the field research.
     const skillsBtn = buttonRow.createEl('button', {
       cls: 'gemma4-chat-attach',
-      attr: { 'aria-label': 'Run a skill' },
+      attr: { 'aria-label': t('chat.skills') },
     });
     setIcon(skillsBtn, 'zap');
-    setTooltip(skillsBtn, 'Run a skill');
+    setTooltip(skillsBtn, t('chat.skills'));
     const SKILLS: {
       label: string;
       icon: string;
@@ -1323,7 +1335,7 @@ export class ChatView extends ItemView {
         // cards, a checklist. The menu was three imperatives and two nouns,
         // and the two nouns were the seed files — the ones a user writes.
         // "Find gaps" keeps its verb: "Gaps" alone does not say gaps in what.
-        label: 'Quiz',
+        label: t('chat.skills.quiz'),
         icon: 'graduation-cap',
         // Note-scoped, and not only as a matter of taste. Run in Wiki mode
         // these three retrieve NOTHING: the lexical scorer matches the words
@@ -1337,7 +1349,7 @@ export class ChatView extends ItemView {
           'question and put its answer in bold directly below it.',
       },
       {
-        label: 'Flashcards',
+        label: t('chat.skills.flashcards'),
         icon: 'layers',
         mode: 'note',
         prompt:
@@ -1345,7 +1357,7 @@ export class ChatView extends ItemView {
           'answer on the next line, with a blank line between cards.',
       },
       {
-        label: 'Find gaps',
+        label: t('chat.skills.gaps'),
         icon: 'search',
         mode: 'note',
         prompt:
@@ -1360,7 +1372,7 @@ export class ChatView extends ItemView {
         // to have looked. A skill that builds its own material is sent
         // ungrounded: searching the vault for a prompt that already contains
         // the vault would be circular.
-        label: 'Folder structure',
+        label: t('chat.skills.folders'),
         icon: 'folder-tree',
         mode: 'vault',
         prompt: '',
@@ -1399,8 +1411,8 @@ export class ChatView extends ItemView {
         // which mode it wants.
         const unusable = all.filter((s) => s.mode && s.mode !== this.mode);
         if (unusable.length === all.length && all.length) {
-          const want = all[0].mode === 'wiki' ? 'Wiki' : all[0].mode === 'vault' ? 'Vault' : 'This note';
-          menu.addItem((item) => item.setTitle(`Switch to ${want} to use these`).setDisabled(true));
+          const want = scopes()[all[0].mode ?? 'note'].label;
+          menu.addItem((item) => item.setTitle(t('chat.skills.switchTo', { mode: want })).setDisabled(true));
           menu.addSeparator();
         }
         // A skill spends the engine too, so it obeys the same one-at-a-time
@@ -1408,7 +1420,7 @@ export class ChatView extends ItemView {
         const busy = this.plugin.isBusy();
         if (busy) {
           menu.addItem((item) =>
-            item.setTitle(`Busy: ${this.plugin.runningLabel() ?? 'something is running'}`).setDisabled(true)
+            item.setTitle(t('chat.busy', { what: this.plugin.runningLabel() ?? t('chat.busySomething') })).setDisabled(true)
           );
           menu.addSeparator();
         }
@@ -1451,23 +1463,23 @@ export class ChatView extends ItemView {
     // auto-grow and a fixed tall editor with its own scrollbar.
     this.expandButton = buttonRow.createEl('button', {
       cls: 'gemma4-chat-expand',
-      attr: { 'aria-label': 'Expand input' },
+      attr: { 'aria-label': t('chat.input.expand') },
     });
     setIcon(this.expandButton, 'maximize-2');
-    setTooltip(this.expandButton, 'Expand input');
+    setTooltip(this.expandButton, t('chat.input.expand'));
     this.expandButton.addEventListener('click', () => this.toggleInputExpand());
 
     this.inputEl.addEventListener('input', () => this.autoGrowInput());
 
     this.stopButton = buttonRow.createEl('button', { cls: 'gemma4-chat-stop' });
     setIcon(this.stopButton, 'square');
-    this.stopButton.createSpan({ text: 'Stop' });
+    this.stopButton.createSpan({ text: t('chat.stop') });
     this.stopButton.hide();
     // No mod-cta: it applies the theme's accent color, which defeats the
     // monochrome design (a pink theme accent turned the button pink).
     this.sendButton = buttonRow.createEl('button', { cls: 'gemma4-chat-send' });
     setIcon(this.sendButton, 'arrow-up');
-    setTooltip(this.sendButton, 'Send (Enter)');
+    setTooltip(this.sendButton, t('chat.send'));
 
     this.setMode(this.plugin.settings.defaultMode);
 
@@ -1529,9 +1541,7 @@ export class ChatView extends ItemView {
   private searchBoxRow?: HTMLElement;
 
   private vaultPlaceholder(): string {
-    return this.searchNotes
-      ? 'Ask anything — your notes first, then Gemma 4 E4B (Enter to send)'
-      : 'Ask anything — answered by Gemma 4 E4B, your notes not searched (Enter to send)';
+    return this.searchNotes ? t('chat.input.vault') : t('chat.input.vaultOff');
   }
 
   /** Everything on screen that says whether the notes will be searched. */
@@ -1561,9 +1571,9 @@ export class ChatView extends ItemView {
     this.inputEl?.setAttribute(
       'placeholder',
       mode === 'note'
-        ? 'Ask about this note… (Enter to send)'
+        ? t('chat.input.note')
         : mode === 'wiki'
-          ? `Ask across the cards in ${wikiDir()}/… (Enter to send)`
+          ? t('chat.input.wiki', { wiki: wikiDir() })
           : this.vaultPlaceholder()
     );
     this.renderSuggestions();
@@ -1596,9 +1606,9 @@ export class ChatView extends ItemView {
       const { cards, concepts } = this.wikiCounts();
       const label =
         cards + concepts === 0
-          ? `${wikiDir()}/ · empty — Scan a folder to build it`
-          : `${wikiDir()}/ · ${cards} card${cards === 1 ? '' : 's'}` +
-            (concepts ? `, ${concepts} concept page${concepts === 1 ? '' : 's'}` : '');
+          ? t('chat.context.wikiEmpty', { wiki: wikiDir() })
+          : tn('chat.context.cards', cards, { wiki: wikiDir() }) +
+            (concepts ? tn('chat.context.concepts', concepts) : '');
       this.noteChipEl.createSpan({ text: label });
       this.noteChipEl.toggleClass('gemma4-chat-note-chip-none', cards + concepts === 0);
       return;
@@ -1606,27 +1616,27 @@ export class ChatView extends ItemView {
     if (this.mode === 'vault') {
       if (!this.searchNotes) {
         setIcon(icon, 'sparkles');
-        this.noteChipEl.createSpan({ text: 'Gemma 4 E4B only · notes not searched' });
+        this.noteChipEl.createSpan({ text: t('chat.context.vaultOff') });
         this.noteChipEl.addClass('gemma4-chat-note-chip-none');
         return;
       }
       setIcon(icon, 'folder-search');
       const prefix = `${wikiDir()}/`;
       const n = this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(prefix)).length;
-      this.noteChipEl.createSpan({ text: `Your notes · ${n} file${n === 1 ? '' : 's'}` });
+      this.noteChipEl.createSpan({ text: tn('chat.context.note', n) });
       this.noteChipEl.removeClass('gemma4-chat-note-chip-none');
       return;
     }
     const file = this.app.workspace.getActiveFile();
     setIcon(icon, 'file-text');
     this.noteChipEl.createSpan({
-      text: file ? file.basename : 'No note open',
+      text: file ? file.basename : t('chat.context.noNote'),
     });
     this.noteChipEl.toggleClass('gemma4-chat-note-chip-none', !file);
     if (file && getIngestedSourcePaths(this.app).has(file.path)) {
       const check = this.noteChipEl.createSpan({ cls: 'gemma4-chat-chip-check' });
       setIcon(check, 'check');
-      check.setAttribute('aria-label', 'Already in wiki');
+      check.setAttribute('aria-label', t('chat.context.inWiki'));
     }
   }
 
@@ -1640,15 +1650,18 @@ export class ChatView extends ItemView {
     const kind = grounding.startsWith('wiki') ? 'cards' : grounding === 'vault' ? 'notes' : 'sources';
     const icon = row.createSpan({ cls: 'gemma4-chat-sources-icon' });
     setIcon(icon, kind === 'cards' ? 'library' : 'file-text');
-    row.createSpan({ cls: 'gemma4-chat-sources-label', text: kind === 'cards' ? 'Cards' : kind === 'notes' ? 'Notes' : 'Sources' });
+    row.createSpan({
+      cls: 'gemma4-chat-sources-label',
+      text: t(kind === 'cards' ? 'chat.sources.cards' : kind === 'notes' ? 'chat.sources.notes' : 'chat.sources.sources'),
+    });
   }
 
   private appendUserMessage(text: string) {
     this.emptyStateEl.hide();
     const row = this.messagesEl.createDiv({ cls: 'gemma4-chat-row gemma4-chat-row-user' });
     const bubble = row.createDiv({ cls: 'gemma4-chat-bubble-user', text });
-    const edit = row.createEl('button', { cls: 'gemma4-chat-edit-btn', text: 'Edit' });
-    edit.setAttribute('aria-label', 'Edit this question and ask again');
+    const edit = row.createEl('button', { cls: 'gemma4-chat-edit-btn', text: t('chat.edit') });
+    edit.setAttribute('aria-label', t('chat.editLabel'));
     edit.addEventListener('click', () => this.beginEdit(row, bubble, edit, text));
     this.scrollToBottom();
   }
@@ -1687,11 +1700,11 @@ export class ChatView extends ItemView {
     if (dropped > 0) {
       actions.createSpan({
         cls: 'gemma4-chat-edit-note',
-        text: dropped === 1 ? 'Replaces 1 later message' : `Replaces ${dropped} later messages`,
+        text: tn('chat.edit.replaces', dropped),
       });
     }
-    const cancel = actions.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Cancel' });
-    const send = actions.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Ask again' });
+    const cancel = actions.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: t('chat.cancel') });
+    const send = actions.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: t('chat.askAgain') });
 
     const close = () => {
       box.remove();
@@ -1751,23 +1764,21 @@ export class ChatView extends ItemView {
     const { body } = this.appendAssistantMessage();
     const none = body.createDiv({ cls: 'gemma4-chat-vault-none' });
     if (passing.length) {
-      none.appendText(
-        `Nothing in your notes is about this — ${passing.length} mention${passing.length === 1 ? 's' : ''} it in passing: `
-      );
+      none.appendText(tn('chat.nothing.passing', passing.length));
       passing.forEach((hit, i) => {
-        if (i > 0) none.appendText(', ');
+        if (i > 0) none.appendText(t('chat.listSeparator'));
         const a = none.createEl('a', { cls: 'gemma4-chat-source-link', text: hit.title });
         a.addEventListener('click', (evt) => {
           evt.preventDefault();
           void this.app.workspace.openLinkText(hit.linkPath, '', false);
         });
       });
-      none.appendText('.');
+      none.appendText(t('chat.listEnd'));
     } else {
-      none.appendText('Nothing in your notes is about this.');
+      none.appendText(t('chat.nothing'));
     }
     const bar = body.createDiv({ cls: 'gemma4-chat-route-actions' });
-    const ask = bar.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Ask Gemma 4 E4B anyway' });
+    const ask = bar.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: t('chat.nothing.askAnyway') });
     ask.addEventListener('click', () => {
       if (this.busy) return;
       ask.disabled = true;
@@ -1779,7 +1790,7 @@ export class ChatView extends ItemView {
     // two user messages in a row. It carries what happened, not an answer.
     this.turns.push({
       role: 'assistant',
-      content: 'Nothing in your notes is about this. Gemma 4 E4B was not asked.',
+      content: t('chat.nothing.record'),
       sources: [],
       grounding: 'vault',
       historyText: '(Nothing in the notes was about this, and no answer was given.)',
@@ -1852,21 +1863,21 @@ export class ChatView extends ItemView {
 
     const copyBtn = actions.createEl('button', {
       cls: 'gemma4-chat-action clickable-icon',
-      attr: { 'aria-label': 'Copy answer' },
+      attr: { 'aria-label': t('chat.answer.copy') },
     });
     setIcon(copyBtn, 'copy');
-    setTooltip(copyBtn, 'Copy answer');
+    setTooltip(copyBtn, t('chat.answer.copy'));
     copyBtn.addEventListener('click', () => {
       void navigator.clipboard.writeText(getAnswer());
-      notify('done', 'Copied.');
+      notify('done', t('chat.answer.copied'));
     });
 
     const regenBtn = actions.createEl('button', {
       cls: 'gemma4-chat-action clickable-icon',
-      attr: { 'aria-label': 'Regenerate' },
+      attr: { 'aria-label': t('chat.answer.regenerate') },
     });
     setIcon(regenBtn, 'refresh-cw');
-    setTooltip(regenBtn, 'Regenerate answer');
+    setTooltip(regenBtn, t('chat.answer.regenerateTip'));
     regenBtn.addEventListener('click', () => {
       if (this.busy || !this.lastQuestion) return;
       row.remove();
@@ -1882,10 +1893,10 @@ export class ChatView extends ItemView {
     if (!allowSave) return;
     const saveBtn = actions.createEl('button', {
       cls: 'gemma4-chat-action clickable-icon',
-      attr: { 'aria-label': 'Save answer to wiki' },
+      attr: { 'aria-label': t('chat.answer.save') },
     });
     setIcon(saveBtn, 'file-plus-2');
-    setTooltip(saveBtn, 'Save as note');
+    setTooltip(saveBtn, t('chat.answer.saveTip'));
     saveBtn.addEventListener('click', () => void (async () => {
       const answer = getAnswer();
       const folder = this.answerFolder(sources);
@@ -1914,9 +1925,9 @@ export class ChatView extends ItemView {
           }
           await this.app.vault.create(notePath, content);
           await appendLog(this.app.vault, 'answer', notePath);
-          notify('done', `Saved: ${notePath}`);
+          notify('done', t('chat.saved', { path: notePath }));
         })();
-      }, 'Review note before writing').open();
+      }, t('chat.reviewBeforeWriting')).open();
     })());
   }
 
@@ -1993,7 +2004,7 @@ export class ChatView extends ItemView {
     // question while an Improve is running and press Enter. Same engine, same
     // rule.
     if (this.plugin.isBusy()) {
-      notify('warn', `Busy: ${this.plugin.runningLabel() ?? 'something is running'}. Wait for that to finish.`);
+      notify('warn', t('chat.busyWait', { what: this.plugin.runningLabel() ?? t('chat.busySomething') }));
       return;
     }
     const typed = opts.text === undefined;
@@ -2022,18 +2033,18 @@ export class ChatView extends ItemView {
     const bar = card.createDiv({ cls: 'gemma4-chat-route-actions' });
     const hasNote = !!this.app.workspace.getActiveFile();
     const buttons: HTMLButtonElement[] = [];
-    for (const t of targets) {
-      if (t === 'note' && !hasNote) continue;
+    for (const target of targets) {
+      if (target === 'note' && !hasNote) continue;
       const label =
-        t === 'wiki' ? 'Ask the wiki'
-        : t === 'note' ? 'Ask the open note'
-        : 'Ask across your vault';
-      const btn = routeButton(bar, label, SCOPES[t].icon);
+        target === 'wiki' ? t('chat.route.wiki')
+        : target === 'note' ? t('chat.route.note')
+        : t('chat.route.vault');
+      const btn = routeButton(bar, label, scopes()[target].icon);
       buttons.push(btn);
       btn.addEventListener('click', () => {
         if (this.busy) return;
         for (const b of buttons) b.disabled = true;
-        void this.askInMode(t, question);
+        void this.askInMode(target, question);
       });
     }
     this.scrollToBottom();
@@ -2212,7 +2223,9 @@ export class ChatView extends ItemView {
     const extra = await this.expandSubject(subject);
     if (this.searchingEl) {
       const shown = [subject, ...extra].slice(0, 7).join(', ');
-      this.searchingEl.setText(`Searching ${files.length} notes for: ${shown}${extra.length > 6 ? '…' : ''}`);
+      this.searchingEl.setText(
+        t('chat.searchingFor', { n: files.length, terms: `${shown}${extra.length > 6 ? '…' : ''}` })
+      );
     }
     const ranked = rankVaultDocs(searchAs, docs, 80, extra);
     const rankedSet = new Set(ranked.map((h) => h.path));
@@ -2421,15 +2434,10 @@ export class ChatView extends ItemView {
     if (this.mode === 'wiki') {
       const entries = await readIndexEntries(this.app.vault);
       if (!entries.length) {
-        this.appendInfoMessage(
-          `Your ${wikiDir()}/ folder is empty, so there is nothing to answer from. Build it ` +
-            'first — nothing is written without your approval — or switch to Vault to search ' +
-            'your notes as they are.',
-          [
-            { label: 'Scan a folder', action: 'scan' },
-            { label: 'Ingest this note into wiki', action: 'ingest' },
-          ]
-        );
+        this.appendInfoMessage(t('chat.info.wikiEmpty', { wiki: wikiDir() }), [
+          { label: t('chat.chip.scan'), action: 'scan' },
+          { label: t('chat.chip.ingestThis'), action: 'ingest' },
+        ]);
         return null;
       }
       // A whole-wiki question is not a retrieval problem. Scoring "what
@@ -2463,8 +2471,9 @@ export class ChatView extends ItemView {
       );
       if (clampedWiki.truncated) {
         this.appendInfoMessage(
-          `Only the first ~${Math.round(Math.max(1200, this.plugin.budget('chat') - historyTokens) / 1000)}k tokens of the retrieved ` +
-            'material were sent — the rest was cut to keep one answer fast.'
+          t('chat.info.cutWiki', {
+            k: Math.round(Math.max(1200, this.plugin.budget('chat') - historyTokens) / 1000),
+          })
         );
       }
       return {
@@ -2532,9 +2541,7 @@ export class ChatView extends ItemView {
     const file = this.app.workspace.getActiveFile();
     const attachments = await this.readAttachments();
     if (!file && !attachments.blocks) {
-      this.appendInfoMessage(
-        'Open a note first, or attach one with the + button — This-note mode needs something to ground in.'
-      );
+      this.appendInfoMessage(t('chat.info.noNote'));
       return null;
     }
     let noteBlock = '';
@@ -2555,11 +2562,7 @@ export class ChatView extends ItemView {
       // Say whose limit this is. "Longer than the model can hold" blamed the
       // model for a cap the plugin sets, and left the reader with nothing to
       // do about it.
-      this.appendInfoMessage(
-        `Only the first ~${Math.round(materialBudget / 1000)}k tokens of this note were ` +
-          'sent — the rest was cut to keep one answer fast. Raise Context window in settings to ' +
-          'send more, or select a section and ask about that.'
-      );
+      this.appendInfoMessage(t('chat.info.cutNote', { k: Math.round(materialBudget / 1000) }));
     }
     return {
       systemPrompt:
@@ -2775,7 +2778,9 @@ export class ChatView extends ItemView {
       this.mode === 'vault' && !ungrounded && this.searchNotes
         ? this.messagesEl.createDiv({
             cls: 'gemma4-chat-row gemma4-chat-row-assistant gemma4-chat-searching',
-            text: `Searching ${this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(`${wikiDir()}/`)).length} notes…`,
+            text: t('chat.searching', {
+              n: this.app.vault.getMarkdownFiles().filter((f) => !f.path.startsWith(`${wikiDir()}/`)).length,
+            }),
           })
         : null;
     this.searchingEl = searching;
@@ -2854,8 +2859,8 @@ export class ChatView extends ItemView {
       // and can be wrong, the links cannot.
       if (context.vault?.kind === 'none') {
         const none = body.createDiv({ cls: 'gemma4-chat-vault-none' });
-        none.appendText('Your notes were not searched. ');
-        const again = none.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: 'Search my notes and ask again' });
+        none.appendText(t('chat.vault.notSearched'));
+        const again = none.createEl('button', { cls: 'gemma4-chat-hatch-btn', text: t('chat.vault.searchAgain') });
         again.addEventListener('click', () => {
           if (this.busy) return;
           again.disabled = true;
@@ -2870,23 +2875,23 @@ export class ChatView extends ItemView {
         const nMention = hits.length - nAbout;
         list.createSpan({
           cls: 'gemma4-chat-vault-list-label',
-          text: `${nAbout} about · ${nMention} mention${nMention === 1 ? 's' : ''} it`,
+          text: tn('chat.vault.tally', nMention, { about: nAbout }),
         });
         for (const hit of hits) {
           const a = list.createEl('a', {
             cls: `gemma4-chat-source-link${hit.tier === 'mentions' ? ' gemma4-chat-source-mention' : ''}`,
             text: hit.title,
           });
-          a.setAttribute('aria-label', hit.tier === 'about' ? 'About the subject' : 'Mentions it in passing');
+          a.setAttribute('aria-label', hit.tier === 'about' ? t('chat.vault.about') : t('chat.vault.mentions'));
           a.addEventListener('click', (evt) => {
             evt.preventDefault();
             void this.app.workspace.openLinkText(hit.linkPath, '', false);
           });
         }
       } else if (context.vault?.kind === 'both') {
-        body.createDiv({ cls: 'gemma4-chat-part-label', text: 'From your notes' });
+        body.createDiv({ cls: 'gemma4-chat-part-label', text: t('chat.part.notes') });
       } else if (context.vault?.kind === 'overview') {
-        body.createDiv({ cls: 'gemma4-chat-part-label', text: 'From the shape of your vault' });
+        body.createDiv({ cls: 'gemma4-chat-part-label', text: t('chat.part.shape') });
       }
 
       const first = await this.streamAnswer(engine, {
@@ -2907,7 +2912,7 @@ export class ChatView extends ItemView {
         const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
         warnRow.createSpan({
           cls: 'gemma4-chat-sources-label',
-          text: '⚠ Gemma general knowledge — not from your notes',
+          text: t('chat.generalKnowledge'),
         });
       } else if (context.vault?.kind !== 'list') {
         // Deterministic source attribution: list exactly the notes/pages the
@@ -2932,7 +2937,7 @@ export class ChatView extends ItemView {
       // in one turn so a follow-up sees what was actually said.
       const groundedPart = answer;
       if ((context.vault?.kind === 'both' || context.vault?.adds) && !this.stopRequested) {
-        body.createDiv({ cls: 'gemma4-chat-part-label gemma4-chat-part-label-adds', text: 'Gemma 4 E4B adds' });
+        body.createDiv({ cls: 'gemma4-chat-part-label gemma4-chat-part-label-adds', text: t('chat.part.adds') });
         const typing2 = this.showTypingIndicator(body);
         // The question is reframed, not forwarded: asked "what did I write
         // about coffee" a 4B model answers that it cannot see the notes, and
@@ -2957,7 +2962,7 @@ export class ChatView extends ItemView {
         const warnRow = body.createDiv({ cls: 'gemma4-chat-sources' });
         warnRow.createSpan({
           cls: 'gemma4-chat-sources-label',
-          text: '⚠ Gemma general knowledge — not from your notes',
+          text: t('chat.generalKnowledge'),
         });
         answer = `${answer}\n\n---\n**Gemma 4 E4B adds (not from your notes):**\n\n${second.text}`;
       }
@@ -2990,9 +2995,9 @@ export class ChatView extends ItemView {
         if (cards > 0) {
           card.createDiv({
             cls: 'gemma4-chat-route-text',
-            text: `Questions across your whole collection are what Wiki is for — you have ${cards} card${cards === 1 ? '' : 's'}.`,
+            text: tn('chat.route.collection', cards),
           });
-          const b = routeButton(card.createDiv({ cls: 'gemma4-chat-route-actions' }), 'Ask the wiki', SCOPES.wiki.icon);
+          const b = routeButton(card.createDiv({ cls: 'gemma4-chat-route-actions' }), t('chat.route.wiki'), scopes().wiki.icon);
           b.addEventListener('click', () => {
             if (this.busy) return;
             b.disabled = true;
@@ -3002,10 +3007,11 @@ export class ChatView extends ItemView {
         } else {
           card.createDiv({
             cls: 'gemma4-chat-route-text',
-            text: `Questions across your whole collection are what Wiki is for. Build cards with Scan a folder first — nothing is in ${wikiDir()}/ yet.`,
+            text: t('chat.route.collectionEmpty', { wiki: wikiDir() }),
           });
-          const b = routeButton(card.createDiv({ cls: 'gemma4-chat-route-actions' }), 'Scan a folder', 'folder-search');
-          b.addEventListener('click', () => this.runSuggestion({ label: 'Scan a folder', action: 'scan' }));
+          const scan = t('chat.chip.scan');
+          const b = routeButton(card.createDiv({ cls: 'gemma4-chat-route-actions' }), scan, 'folder-search');
+          b.addEventListener('click', () => this.runSuggestion({ label: scan, action: 'scan' }));
         }
       }
 
@@ -3017,8 +3023,8 @@ export class ChatView extends ItemView {
         this.routeCard(
           body,
           inNote
-            ? 'Not in this note? The wiki it built, or every note in your vault:'
-            : 'Not in the wiki? The note you have open, or every note in your vault:',
+            ? t('chat.route.fromNote')
+            : t('chat.route.fromWiki'),
           question,
           inNote ? ['wiki', 'vault'] : ['note', 'vault']
         );
@@ -3030,7 +3036,7 @@ export class ChatView extends ItemView {
       typing.remove();
       body.createDiv({
         cls: 'gemma4-chat-error',
-        text: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+        text: t('chat.failed', { reason: err instanceof Error ? err.message : String(err) }),
       });
     } finally {
       // Release first, tidy up after. The answer is fully rendered by now, so
