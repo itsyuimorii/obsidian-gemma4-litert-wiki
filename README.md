@@ -279,7 +279,7 @@ No. It needs WebGPU, Node APIs that Obsidian mobile does not have, and about 3 G
 Windows may be running Obsidian on the integrated GPU. **Check setup (diagnostics)** names the GPU in use, and [Not for you if](#-not-for-you-if) has the fix.
 
 **Which languages do my notes need to be in?**
-English, Japanese, Chinese and Korean notes are covered by the [manual test protocols](docs/tri-lingual-test.md). The interface itself is English only.
+English, Japanese, Chinese and Korean notes are covered by the [manual test protocols](docs/tri-lingual-test.md). The chat panel is also in Japanese and Simplified Chinese: it follows Obsidian's language, and **Interface language** in settings overrides it. Settings, notices, the other dialogs and command names are still English and are being moved over one surface at a time (#166). The questions the chips send, the prompts to the model and everything written into your vault stay in English.
 
 **How good are the answers?**
 Good at reading what you wrote, weak at the wider world: it is a 4B model. Answers about your notes list their sources; anything the model adds from its own knowledge is labelled as such.
