@@ -25,6 +25,13 @@ All notable changes to this plugin are recorded here. Versions follow
   *Pages read this run* folds out to each page, linked, and why it was
   read: least borne out by its note, or drawn at random. A clean report
   could not be told apart from one that read the same pages as last time.
+- **A stray click no longer throws away a draft.** Review dialogs (the
+  ingest preview, scan review, tidy, related links, tags and links) stayed
+  open only until the first click on the dimmed background, which closed
+  them and discarded output the model had just spent tens of seconds on.
+  They now close only from Cancel, the close button or Escape. Closing the
+  ingest preview also says that nothing was written, instead of ending in
+  silence that looked like a failed ingest.
 - **A running task's notice stays until the task ends.** Clicking the
   progress notice in the top-right corner closed it, and with it the only
   sign that an ingest, a scan or a test command was still running. It now

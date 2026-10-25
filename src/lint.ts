@@ -1,4 +1,5 @@
 import { App, Modal } from 'obsidian';
+import { keepOpenOnOutsideClick } from './modal-guard';
 import {
   conceptPagePath,
   conceptSources,
@@ -172,6 +173,7 @@ export class TidyModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
+    keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-lint-modal');
     contentEl.createEl('h3', { text: 'Tidy the wiki' });
     contentEl.createDiv({
