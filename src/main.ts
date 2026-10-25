@@ -3,7 +3,7 @@ import { resolveLanguage, setLanguage } from './i18n';
 import { confineFilesystemTo, fs, http, path, type Bytes, type HttpServer } from './node-api';
 import type { Engine } from '@litert-lm/core';
 import { ChatView, VIEW_TYPE_CHAT } from './chat-view';
-import { DURATION, failureText, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
+import { DURATION, failureText, holdOnClick, logNotice, mark, notify, notifyAndLog, Progress, type NoticeKind } from './notify';
 import { ConfirmModal, DiagnosticsModal, IngestPreviewModal, ScaffoldCreatedModal, OnboardingModal, RelinkPreviewModal, SuggestTagsLinksModal, type RelinkProposal } from './ingest-modal';
 import { getModelBlob, isModelDownloaded, partialBytes, tryMigrateLegacyCache } from './model-store';
 import { ensureCommonJsMarker, ensureRuntimeFile, isRuntimeFile, runtimeBytesOnDisk } from './wasm-store';
@@ -409,9 +409,10 @@ export default class LiteRtSpikePlugin extends Plugin {
     //   be switched off entirely.
     //
     // So: keep the toast AND the bar, and fix what was actually wrong with
-    // the toast. It carries a running clock so it visibly moves. Dismissing
-    // it is honoured — it means "out of my way" — and the status bar is the
-    // way back: click it and the toast returns.
+    // the toast. It carries a running clock so it visibly moves, and a click
+    // no longer closes it (holdOnClick): dismissing it used to be honoured,
+    // with the status bar as the way back, but the bar is too easy to miss,
+    // and a run that vanished on a click read as one that had finished.
     const wasIdle = this.runningText === null;
     if (wasIdle) {
       this.runStartedAt = Date.now();
@@ -451,6 +452,7 @@ export default class LiteRtSpikePlugin extends Plugin {
       }
     } else if (!this.runDismissed) {
       this.statusNotice = new Notice(body, 0);
+      holdOnClick(this.statusNotice);
     }
     this.renderStatusBar();
   }

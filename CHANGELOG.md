@@ -32,6 +32,11 @@ All notable changes to this plugin are recorded here. Versions follow
   They now close only from Cancel, the close button or Escape. Closing the
   ingest preview also says that nothing was written, instead of ending in
   silence that looked like a failed ingest.
+- **A running task's notice stays until the task ends.** Clicking the
+  progress notice in the top-right corner closed it, and with it the only
+  sign that an ingest, a scan or a test command was still running. It now
+  ignores clicks while the task runs; the notice with the result still
+  closes on a click.
 
 ## 1.0.25 — 2026-10-18
 
