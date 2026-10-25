@@ -2951,6 +2951,9 @@ export default class LiteRtSpikePlugin extends Plugin {
           overwriteWarning:
             'Anything edited by hand in that file will be replaced. Generated pages are rebuilt ' +
             'from their source each time — to keep a correction, put it in the note instead.',
+          // Without this, closing the preview ended the command in silence,
+          // which reads as a failed ingest rather than a declined one.
+          onDismiss: () => notify('info', `Nothing written — "${file.basename}" was not added to the wiki.`),
         }
         );
         previewModal.open();
