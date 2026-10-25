@@ -4,7 +4,11 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
-## Unreleased
+## 1.0.26 — 2026-10-24
+
+The chat panel speaks Japanese and Simplified Chinese, the spot-check says
+which pages it read, and a stray click no longer loses a draft or hides a
+running task.
 
 - **The chat panel speaks Japanese and Simplified Chinese** (#166). It
   follows Obsidian's language; **Interface language** under Chat in
