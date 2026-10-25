@@ -4,6 +4,15 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## Unreleased
+
+- **The settings page speaks Japanese and Simplified Chinese** (#166).
+  Every heading, description, button and placeholder on it follows the
+  **Interface language** setting, as does the table of what the plugin
+  created and the rename confirmation. Changing the language redraws the
+  page at once. Command names quoted in descriptions stay English until
+  the command names themselves are translated.
+
 ## 1.0.26 — 2026-10-24
 
 The chat panel speaks Japanese and Simplified Chinese, the spot-check says

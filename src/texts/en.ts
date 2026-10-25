@@ -176,9 +176,133 @@ const texts = {
   // Settings
   'settings.language.name': 'Interface language',
   'settings.language.desc':
-    'The language of the chat panel. Follows Obsidian by default. Prompts and what the plugin writes into your vault stay in English.',
+    'The language of the chat panel and this page. Follows Obsidian by default. Prompts and what the plugin writes into your vault stay in English.',
   'settings.language.auto': 'Same as Obsidian',
   'settings.language.reopen': 'The chat panel is answering; reopen it afterwards to see the new language.',
+
+  'settings.demo.before': 'New here? Every feature is demonstrated at ',
+  'settings.demo.after': ' — 23 short scenes, nothing to install.',
+
+  'settings.group.model': 'Model',
+  'settings.group.wiki': 'Wiki',
+  'settings.group.schema': 'Schema',
+  'settings.group.skills': 'Skills',
+  'settings.group.chat': 'Chat',
+  'settings.group.review': 'Review',
+  'settings.group.scan': 'Scan for new notes',
+
+  'settings.model.name': 'Local model',
+  'settings.model.desc': 'The model file on disk.',
+  'settings.model.downloaded':
+    'Downloaded ({gb} GB on disk). Completely free — runs offline on your GPU, no API key or subscription.',
+  'settings.model.partial': 'Partial download on disk ({gb} GB). Resume to finish.',
+  'settings.model.missing': 'Not downloaded yet (~2.97 GB, one time). Downloads on first use, or start it here.',
+  'settings.model.redownload': 'Re-download',
+  'settings.model.resume': 'Resume download',
+  'settings.model.download': 'Download model',
+
+  'settings.check.name': 'Check setup',
+  'settings.check.desc':
+    'Checks the five things a first answer depends on — desktop, WebGPU, disk space, the runtime, the model — and says what to do about anything missing. Produces a report you can paste into a bug report; it carries versions and file sizes, nothing from your vault.',
+  'settings.check.run': 'Run check',
+
+  'settings.context.name': 'Context window (tokens)',
+  'settings.context.desc':
+    'How much the model can hold at once — longer notes fit whole, and answers can ground on more material. Costs GPU memory and first-token latency. Takes effect after the plugin reloads. If the model fails to load or answers degrade after raising this, set it lower.',
+  'settings.context.small': '4,096 (small / safest)',
+  'settings.context.max': '64,000 (max)',
+  'settings.context.saved': 'Context window saved — reload the plugin (toggle it off/on) to apply.',
+
+  'settings.dev.name': 'Developer commands',
+  'settings.dev.desc':
+    'Adds the [Test] commands to the palette: check WebGPU, load the WASM runtime without the model, time a grammar fix, run the JSON-reliability test, and benchmark this machine. They are for diagnosing a broken setup, not for working with notes. Off by default.',
+  'settings.dev.reload': 'Reload the plugin (toggle it off and on) for this to take effect.',
+
+  'settings.folder.name': 'Knowledge folder name',
+  'settings.folder.desc':
+    'The one folder the plugin writes to. Your own notes are never moved or modified. Changing this renames the folder and rewrites internal links; blank resets to the default.',
+  'settings.folder.apply': 'Apply',
+  'settings.folder.notFolder': '"{name}" already exists and is not a folder.',
+  'settings.folder.renameTitle': 'Rename the knowledge folder',
+  'settings.folder.renameMoves.one': '{n} file will move, and links pointing into "{prev}/" will be rewritten.',
+  'settings.folder.renameMoves.other': '{n} files will move, and links pointing into "{prev}/" will be rewritten.',
+  'settings.folder.renameEmpty':
+    '"{prev}/" is empty or missing, so nothing moves — the folders will simply be created under "{next}/".',
+  'settings.folder.renameCheck': 'Check the spelling: a name you did not mean leaves your existing wiki behind.',
+  'settings.folder.renameConfirm': 'Rename',
+
+  'settings.map.name': 'What the plugin created',
+  'settings.map.desc': 'Every folder and file this plugin owns, and whether each is present.',
+  'settings.map.missing': 'missing',
+
+  'settings.repair.name': 'Folders',
+  'settings.repair.desc': 'Created when Obsidian starts; this is only for putting one back.',
+  'settings.repair.someMissing': '{n} of {total} missing — they are normally created when Obsidian starts.',
+  'settings.repair.allPresent':
+    'All present. These are created when Obsidian starts; this button is only for putting one back.',
+  'settings.repair.createMissing': 'Create {n} missing',
+  'settings.repair.button': 'Repair folders',
+
+  'settings.setupCard.name': 'What this plugin created',
+  'settings.setupCard.desc':
+    'The card shown the first time the folder was made — what each folder is for, and where the chat panel lives. Shown once on purpose; this is how to see it again.',
+  'settings.setupCard.button': 'Show setup card',
+
+  'settings.tags.name': 'Tag vocabulary & naming rules',
+  'settings.tags.desc':
+    'Tag rules live in schema.md, not here — config as a note; open it from the list above. "Organize tags" has local Gemma merge near-synonyms into one vocabulary and writes it back for you to review. The first run is slow while the model loads.',
+  'settings.tags.button': 'Organize tags',
+
+  'settings.skills.name': 'Custom skills',
+  'settings.skills.desc':
+    'One file per skill in skills/ — frontmatter for name/icon/mode, the body is the prompt. Each file becomes an entry in the ⚡ menu of the chat panel. The folder ships with a README and two examples.',
+  'settings.skills.button': 'Open skills folder',
+
+  'settings.mode.name': 'Default mode',
+  'settings.mode.desc': 'Which mode a freshly opened chat panel starts in.',
+
+  'settings.instructions.name': 'Standing instructions',
+  'settings.instructions.desc':
+    'Added to every answer in every mode — a language, a length, a tone, a format. They shape how an answer is written, not what it may draw on: a grounded mode still answers only from your material. Up to 2,000 characters.',
+  'settings.instructions.placeholder': 'Answer in Japanese. Keep answers under 150 words.',
+
+  'settings.stale.name': 'Stale after (days)',
+  'settings.stale.desc': 'How old a page has to be before the review board calls it stale.',
+
+  'settings.howToScan.name': 'How to run a scan',
+  'settings.howToScan.desc':
+    'Cmd/Ctrl+P → "Scan a folder into the wiki", or the button in the chat panel when your wiki is empty. It asks which folders, shows how many notes each one holds, and remembers your last pick. "Stop the running scan" cancels — whatever was drafted before you stopped is still offered for review.',
+
+  'settings.answerFolder.name': 'Save answers into',
+  'settings.answerFolder.desc':
+    'Where the save button under an answer writes. Leave blank and it goes beside the note the answer came from — in Wiki mode, the note behind its first source. Name a folder here to put every saved answer in one place instead. Either way it is an ordinary note of yours, so the next scan can turn it into a wiki card like any other.',
+  'settings.answerFolder.placeholder': 'beside the note it came from',
+
+  'settings.exclude.name': 'Never scan these',
+  'settings.exclude.desc':
+    'Folders that are not notes — templates, attachments, an archive. Skipped by every scan and by the background count, whatever you tick in the dialog (comma-separated). The wiki folder is always excluded.',
+  'settings.exclude.placeholder': 'Templates, Attachments',
+
+  'settings.count.name': 'Show a background "to review" count',
+  'settings.count.desc':
+    'Periodically COUNT new/changed notes and show them in the status bar. Counting is instant and never runs the model — drafting only happens when you click the chip. Default off.',
+
+  'settings.quiet.name': 'Quiet period (hours)',
+  'settings.quiet.desc':
+    'Background auto-scan skips notes edited within this many hours — you may still be writing them. Manual "Scan now" always includes them.',
+
+  'settings.recount.name': 'Re-count every (hours)',
+  'settings.recount.desc': 'How often the background count refreshes while Obsidian is open.',
+
+  // What each folder and file of the wiki is for, in the settings table and the setup card
+  'scaffold.readme': 'What this folder is, and the rules',
+  'scaffold.cards': 'One summary card per ingested note',
+  'scaffold.concepts': 'Pages built across a shared tag',
+  'scaffold.skills': 'One file per ⚡ menu entry',
+  'scaffold.chats': 'Conversations you chose to keep',
+  'scaffold.index': 'Catalog — wiki chat reads this first',
+  'scaffold.log': 'Append-only record of what ran',
+  'scaffold.schema': 'Tag vocabulary, naming rules, rejected tags',
 };
 
 export type TextKey = keyof typeof texts;

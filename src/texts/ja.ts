@@ -167,8 +167,131 @@ export const ja: Language = {
 
     'settings.language.name': '表示言語',
     'settings.language.desc':
-      'チャットパネルの言語です。既定では Obsidian に合わせます。モデルへのプロンプトと、プラグインが保管庫に書き込む内容は英語のままです。',
+      'チャットパネルとこのページの言語です。既定では Obsidian に合わせます。モデルへのプロンプトと、プラグインが保管庫に書き込む内容は英語のままです。',
     'settings.language.auto': 'Obsidian と同じ',
     'settings.language.reopen': 'チャットパネルが回答中です。終わったら開き直すと新しい言語で表示されます。',
+
+    'settings.demo.before': '初めての方へ：すべての機能は ',
+    'settings.demo.after': ' で見られます — 短いシーンが 23 本、インストール不要です。',
+
+    'settings.group.model': 'モデル',
+    'settings.group.wiki': 'Wiki',
+    'settings.group.schema': 'スキーマ',
+    'settings.group.skills': 'スキル',
+    'settings.group.chat': 'チャット',
+    'settings.group.review': 'レビュー',
+    'settings.group.scan': '新しいノートのスキャン',
+
+    'settings.model.name': 'ローカルモデル',
+    'settings.model.desc': 'ディスク上のモデルファイルです。',
+    'settings.model.downloaded':
+      'ダウンロード済み（ディスク上 {gb} GB）。完全無料 — GPU 上でオフライン動作し、API キーもサブスクリプションも不要です。',
+    'settings.model.partial': '途中までダウンロード済み（{gb} GB）。再開すると完了します。',
+    'settings.model.missing': '未ダウンロード（約 2.97 GB、1 回だけ）。最初に使うときにダウンロードされます。ここから始めることもできます。',
+    'settings.model.redownload': '再ダウンロード',
+    'settings.model.resume': 'ダウンロードを再開',
+    'settings.model.download': 'モデルをダウンロード',
+
+    'settings.check.name': 'セットアップを確認',
+    'settings.check.desc':
+      '最初の回答に必要な 5 つ — デスクトップ、WebGPU、ディスク容量、ランタイム、モデル — を確認し、足りないものへの対処法を示します。バグ報告に貼れるレポートを作ります。含まれるのはバージョンとファイルサイズだけで、保管庫の内容は含まれません。',
+    'settings.check.run': '確認を実行',
+
+    'settings.context.name': 'コンテキストウィンドウ（トークン）',
+    'settings.context.desc':
+      'モデルが一度に扱える量です。長いノートも丸ごと入り、回答はより多くの資料にもとづけます。GPU メモリと最初のトークンまでの時間を使います。プラグインの再読み込み後に反映されます。上げたあとにモデルが読み込めない、または回答の質が落ちる場合は下げてください。',
+    'settings.context.small': '4,096（小 / 最も安全）',
+    'settings.context.max': '64,000（最大）',
+    'settings.context.saved': 'コンテキストウィンドウを保存しました — 反映するにはプラグインを再読み込み（オフにしてオン）してください。',
+
+    'settings.dev.name': '開発者コマンド',
+    'settings.dev.desc':
+      'コマンドパレットに [Test] コマンドを追加します：WebGPU の確認、モデルなしでの WASM ランタイムの読み込み、文法修正の計測、JSON 信頼性テスト、このマシンのベンチマーク。セットアップの不具合を調べるためのもので、ノートの作業用ではありません。既定はオフです。',
+    'settings.dev.reload': '反映するにはプラグインを再読み込み（オフにしてオン）してください。',
+
+    'settings.folder.name': 'ナレッジフォルダー名',
+    'settings.folder.desc':
+      'プラグインが書き込む唯一のフォルダーです。あなたのノートが移動・変更されることはありません。変更するとフォルダー名が変わり、内部リンクが書き換えられます。空欄にすると既定値に戻ります。',
+    'settings.folder.apply': '適用',
+    'settings.folder.notFolder': '「{name}」はすでに存在し、フォルダーではありません。',
+    'settings.folder.renameTitle': 'ナレッジフォルダーの名前を変更',
+    'settings.folder.renameMoves.one': '{n} 個のファイルが移動し、「{prev}/」を指すリンクが書き換えられます。',
+    'settings.folder.renameMoves.other': '{n} 個のファイルが移動し、「{prev}/」を指すリンクが書き換えられます。',
+    'settings.folder.renameEmpty':
+      '「{prev}/」は空か存在しないため、何も移動しません — フォルダーが「{next}/」の下に作られるだけです。',
+    'settings.folder.renameCheck': '綴りを確認してください。意図しない名前にすると、今の Wiki が取り残されます。',
+    'settings.folder.renameConfirm': '名前を変更',
+
+    'settings.map.name': 'プラグインが作ったもの',
+    'settings.map.desc': 'このプラグインが管理するフォルダーとファイルの一覧と、それぞれが存在するかどうかです。',
+    'settings.map.missing': 'なし',
+
+    'settings.repair.name': 'フォルダー',
+    'settings.repair.desc': 'Obsidian の起動時に作られます。これは 1 つ戻すためだけのものです。',
+    'settings.repair.someMissing': '{total} 個中 {n} 個がありません — 通常は Obsidian の起動時に作られます。',
+    'settings.repair.allPresent':
+      'すべてあります。これらは Obsidian の起動時に作られます。このボタンは 1 つ戻すためだけのものです。',
+    'settings.repair.createMissing': '足りない {n} 個を作成',
+    'settings.repair.button': 'フォルダーを修復',
+
+    'settings.setupCard.name': 'このプラグインが作ったもの',
+    'settings.setupCard.desc':
+      'フォルダーを最初に作ったときに表示したカードです — 各フォルダーの役割と、チャットパネルの場所。意図して 1 回だけ表示しています。もう一度見るにはここから。',
+    'settings.setupCard.button': 'セットアップカードを表示',
+
+    'settings.tags.name': 'タグの語彙と命名ルール',
+    'settings.tags.desc':
+      'タグのルールはここではなく schema.md にあります — ノートとしての設定です。上の一覧から開けます。「タグを整理」はローカルの Gemma が近い同義語を 1 つの語彙にまとめ、確認用に書き戻します。初回はモデルの読み込みで時間がかかります。',
+    'settings.tags.button': 'タグを整理',
+
+    'settings.skills.name': 'カスタムスキル',
+    'settings.skills.desc':
+      'skills/ にスキルごとに 1 ファイル — frontmatter に name/icon/mode、本文がプロンプトです。各ファイルがチャットパネルの ⚡ メニューの項目になります。フォルダーには README と例が 2 つ入っています。',
+    'settings.skills.button': 'スキルフォルダーを開く',
+
+    'settings.mode.name': '既定のモード',
+    'settings.mode.desc': '新しく開いたチャットパネルが最初に使うモードです。',
+
+    'settings.instructions.name': '常時の指示',
+    'settings.instructions.desc':
+      'すべてのモードのすべての回答に加えられます — 言語、長さ、口調、形式など。回答の書き方を決めるもので、何にもとづくかは変えません。資料にもとづくモードは、引き続きあなたの資料だけから答えます。最大 2,000 文字。',
+    'settings.instructions.placeholder': '日本語で答えて。150 語以内に。',
+
+    'settings.stale.name': '古いとみなす日数',
+    'settings.stale.desc': 'レビューボードがページを古いとみなすまでの日数です。',
+
+    'settings.howToScan.name': 'スキャンの実行方法',
+    'settings.howToScan.desc':
+      'Cmd/Ctrl+P →「Scan a folder into the wiki」、または Wiki が空のときはチャットパネルのボタンから。どのフォルダーかを尋ね、それぞれのノート数を示し、前回の選択を覚えています。「Stop the running scan」で中止できます — 中止前に作られた下書きは、そのままレビューに回されます。',
+
+    'settings.answerFolder.name': '回答の保存先',
+    'settings.answerFolder.desc':
+      '回答の下の保存ボタンが書き込む場所です。空欄なら、回答のもとになったノートの隣に保存します — Wiki モードでは、最初の出典の元ノートの隣です。フォルダー名を入れると、保存した回答をすべてそこにまとめます。どちらの場合もあなたの普通のノートなので、次のスキャンで他のノートと同じように Wiki カードにできます。',
+    'settings.answerFolder.placeholder': 'もとのノートの隣',
+
+    'settings.exclude.name': 'スキャンしないフォルダー',
+    'settings.exclude.desc':
+      'ノートではないフォルダー — テンプレート、添付ファイル、アーカイブなど。ダイアログで何を選んでも、すべてのスキャンとバックグラウンドの件数から除外されます（カンマ区切り）。Wiki フォルダーは常に除外されます。',
+    'settings.exclude.placeholder': 'Templates, Attachments',
+
+    'settings.count.name': 'バックグラウンドで「レビュー待ち」の件数を表示',
+    'settings.count.desc':
+      '新規・変更されたノートを定期的に数え、ステータスバーに表示します。数えるのは一瞬で、モデルは動きません — 下書きはチップをクリックしたときだけ作られます。既定はオフです。',
+
+    'settings.quiet.name': '待機時間（時間）',
+    'settings.quiet.desc':
+      'バックグラウンドの自動スキャンは、この時間内に編集されたノートを飛ばします — まだ書いている途中かもしれないからです。手動の「今すぐスキャン」では常に含まれます。',
+
+    'settings.recount.name': '再カウントの間隔（時間）',
+    'settings.recount.desc': 'Obsidian を開いている間、バックグラウンドの件数を更新する間隔です。',
+
+    'scaffold.readme': 'このフォルダーの説明とルール',
+    'scaffold.cards': '取り込んだノートごとの要約カード',
+    'scaffold.concepts': '共通のタグをまたいで作るページ',
+    'scaffold.skills': '⚡ メニューの項目ごとに 1 ファイル',
+    'scaffold.chats': '残すことにした会話',
+    'scaffold.index': '目録 — Wiki チャットが最初に読む',
+    'scaffold.log': '実行したことの追記専用の記録',
+    'scaffold.schema': 'タグの語彙、命名ルール、却下したタグ',
   },
 };

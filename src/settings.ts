@@ -12,7 +12,7 @@ import { ConfirmModal } from './ingest-modal';
 import type LiteRtSpikePlugin from './main';
 import { DEFAULT_WIKI_DIR, wikiScaffoldPaths, type ChatTurnRecord } from './wiki-store';
 import { DURATION, notify } from './notify';
-import { t } from './i18n';
+import { t, tn } from './i18n';
 import { LANGUAGES } from './texts/index';
 
 export interface GemmaWikiSettings {
@@ -109,35 +109,6 @@ function languageOptions(): Record<string, string> {
   return options;
 }
 
-// Descriptions shared by the declarative page (1.13+) and the imperative one
-// (before 1.13), so a wording change lands on both.
-const CHECK_SETUP_DESC =
-  'Checks the five things a first answer depends on — desktop, WebGPU, disk space, the runtime, ' +
-  'the model — and says what to do about anything missing. Produces a report you can paste into a ' +
-  'bug report; it carries versions and file sizes, nothing from your vault.';
-const KNOWLEDGE_FOLDER_DESC =
-  'The one folder the plugin writes to. Your own notes are never moved or modified. Changing this ' +
-  'renames the folder and rewrites internal links; blank resets to the default.';
-const SETUP_CARD_DESC =
-  'The card shown the first time the folder was made — what each folder is for, and where the chat ' +
-  'panel lives. Shown once on purpose; this is how to see it again.';
-const ORGANIZE_TAGS_DESC =
-  'Tag rules live in schema.md, not here — config as a note; open it from the list above. ' +
-  '"Organize tags" has local Gemma merge near-synonyms into one vocabulary and writes it back for ' +
-  'you to review. The first run is slow while the model loads.';
-const SKILLS_DESC =
-  'One file per skill in skills/ — frontmatter for name/icon/mode, the body is the prompt. Each file ' +
-  'becomes an entry in the ⚡ menu of the chat panel. The folder ships with a README and two examples.';
-const HOW_TO_SCAN_DESC =
-  'Cmd/Ctrl+P → "Scan a folder into the wiki", or the button in the chat panel when your wiki is ' +
-  'empty. It asks which folders, shows how many notes each one holds, and remembers your last pick. ' +
-  '"Stop the running scan" cancels — whatever was drafted before you stopped is still offered for review.';
-const ANSWER_FOLDER_DESC =
-  'Where the save button under an answer writes. Leave blank and it goes beside the note the answer ' +
-  'came from — in Wiki mode, the note behind its first source. Name a folder here to put every saved ' +
-  'answer in one place instead. Either way it is an ordinary note of yours, so the next scan can turn ' +
-  'it into a wiki card like any other.';
-
 export class GemmaWikiSettingTab extends PluginSettingTab {
   private plugin: LiteRtSpikePlugin;
 
@@ -166,49 +137,43 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     return [
       {
         type: 'group',
-        heading: 'Model',
+        heading: t('settings.group.model'),
         items: [
           // Rendered imperatively into the declarative page. On 1.13 and later
           // display() is never called once this list is non-empty, so anything
           // that lives only there is invisible — which, until this, was the
           // model download, Check setup, the folder map and the repair button.
           {
-            name: 'Local model',
-            desc: 'The model file on disk.',
+            name: t('settings.model.name'),
+            desc: t('settings.model.desc'),
             aliases: ['download', 'gemma', 'weights'],
             render: (setting) => this.addLocalModelControls(setting),
           },
           {
-            name: 'Check setup',
-            desc: CHECK_SETUP_DESC,
+            name: t('settings.check.name'),
+            desc: t('settings.check.desc'),
             aliases: ['diagnostics', 'gpu', 'webgpu', 'troubleshoot'],
             render: (setting) => this.addCheckSetupControls(setting),
           },
           {
-            name: 'Context window (tokens)',
-            desc:
-              'How much the model can hold at once — longer notes fit whole, and answers can ground on ' +
-              'more material. Costs GPU memory and first-token latency. Takes effect after the plugin ' +
-              'reloads. If the model fails to load or answers degrade after raising this, set it lower.',
+            name: t('settings.context.name'),
+            desc: t('settings.context.desc'),
             aliases: ['tokens', 'maxNumTokens', 'memory'],
             control: {
               type: 'dropdown',
               key: 'contextTokens',
               options: {
-                '4096': '4,096 (small / safest)',
+                '4096': t('settings.context.small'),
                 '8192': '8,192',
                 '16384': '16,384',
                 '32768': '32,768',
-                '64000': '64,000 (max)',
+                '64000': t('settings.context.max'),
               },
             },
           },
           {
-            name: 'Developer commands',
-            desc:
-              'Adds the [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
-              'the model, time a grammar fix, run the JSON-reliability test, and benchmark this ' +
-              'machine. They are for diagnosing a broken setup, not for working with notes. Off by default.',
+            name: t('settings.dev.name'),
+            desc: t('settings.dev.desc'),
             aliases: ['debug', 'diagnostics', 'test commands'],
             control: { type: 'toggle', key: 'devCommands' },
           },
@@ -216,11 +181,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       },
       {
         type: 'group',
-        heading: 'Wiki',
+        heading: t('settings.group.wiki'),
         items: [
           {
-            name: 'Knowledge folder name',
-            desc: KNOWLEDGE_FOLDER_DESC,
+            name: t('settings.folder.name'),
+            desc: t('settings.folder.desc'),
             aliases: ['wiki folder', 'rename', 'gemma-wiki'],
             render: (setting) =>
               this.addKnowledgeFolderControls(setting, () => {
@@ -229,8 +194,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
               }),
           },
           {
-            name: 'What the plugin created',
-            desc: 'Every folder and file this plugin owns, and whether each is present.',
+            name: t('settings.map.name'),
+            desc: t('settings.map.desc'),
             aliases: ['folders', 'layout', 'scaffold', 'schema.md', 'skills'],
             render: (setting) => {
               // A table, not a control: it takes the whole row.
@@ -259,8 +224,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             },
           },
           {
-            name: 'Folders',
-            desc: 'Created when Obsidian starts; this is only for putting one back.',
+            name: t('settings.repair.name'),
+            desc: t('settings.repair.desc'),
             aliases: ['repair', 'missing', 'recreate'],
             render: (setting) => {
               this.declarativeScaffoldRows.repair = setting;
@@ -271,8 +236,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             },
           },
           {
-            name: 'What this plugin created',
-            desc: SETUP_CARD_DESC,
+            name: t('settings.setupCard.name'),
+            desc: t('settings.setupCard.desc'),
             aliases: ['setup card', 'welcome', 'onboarding'],
             render: (setting) => this.addSetupCardControls(setting),
           },
@@ -280,11 +245,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       },
       {
         type: 'group',
-        heading: 'Schema',
+        heading: t('settings.group.schema'),
         items: [
           {
-            name: 'Tag vocabulary & naming rules',
-            desc: ORGANIZE_TAGS_DESC,
+            name: t('settings.tags.name'),
+            desc: t('settings.tags.desc'),
             aliases: ['tags', 'schema', 'organize', 'vocabulary'],
             render: (setting) => {
               setting.setClass('gemma4-stack-buttons');
@@ -295,11 +260,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       },
       {
         type: 'group',
-        heading: 'Skills',
+        heading: t('settings.group.skills'),
         items: [
           {
-            name: 'Custom skills',
-            desc: SKILLS_DESC,
+            name: t('settings.skills.name'),
+            desc: t('settings.skills.desc'),
             aliases: ['prompts', 'skills folder', 'lightning menu'],
             render: (setting) => this.addSkillsFolderControls(setting),
           },
@@ -307,7 +272,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       },
       {
         type: 'group',
-        heading: 'Chat',
+        heading: t('settings.group.chat'),
         items: [
           {
             name: t('settings.language.name'),
@@ -316,38 +281,39 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             control: { type: 'dropdown', key: 'language', options: languageOptions() },
           },
           {
-            name: 'Default mode',
-            desc: 'Which mode a freshly opened chat panel starts in.',
+            name: t('settings.mode.name'),
+            desc: t('settings.mode.desc'),
             aliases: ['this note', 'wiki mode', 'vault', 'direct'],
             control: {
               type: 'dropdown',
               key: 'defaultMode',
-              options: { note: 'This note', vault: 'Vault', wiki: 'Wiki' },
+              options: {
+                note: t('chat.scope.note.label'),
+                vault: t('chat.scope.vault.label'),
+                wiki: t('chat.scope.wiki.label'),
+              },
             },
           },
           {
-            name: 'Standing instructions',
-            desc:
-              'Added to every answer in every mode — a language, a length, a tone, a format. ' +
-              'They shape how an answer is written, not what it may draw on: a grounded mode still ' +
-              'answers only from your material. Up to 2,000 characters.',
+            name: t('settings.instructions.name'),
+            desc: t('settings.instructions.desc'),
             aliases: ['system prompt', 'custom instructions', 'language', 'persona'],
             control: {
               type: 'textarea',
               key: 'chatInstructions',
               rows: 3,
-              placeholder: 'Answer in Japanese. Keep answers under 150 words.',
+              placeholder: t('settings.instructions.placeholder'),
             },
           },
         ],
       },
       {
         type: 'group',
-        heading: 'Review',
+        heading: t('settings.group.review'),
         items: [
           {
-            name: 'Stale after (days)',
-            desc: 'How old a page has to be before the review board calls it stale.',
+            name: t('settings.stale.name'),
+            desc: t('settings.stale.desc'),
             aliases: ['staleness', 'review board'],
             control: { type: 'slider', key: 'staleDays', min: 7, max: 120, step: 1 },
           },
@@ -355,48 +321,41 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       },
       {
         type: 'group',
-        heading: 'Scan for new notes',
+        heading: t('settings.group.scan'),
         items: [
           {
-            name: 'How to run a scan',
-            desc: HOW_TO_SCAN_DESC,
+            name: t('settings.howToScan.name'),
+            desc: t('settings.howToScan.desc'),
             aliases: ['scan', 'ingest', 'folder scan', 'stop scan'],
           },
           {
-            name: 'Save answers into',
-            desc: ANSWER_FOLDER_DESC,
+            name: t('settings.answerFolder.name'),
+            desc: t('settings.answerFolder.desc'),
             aliases: ['answer folder', 'save', 'where answers go'],
-            control: { type: 'text', key: 'answerFolder', placeholder: 'beside the note it came from' },
+            control: { type: 'text', key: 'answerFolder', placeholder: t('settings.answerFolder.placeholder') },
           },
           {
-            name: 'Never scan these',
-            desc:
-              'Folders that are not notes — templates, attachments, an archive. Skipped by every scan and by ' +
-              'the background count, whatever you tick in the dialog (comma-separated). The wiki folder is ' +
-              'always excluded.',
+            name: t('settings.exclude.name'),
+            desc: t('settings.exclude.desc'),
             aliases: ['exclude', 'ignore', 'skip folders'],
-            control: { type: 'textarea', key: 'scanExclude', rows: 2, placeholder: 'Templates, Attachments' },
+            control: { type: 'textarea', key: 'scanExclude', rows: 2, placeholder: t('settings.exclude.placeholder') },
           },
           {
-            name: 'Show a background "to review" count',
-            desc:
-              'Periodically COUNT new/changed notes and show them in the status bar. Counting is instant and ' +
-              'never runs the model — drafting only happens when you click the chip. Default off.',
+            name: t('settings.count.name'),
+            desc: t('settings.count.desc'),
             aliases: ['status bar', 'badge', 'background'],
             control: { type: 'toggle', key: 'autoScanEnabled' },
           },
           {
-            name: 'Quiet period (hours)',
-            desc:
-              'Background auto-scan skips notes edited within this many hours — you may still be writing them. ' +
-              'Manual "Scan now" always includes them.',
+            name: t('settings.quiet.name'),
+            desc: t('settings.quiet.desc'),
             aliases: ['quiet', 'recent edits'],
             visible: () => this.plugin.settings.autoScanEnabled,
             control: { type: 'slider', key: 'scanQuietHours', min: 0, max: 24, step: 1 },
           },
           {
-            name: 'Re-count every (hours)',
-            desc: 'How often the background count refreshes while Obsidian is open.',
+            name: t('settings.recount.name'),
+            desc: t('settings.recount.desc'),
             aliases: ['interval', 'refresh'],
             visible: () => this.plugin.settings.autoScanEnabled,
             control: { type: 'slider', key: 'autoScanIntervalHours', min: 1, max: 24, step: 1 },
@@ -433,11 +392,13 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     if (key === 'language') {
       this.plugin.applyLanguage();
+      // This page is in the old language until it is drawn again.
+      (this as { update?: () => void }).update?.();
       if (!(await this.plugin.redrawChatPanels())) notify('info', t('settings.language.reopen'));
     } else if (key === 'contextTokens') {
-      notify('done', 'Context window saved — reload the plugin (toggle it off/on) to apply.', DURATION.NORMAL);
+      notify('done', t('settings.context.saved'), DURATION.NORMAL);
     } else if (key === 'devCommands') {
-      notify('info', 'Reload the plugin (toggle it off and on) for this to take effect.');
+      notify('info', t('settings.dev.reload'));
     } else if (key === 'autoScanEnabled' || key === 'autoScanIntervalHours') {
       this.plugin.rescheduleAutoScan();
       // The two sliders below this toggle appear and disappear with it, and
@@ -509,79 +470,80 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     // A settings page is where people land when they are lost, so the way to
     // see every feature working comes first — one line, then out of the way.
     const demo = containerEl.createEl('p', { cls: 'gemma4-settings-demo' });
-    demo.appendText('New here? Every feature is demonstrated at ');
+    demo.appendText(t('settings.demo.before'));
     demo.createEl('a', {
       text: 'gemma-wiki-demo.vercel.app',
       href: 'https://gemma-wiki-demo.vercel.app',
     });
-    demo.appendText(' — 23 short scenes, nothing to install.');
+    demo.appendText(t('settings.demo.after'));
 
     // ---------- Model ----------
-    new Setting(containerEl).setName('Model').setHeading();
+    new Setting(containerEl).setName(t('settings.group.model')).setHeading();
 
-    this.addLocalModelControls(new Setting(containerEl).setName('Local model'));
-    this.addCheckSetupControls(new Setting(containerEl).setName('Check setup').setDesc(CHECK_SETUP_DESC));
+    this.addLocalModelControls(new Setting(containerEl).setName(t('settings.model.name')));
+    this.addCheckSetupControls(
+      new Setting(containerEl).setName(t('settings.check.name')).setDesc(t('settings.check.desc'))
+    );
 
     new Setting(containerEl)
-      .setName('Context window (tokens)')
-      .setDesc(
-        'How much the model can hold at once — longer notes fit whole, and answers can ground on ' +
-          'more material. Costs GPU memory and first-token latency. Takes effect after the plugin ' +
-          'reloads. If the model fails to load or answers degrade after raising this, set it lower.'
-      )
+      .setName(t('settings.context.name'))
+      .setDesc(t('settings.context.desc'))
       .addDropdown((dd) =>
         dd
-          .addOption('4096', '4,096 (small / safest)')
+          .addOption('4096', t('settings.context.small'))
           .addOption('8192', '8,192')
           .addOption('16384', '16,384')
           .addOption('32768', '32,768')
-          .addOption('64000', '64,000 (max)')
+          .addOption('64000', t('settings.context.max'))
           .setValue(String(this.plugin.settings.contextTokens))
           .onChange(async (v) => {
             this.plugin.settings.contextTokens = parseInt(v, 10) || 64000;
             await this.plugin.saveSettings();
-            notify('done', 'Context window saved — reload the plugin (toggle it off/on) to apply.', DURATION.NORMAL);
+            notify('done', t('settings.context.saved'), DURATION.NORMAL);
           })
       );
 
     new Setting(containerEl)
-      .setName('Developer commands')
-      .setDesc(
-        'Adds the [Test] commands to the palette: check WebGPU, load the WASM runtime without ' +
-          'the model, time a grammar fix, run the JSON-reliability test, and benchmark this ' +
-          'machine. They are for diagnosing a broken setup, not for working with notes. Off by default.'
-      )
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.devCommands).onChange(async (v) => {
+      .setName(t('settings.dev.name'))
+      .setDesc(t('settings.dev.desc'))
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.devCommands).onChange(async (v) => {
           this.plugin.settings.devCommands = v;
           await this.plugin.saveSettings();
-          notify('info', 'Reload the plugin (toggle it off and on) for this to take effect.');
+          notify('info', t('settings.dev.reload'));
         })
       );
 
     // ---------- Wiki ----------
-    new Setting(containerEl).setName('Wiki').setHeading();
+    new Setting(containerEl).setName(t('settings.group.wiki')).setHeading();
 
     this.addKnowledgeFolderControls(
-      new Setting(containerEl).setName('Knowledge folder name').setDesc(KNOWLEDGE_FOLDER_DESC),
+      new Setting(containerEl).setName(t('settings.folder.name')).setDesc(t('settings.folder.desc')),
       () => this.redraw()
     );
     this.renderFolderMap(containerEl.createDiv({ cls: 'gemma4-folder-map' }));
-    this.addRepairFoldersControls(new Setting(containerEl).setName('Folders'), () => this.redraw());
-    this.addSetupCardControls(new Setting(containerEl).setName('What this plugin created').setDesc(SETUP_CARD_DESC));
+    this.addRepairFoldersControls(new Setting(containerEl).setName(t('settings.repair.name')), () => this.redraw());
+    this.addSetupCardControls(
+      new Setting(containerEl).setName(t('settings.setupCard.name')).setDesc(t('settings.setupCard.desc'))
+    );
 
     // ---------- Schema ----------
-    new Setting(containerEl).setName('Schema').setHeading();
+    new Setting(containerEl).setName(t('settings.group.schema')).setHeading();
     this.addOrganizeTagsControls(
-      new Setting(containerEl).setName('Tag vocabulary & naming rules').setClass('gemma4-stack-buttons').setDesc(ORGANIZE_TAGS_DESC)
+      new Setting(containerEl)
+        .setName(t('settings.tags.name'))
+        .setClass('gemma4-stack-buttons')
+        .setDesc(t('settings.tags.desc'))
     );
 
     // ---------- Skills ----------
-    new Setting(containerEl).setName('Skills').setHeading();
-    this.addSkillsFolderControls(new Setting(containerEl).setName('Custom skills').setDesc(SKILLS_DESC));
+    new Setting(containerEl).setName(t('settings.group.skills')).setHeading();
+    this.addSkillsFolderControls(
+      new Setting(containerEl).setName(t('settings.skills.name')).setDesc(t('settings.skills.desc'))
+    );
 
     // ---------- Chat ----------
-    new Setting(containerEl).setName('Chat').setHeading();
+    new Setting(containerEl).setName(t('settings.group.chat')).setHeading();
     this.legacyRedrawRest(containerEl);
   }
 
@@ -597,20 +559,22 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     const status = this.plugin.modelStatus();
     s.setDesc(
       status.downloaded
-        ? `Downloaded (${status.sizeGB} GB on disk). Completely free — runs offline on your GPU, no API key or subscription.`
+        ? t('settings.model.downloaded', { gb: status.sizeGB })
         : status.partialGB
-          ? `Partial download on disk (${status.partialGB} GB). Resume to finish.`
-          : 'Not downloaded yet (~2.97 GB, one time). Downloads on first use, or start it here.'
+          ? t('settings.model.partial', { gb: status.partialGB })
+          : t('settings.model.missing')
     );
     s.addButton((btn) => {
-      btn.setButtonText(status.downloaded ? 'Re-download' : status.partialGB ? 'Resume download' : 'Download model');
+      btn.setButtonText(
+        t(status.downloaded ? 'settings.model.redownload' : status.partialGB ? 'settings.model.resume' : 'settings.model.download')
+      );
       btn.onClick(() => void this.plugin.downloadModelFromSettings());
     });
   }
 
   private addCheckSetupControls(s: Setting): void {
     s.addButton((btn) => {
-      btn.setButtonText('Run check');
+      btn.setButtonText(t('settings.check.run'));
       btn.onClick(() => void this.plugin.showDiagnostics());
     });
   }
@@ -638,13 +602,13 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       )
       .addButton((btn) => {
         applyBtn = btn;
-        btn.setButtonText('Apply').onClick(async () => {
+        btn.setButtonText(t('settings.folder.apply')).onClick(async () => {
           const next = normalizeDir(pendingDir);
           const prev = this.plugin.settings.wikiDir;
           if (!next || next === prev) return;
           const existing = this.app.vault.getAbstractFileByPath(next);
           if (existing && !(existing instanceof TFolder)) {
-            notify('warn', `"${next}" already exists and is not a folder.`);
+            notify('warn', t('settings.folder.notFolder', { name: next }));
             return;
           }
           // A typo here does not fail — it silently starts a second, empty
@@ -656,16 +620,14 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             .filter((f) => f.path.startsWith(`${prev}/`)).length;
           const ok = await new Promise<boolean>((resolve) => {
             new ConfirmModal(this.app, {
-              title: 'Rename the knowledge folder',
+              title: t('settings.folder.renameTitle'),
               body:
                 `${prev}  →  ${next}\n\n` +
                 (pageCount
-                  ? `${pageCount} file${pageCount === 1 ? '' : 's'} will move, and links pointing into ` +
-                    `"${prev}/" will be rewritten.`
-                  : `"${prev}/" is empty or missing, so nothing moves — the folders will simply be ` +
-                    `created under "${next}/".`) +
-                '\n\nCheck the spelling: a name you did not mean leaves your existing wiki behind.',
-              confirmText: 'Rename',
+                  ? tn('settings.folder.renameMoves', pageCount, { prev })
+                  : t('settings.folder.renameEmpty', { prev, next })) +
+                `\n\n${t('settings.folder.renameCheck')}`,
+              confirmText: t('settings.folder.renameConfirm'),
               onResult: resolve,
             }).open();
           });
@@ -707,7 +669,7 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         });
       }
       row.createSpan({ cls: 'gemma4-folder-what', text: entry.what });
-      row.createSpan({ cls: 'gemma4-folder-state', text: here ? '✓' : 'missing' });
+      row.createSpan({ cls: 'gemma4-folder-state', text: here ? '✓' : t('settings.map.missing') });
     }
     return missing;
   }
@@ -722,14 +684,14 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     const missing = wikiScaffoldPaths().filter((e) => !this.app.vault.getAbstractFileByPath(e.path.replace(/\/$/, ''))).length;
     s.setDesc(
       missing
-        ? `${missing} of ${wikiScaffoldPaths().length} missing — they are normally created when Obsidian starts.`
-        : 'All present. These are created when Obsidian starts; this button is only for putting one back.'
+        ? t('settings.repair.someMissing', { n: missing, total: wikiScaffoldPaths().length })
+        : t('settings.repair.allPresent')
     );
     s.addButton((btn) => {
       // Deliberately not a CTA. The red rows already carry the signal, and a
       // filled accent button for a recovery action reads as the main thing
       // to do on the page, which it never is.
-      btn.setButtonText(missing ? `Create ${missing} missing` : 'Repair folders');
+      btn.setButtonText(missing ? t('settings.repair.createMissing', { n: missing }) : t('settings.repair.button'));
       btn.onClick(async () => {
         await this.plugin.repairWikiFolders();
         afterRepair();
@@ -738,15 +700,15 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
   }
 
   private addSetupCardControls(s: Setting): void {
-    s.addButton((btn) => btn.setButtonText('Show setup card').onClick(() => this.plugin.showSetupCard()));
+    s.addButton((btn) => btn.setButtonText(t('settings.setupCard.button')).onClick(() => this.plugin.showSetupCard()));
   }
 
   private addOrganizeTagsControls(s: Setting): void {
-    s.addButton((btn) => btn.setButtonText('Organize tags').onClick(() => void this.plugin.suggestTagVocabulary()));
+    s.addButton((btn) => btn.setButtonText(t('settings.tags.button')).onClick(() => void this.plugin.suggestTagVocabulary()));
   }
 
   private addSkillsFolderControls(s: Setting): void {
-    s.addButton((btn) => btn.setButtonText('Open skills folder').onClick(() => void this.plugin.createSkillsFolder()));
+    s.addButton((btn) => btn.setButtonText(t('settings.skills.button')).onClick(() => void this.plugin.createSkillsFolder()));
   }
 
   /**
@@ -781,18 +743,21 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
             this.plugin.settings.language = v;
             await this.plugin.saveSettings();
             this.plugin.applyLanguage();
+            const scrollTop = this.containerEl.scrollTop;
+            this.redraw();
+            this.containerEl.scrollTop = scrollTop;
             if (!(await this.plugin.redrawChatPanels())) notify('info', t('settings.language.reopen'));
           })
       );
 
     new Setting(containerEl)
-      .setName('Default mode')
-      .setDesc('Which grounding mode a new chat panel opens in.')
+      .setName(t('settings.mode.name'))
+      .setDesc(t('settings.mode.desc'))
       .addDropdown((dd) =>
         dd
-          .addOption('note', 'This note')
-          .addOption('vault', 'Vault')
-          .addOption('wiki', 'Wiki')
+          .addOption('note', t('chat.scope.note.label'))
+          .addOption('vault', t('chat.scope.vault.label'))
+          .addOption('wiki', t('chat.scope.wiki.label'))
           .setValue(this.plugin.settings.defaultMode)
           .onChange(async (v) => {
             this.plugin.settings.defaultMode =
@@ -802,11 +767,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       );
 
     // ---------- Review ----------
-    new Setting(containerEl).setName('Review').setHeading();
+    new Setting(containerEl).setName(t('settings.group.review')).setHeading();
 
     new Setting(containerEl)
-      .setName('Stale after (days)')
-      .setDesc('The review board flags pages untouched for this many days.')
+      .setName(t('settings.stale.name'))
+      .setDesc(t('settings.stale.desc'))
       .addSlider((sl) =>
         sl
           .setLimits(7, 120, 1)
@@ -828,28 +793,16 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     // the same card as everything else on this page — hung off the heading it
     // rendered as bare text floating outside the cards, which read as a stray
     // paragraph rather than part of the section.
-    new Setting(containerEl).setName('Scan for new notes').setHeading();
+    new Setting(containerEl).setName(t('settings.group.scan')).setHeading();
+
+    new Setting(containerEl).setName(t('settings.howToScan.name')).setDesc(t('settings.howToScan.desc'));
 
     new Setting(containerEl)
-      .setName('How to run a scan')
-      .setDesc(
-        'Cmd/Ctrl+P → "Scan a folder into the wiki", or the button in the chat panel when your ' +
-          'wiki is empty. It asks which folders, shows how many notes each one holds, and ' +
-          'remembers your last pick. "Stop the running scan" cancels — whatever was drafted ' +
-          'before you stopped is still offered for review.'
-      );
-
-    new Setting(containerEl)
-      .setName('Save answers into')
-      .setDesc(
-        'Where the save button under an answer writes. Leave blank and it goes beside the note ' +
-          'the answer came from — in Wiki mode, the note behind its first source. Name a folder ' +
-          'here to put every saved answer in one place instead. Either way it is an ordinary ' +
-          'note of yours, so the next scan can turn it into a wiki card like any other.'
-      )
+      .setName(t('settings.answerFolder.name'))
+      .setDesc(t('settings.answerFolder.desc'))
       .addText((text) =>
         text
-          .setPlaceholder('beside the note it came from')
+          .setPlaceholder(t('settings.answerFolder.placeholder'))
           .setValue(this.plugin.settings.answerFolder)
           .onChange(async (v) => {
             this.plugin.settings.answerFolder = v;
@@ -858,15 +811,11 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Never scan these')
-      .setDesc(
-        'Folders that are not notes — templates, attachments, an archive. Skipped by every scan ' +
-          'and by the background count, whatever you tick in the dialog (comma-separated). The ' +
-          'wiki folder is always excluded.'
-      )
+      .setName(t('settings.exclude.name'))
+      .setDesc(t('settings.exclude.desc'))
       .addText((text) =>
         text
-          .setPlaceholder('Templates, 10_リソース')
+          .setPlaceholder(t('settings.exclude.placeholder'))
           .setValue(this.plugin.settings.scanExclude)
           .onChange(async (v) => {
             this.plugin.settings.scanExclude = v;
@@ -878,11 +827,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
     // only appear when the toggle is on, so a user who only ever clicks
     // "Scan now" is not confronted with background-mode concepts (issue #42).
     new Setting(containerEl)
-      .setName('Show a background "to review" count')
-      .setDesc(
-        'Periodically COUNT new/changed notes and show them in the status bar. ' +
-          'Counting is instant and never runs the model — drafting only happens when you click the chip. Default off.'
-      )
+      .setName(t('settings.count.name'))
+      .setDesc(t('settings.count.desc'))
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.autoScanEnabled).onChange(async (v) => {
           this.plugin.settings.autoScanEnabled = v;
@@ -899,11 +845,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
 
     if (this.plugin.settings.autoScanEnabled) {
       new Setting(containerEl)
-        .setName('Quiet period (hours)')
-        .setDesc(
-          'Background auto-scan skips notes edited within this many hours — you may still be ' +
-            'writing them. Manual "Scan now" always includes them.'
-        )
+        .setName(t('settings.quiet.name'))
+        .setDesc(t('settings.quiet.desc'))
         .addSlider((sl) =>
           sl
             .setLimits(0, 24, 1)
@@ -915,8 +858,8 @@ export class GemmaWikiSettingTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Re-count every (hours)')
-        .setDesc('How often the background count refreshes while Obsidian is open.')
+        .setName(t('settings.recount.name'))
+        .setDesc(t('settings.recount.desc'))
         .addSlider((sl) =>
           sl
             .setLimits(1, 24, 1)
