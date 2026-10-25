@@ -139,3 +139,9 @@ test('applyTagCheck: a card never ends with no tag', () => {
     'data-science',
   ]);
 });
+
+test('extractionPrompt: a CJK note keeps its tags in English', () => {
+  const p = extractionPrompt({ note: CHINESE_WITH_TERMS, vocabulary: [], naming: '' });
+  assert.match(p.system, /Tags stay in English/);
+  assert.doesNotMatch(extractionPrompt({ note: 'Plain English.', vocabulary: [], naming: '' }).system, /Tags stay/);
+});

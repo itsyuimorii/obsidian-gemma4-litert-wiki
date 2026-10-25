@@ -96,8 +96,24 @@ export function parseModelJson<T = unknown>(raw: string): ParsedJson<T> {
   try {
     return { ok: true, value: JSON.parse(scan.json) as T };
   } catch {
-    return { ok: false, reason: 'invalid-json' };
+    // A note with formulas can get key points with LaTeX in them, and "\gamma"
+    // or "\sqrt" inside a JSON string is an escape JSON does not have, so one
+    // backslash fails the whole card. Doubling only the backslashes that
+    // start no valid escape keeps the text as written and touches nothing a
+    // well-formed reply contains, so it is tried only after a failure.
+    try {
+      return { ok: true, value: JSON.parse(repairEscapes(scan.json)) as T };
+    } catch {
+      return { ok: false, reason: 'invalid-json' };
+    }
   }
+}
+
+/** Double every backslash that does not begin a valid JSON escape. */
+export function repairEscapes(json: string): string {
+  return json.replace(/\\(\\|["/bfnrt]|u[0-9a-fA-F]{4})?/g, (m, valid: string | undefined) =>
+    valid ? m : '\\\\'
+  );
 }
 
 // ---------------------------------------------------------------------------

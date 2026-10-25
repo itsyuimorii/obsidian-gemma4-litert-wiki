@@ -13,6 +13,7 @@ import {
   looksRepetitive,
   nextOutputCap,
   parseModelJson,
+  repairEscapes,
   scanJsonObject,
   textOf,
 } from '../src/model-output.ts';
@@ -338,4 +339,20 @@ test('a closed JSON object is not mid-sentence, even though it ends in a brace',
 test('an unterminated JSON object is still mid-sentence', () => {
   assert.equal(looksCutOff('{"summary": "The grinder requi', 512).midSentence, true);
   assert.equal(looksCutOff('{"tags": ["grinder", "clean', 512).midSentence, true);
+});
+
+test('parseModelJson: LaTeX backslashes inside a string no longer fail the reply', () => {
+  const raw = String.raw`{"key_points": ["The factor is \gamma = 1/\sqrt(1 - v^2/c^2)."]}`;
+  const read = parseModelJson<{ key_points: string[] }>(raw);
+  assert.equal(read.ok, true);
+  if (read.ok) assert.equal(read.value.key_points[0], String.raw`The factor is \gamma = 1/\sqrt(1 - v^2/c^2).`);
+});
+
+test('repairEscapes: valid escapes are left as they are', () => {
+  const json = String.raw`{"a": "line\nbreak \"quoted\" back\\slash é \/"}`;
+  assert.equal(repairEscapes(json), json);
+});
+
+test('parseModelJson: a reply broken in another way is still reported', () => {
+  assert.deepEqual(parseModelJson('{"a": 1,}'), { ok: false, reason: 'invalid-json' });
 });

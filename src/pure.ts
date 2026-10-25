@@ -3005,6 +3005,12 @@ export function extractionPrompt(input: ExtractionPromptInput): ExtractionPrompt
     ? ` Write summary and key_points in ${language}, the language of the note, keeping code, names and ` +
       'technical terms as the note writes them.'
     : ' Write summary and key_points in the language of the note.';
+  // Tags are shared across the whole wiki, so they stay in one language: a
+  // Chinese note on cooking and an English one should meet under one tag,
+  // not split into two. Naming the language of the note above made the model
+  // write tags in it too, so this has to be said.
+  const tagLanguageLine = language ? ' Tags stay in English, whatever the language of the note.' : '';
+  const formulaLine = ' Write formulas in plain text, without LaTeX or backslashes.';
 
   const system =
     'You extract structured metadata from a note. Respond with ONLY a single JSON object, ' +
@@ -3025,6 +3031,8 @@ export function extractionPrompt(input: ExtractionPromptInput): ExtractionPrompt
     "refers to (proper nouns, technologies, specific concepts), in the note's own " +
     'language; [] if none stand out.' +
     languageLine +
+    tagLanguageLine +
+    formulaLine +
     vocabLine +
     namingLine;
 
@@ -3065,7 +3073,9 @@ export function tagCheckPrompt(tags: readonly string[]): string {
   return (
     'You check topic tags on a summary card. For each tag, answer true only if the card is mainly ' +
     'about that topic: a reader browsing that tag would expect to find this card. Answer false if the ' +
-    'tag only shares a word with the card, names a neighbouring field, or fits loosely. Respond with ' +
+    'tag only shares a word with the card, names a neighbouring field, or fits loosely. Answer false for ' +
+    'a broad field the card merely works within rather than discusses: a recipe is not about health, a ' +
+    'project log is not about software architecture, a lesson plan is not about psychology. Respond with ' +
     'ONLY a JSON object mapping each tag to true or false, no markdown fences, no explanation: ' +
     `{${tags.map((t) => `"${t}": true`).join(', ')}}.`
   );
