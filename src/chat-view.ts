@@ -2809,7 +2809,7 @@ export class ChatView extends ItemView {
       const { body } = this.appendAssistantMessage();
       body.createDiv({
         cls: 'gemma4-chat-error',
-        text: failureText('Preparing the answer', err),
+        text: failureText(t('op.preparingAnswer'), err).text,
       });
       this.releaseBusy();
       return;

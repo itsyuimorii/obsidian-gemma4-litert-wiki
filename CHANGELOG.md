@@ -4,6 +4,20 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## Unreleased
+
+- **The whole interface speaks Japanese and Simplified Chinese** (#166).
+  After the chat panel in 1.0.26, the rest follows the **Interface
+  language** setting: the settings page, every notice, the status bar,
+  the review and confirmation dialogs (ingest preview, scan, Tidy, the
+  review board, the spot-check and contradiction reports, the setup card)
+  and the command names. Changing the language redraws the settings page
+  and the chat panel at once; command names switch after the plugin
+  reloads. Warnings and failures still go to `log.md` in English, so the
+  log reads the same whatever the interface says. The [Test] developer
+  commands and the Check setup report stay English: their output is for
+  pasting into an issue.
+
 ## 1.0.26 — 2026-10-24
 
 The chat panel speaks Japanese and Simplified Chinese, the spot-check says
