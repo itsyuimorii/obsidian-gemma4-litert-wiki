@@ -1,6 +1,7 @@
 import { App, MarkdownRenderer, Modal, Component, setIcon } from 'obsidian';
 import { formatDiagnostics, type Check, type DiagnosticFacts } from './pure';
 import { keepOpenOnOutsideClick } from './modal-guard';
+import { t, tn } from './i18n';
 
 // A small yes/no gate. Resolves true if the user confirms, false otherwise
 // (including closing the modal). Used e.g. when a note is already ingested and
@@ -21,7 +22,7 @@ export class ConfirmModal extends Modal {
     // keep their line breaks; the class caps height and scrolls.
     contentEl.createDiv({ cls: 'gemma4-confirm-body', text: this.opts.body });
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    const cancel = buttons.createEl('button', { text: t('modal.cancel') });
     cancel.addEventListener('click', () => this.close());
     const ok = buttons.createEl('button', { cls: 'mod-cta', text: this.opts.confirmText });
     ok.addEventListener('click', () => {
@@ -58,7 +59,7 @@ export class IngestPreviewModal extends Modal {
     pageContent: string,
     overwriting: boolean,
     onApprove: () => void,
-    heading = 'Review wiki page before writing',
+    heading = t('modal.preview.title'),
     opts: {
       /**
        * What an overwrite costs, in the words of the file being overwritten.
@@ -92,7 +93,7 @@ export class IngestPreviewModal extends Modal {
     contentEl.createEl('h3', { text: this.heading });
     contentEl.createDiv({
       cls: 'gemma4-ingest-path',
-      text: this.overwriting ? `Will overwrite: ${this.pagePath}` : `Will create: ${this.pagePath}`,
+      text: t(this.overwriting ? 'modal.preview.overwrite' : 'modal.preview.create', { path: this.pagePath }),
     });
     // "Will overwrite" names the file and not the loss. A card is regenerated
     // from its note, so any correction made by hand in the card is destroyed
@@ -106,9 +107,9 @@ export class IngestPreviewModal extends Modal {
     void MarkdownRenderer.render(this.app, this.pageContent, preview, this.pagePath, this.renderHost);
 
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    const cancel = buttons.createEl('button', { text: t('modal.cancel') });
     cancel.addEventListener('click', () => this.close());
-    const approve = buttons.createEl('button', { cls: 'mod-cta', text: 'Approve and write' });
+    const approve = buttons.createEl('button', { cls: 'mod-cta', text: t('modal.approve') });
     approve.addEventListener('click', () => {
       this.approved = true;
       this.close();
@@ -143,10 +144,10 @@ export class RelinkPreviewModal extends Modal {
     const { contentEl } = this;
     keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-ingest-modal');
-    contentEl.createEl('h3', { text: 'Review related-link additions' });
+    contentEl.createEl('h3', { text: t('modal.relink.title') });
     contentEl.createDiv({
       cls: 'gemma4-ingest-path',
-      text: `${this.proposals.length} pages will gain a Related section. Nothing else is changed.`,
+      text: tn('modal.relink.summary', this.proposals.length),
     });
     const list = contentEl.createEl('ul', { cls: 'gemma4-relink-list' });
     for (const prop of this.proposals) {
@@ -156,9 +157,9 @@ export class RelinkPreviewModal extends Modal {
       li.createSpan({ text: prop.related.map((r) => r.title).join(', ') });
     }
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    const cancel = buttons.createEl('button', { text: t('modal.cancel') });
     cancel.addEventListener('click', () => this.close());
-    const approve = buttons.createEl('button', { cls: 'mod-cta', text: 'Approve and write' });
+    const approve = buttons.createEl('button', { cls: 'mod-cta', text: t('modal.approve') });
     approve.addEventListener('click', () => {
       this.close();
       this.onApprove();
@@ -197,29 +198,29 @@ export class SuggestTagsLinksModal extends Modal {
     const { contentEl } = this;
     keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-ingest-modal');
-    contentEl.createEl('h3', { text: 'Review tags & links before writing' });
+    contentEl.createEl('h3', { text: t('modal.suggest.title') });
     contentEl.createDiv({
       cls: 'gemma4-ingest-path',
-      text: `Will edit: ${this.notePath} — merges tags into frontmatter, appends a Related section. Nothing else changes.`,
+      text: t('modal.suggest.path', { path: this.notePath }),
     });
 
     if (this.tags.length) {
-      contentEl.createDiv({ cls: 'gemma4-relink-page', text: 'Tags to add' });
+      contentEl.createDiv({ cls: 'gemma4-relink-page', text: t('modal.suggest.tags') });
       contentEl.createDiv({ text: this.tags.map((t) => `#${t}`).join('  ') });
     }
     if (this.links.length) {
-      contentEl.createDiv({ cls: 'gemma4-relink-page', text: 'Links to add' });
+      contentEl.createDiv({ cls: 'gemma4-relink-page', text: t('modal.suggest.links') });
       contentEl.createDiv({ text: this.links.map((l) => `[[${l.title}]]`).join('  ') });
     }
     if (!this.tags.length && !this.links.length) {
-      contentEl.createDiv({ text: 'Nothing to suggest — no new tags and no related pages found.' });
+      contentEl.createDiv({ text: t('modal.suggest.nothing') });
     }
 
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    const cancel = buttons.createEl('button', { text: t('modal.cancel') });
     cancel.addEventListener('click', () => this.close());
     if (this.tags.length || this.links.length) {
-      const approve = buttons.createEl('button', { cls: 'mod-cta', text: 'Approve and write' });
+      const approve = buttons.createEl('button', { cls: 'mod-cta', text: t('modal.approve') });
       approve.addEventListener('click', () => {
         this.close();
         this.onApprove();
@@ -249,27 +250,27 @@ export class OnboardingModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('gemma4-onboarding');
-    contentEl.createEl('h3', { text: 'Download the local model' });
+    contentEl.createEl('h3', { text: t('modal.download.title') });
 
     const resuming = this.resumeBytes > 0;
     contentEl.createEl('p', {
       text: resuming
-        ? `A partial download of ${(this.resumeBytes / 1e9).toFixed(2)} GB is on disk — this will resume from there.`
-        : 'Gemma Wiki is completely free — no API key, no subscription, no usage fees, ever. The model runs entirely on your machine, so ingest and chat as much as you want. It downloads once, then works fully offline.',
+        ? t('modal.download.partial', { gb: (this.resumeBytes / 1e9).toFixed(2) })
+        : t('modal.download.free'),
     });
 
     const list = contentEl.createEl('ul', { cls: 'gemma4-onboarding-list' });
-    list.createEl('li', { text: 'Size: ~2.97 GB, downloaded one time and cached on disk.' });
-    list.createEl('li', { text: 'Free space: keep ~5 GB free for the download and its temporary file.' });
-    list.createEl('li', { text: 'Runs on your GPU via WebGPU — desktop only, no cloud, no API key.' });
-    list.createEl('li', { text: 'If the download is interrupted, run it again — it resumes where it stopped.' });
+    list.createEl('li', { text: t('modal.download.size') });
+    list.createEl('li', { text: t('modal.download.space') });
+    list.createEl('li', { text: t('modal.download.gpu') });
+    list.createEl('li', { text: t('modal.download.resume') });
 
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const cancel = buttons.createEl('button', { text: 'Not now' });
+    const cancel = buttons.createEl('button', { text: t('modal.download.notNow') });
     cancel.addEventListener('click', () => this.close());
     const confirm = buttons.createEl('button', {
       cls: 'mod-cta',
-      text: resuming ? 'Resume download' : 'Download model',
+      text: t(resuming ? 'settings.model.resume' : 'settings.model.download'),
     });
     confirm.addEventListener('click', () => {
       this.decided = true;
@@ -320,12 +321,10 @@ export class ScaffoldCreatedModal extends Modal {
     // card came up with a scrollbar, which is a bad look for the first thing
     // the plugin ever shows anyone.
     this.modalEl.addClass('gemma4-scaffold-shell');
-    contentEl.createEl('h3', { text: `Gemma Wiki set up "${this.dir}/"` });
+    contentEl.createEl('h3', { text: t('modal.setup.title', { dir: this.dir }) });
     contentEl.createEl('p', {
       cls: 'gemma4-scaffold-lede',
-      text:
-        'Everything this plugin writes goes in that one folder. Your own notes are never ' +
-        'moved or modified — they are read and closed.',
+      text: t('modal.setup.lede'),
     });
 
     const list = contentEl.createDiv({ cls: 'gemma4-scaffold-list' });
@@ -337,9 +336,7 @@ export class ScaffoldCreatedModal extends Modal {
 
     contentEl.createEl('p', {
       cls: 'gemma4-scaffold-foot',
-      text:
-        'Each folder holds a README explaining what belongs in it. Rename the folder, or check ' +
-        'that nothing is missing, in Settings → Gemma Wiki.',
+      text: t('modal.setup.foot'),
     });
 
     // Where the plugin actually lives. A first-time user has no reason to guess
@@ -349,31 +346,29 @@ export class ScaffoldCreatedModal extends Modal {
     // Wiki icon" is useless to someone staring at a column of nine icons they
     // have never looked at closely; the picture is the instruction.
     const where = contentEl.createEl('p', { cls: 'gemma4-scaffold-where' });
-    where.appendText('You talk to it from the side panel — click ');
+    where.appendText(t('modal.setup.whereBefore'));
     const inlineIcon = where.createSpan({ cls: 'gemma4-inline-icon' });
     setIcon(inlineIcon, 'gemma-wiki-logo');
-    where.appendText(
-      ' in the ribbon down the left edge of the window. It is opening now so you can see where it is.'
-    );
+    where.appendText(t('modal.setup.whereAfter'));
 
     // The walkthrough, for the person who would rather see it than read it.
     // A plain link, not a button: the two buttons below are actions in this
     // vault, and this one leaves the app.
     const demo = contentEl.createEl('p', { cls: 'gemma4-scaffold-foot' });
-    demo.appendText('Prefer to see it first? Every feature is shown at ');
+    demo.appendText(t('modal.setup.demoBefore'));
     demo.createEl('a', {
       text: 'gemma-wiki-demo.vercel.app',
       href: 'https://gemma-wiki-demo.vercel.app',
     });
-    demo.appendText(' — 23 short scenes, arrow keys to step through.');
+    demo.appendText(t('modal.setup.demoAfter'));
 
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const index = buttons.createEl('button', { text: 'Open index.md' });
+    const index = buttons.createEl('button', { text: t('modal.setup.openIndex') });
     index.addEventListener('click', () => {
       this.close();
       this.onOpenIndex();
     });
-    const open = buttons.createEl('button', { cls: 'mod-cta', text: 'Show me the panel' });
+    const open = buttons.createEl('button', { cls: 'mod-cta', text: t('modal.setup.showPanel') });
     open.addEventListener('click', () => this.close());
   }
 
@@ -408,10 +403,10 @@ export class DiagnosticsModal extends Modal {
     const pending = this.checks.some((c) => c.status === 'warn');
     contentEl.createEl('h3', {
       text: blocked
-        ? 'Something here has to be fixed first'
+        ? t('modal.diag.blocked')
         : pending
-          ? 'Ready, with the downloads still to do'
-          : 'Everything checks out',
+          ? t('modal.diag.pending')
+          : t('modal.diag.ok'),
     });
 
     const list = contentEl.createDiv({ cls: 'gemma4-diag-list' });
@@ -426,17 +421,17 @@ export class DiagnosticsModal extends Modal {
     const report = formatDiagnostics(this.facts, this.checks);
     contentEl.createEl('p', {
       cls: 'gemma4-diag-note',
-      text: 'The text below is what to paste into a bug report. It carries versions, hardware and file sizes — no note titles, no paths, nothing from your vault.',
+      text: t('modal.diag.note'),
     });
     contentEl.createEl('pre', { cls: 'gemma4-diag-report', text: report });
 
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const copy = buttons.createEl('button', { cls: 'mod-cta', text: 'Copy report' });
+    const copy = buttons.createEl('button', { cls: 'mod-cta', text: t('modal.diag.copy') });
     copy.addEventListener('click', () => {
       void navigator.clipboard.writeText(report);
-      copy.setText('Copied');
+      copy.setText(t('modal.diag.copied'));
     });
-    const close = buttons.createEl('button', { text: 'Close' });
+    const close = buttons.createEl('button', { text: t('modal.close') });
     close.addEventListener('click', () => this.close());
   }
 

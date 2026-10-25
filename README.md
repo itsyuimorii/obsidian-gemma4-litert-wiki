@@ -243,7 +243,7 @@ The first row is the only one this project can claim and the others cannot. Most
 | **Which model** | One. Gemma 4 E4B, plus whatever LiteRT-LM comes to support. You cannot bring your own. | Your pick, frontier cloud models included — far more capable than anything that fits in a renderer process. Sixteen or more providers is unremarkable in this category. |
 | **Mobile** | No, and structurally so: it needs WebGPU and ~3 GB on disk. | Yes, wherever the provider is reachable over HTTP. |
 | **What it can read** | Markdown notes. | Markdown, and commonly PDFs, images and Office documents as well — through providers that take files directly, or a conversion backend. |
-| **Interface language** | English, Japanese and Simplified Chinese for the chat panel and settings; the rest is being translated (#166). This README is also in Japanese. | Often many. Eleven-language interfaces exist in this category. |
+| **Interface language** | English, Japanese and Simplified Chinese. This README is also in Japanese. | Often many. Eleven-language interfaces exist in this category. |
 | **What it costs to run** | ~3 GB of disk, once. | Free against a local daemon; per-token against a cloud provider. |
 | **Index on disk** | None. The wiki is plain Markdown in your vault: nothing is embedded, nothing is rebuilt when you open a note, nothing has to be regenerated on a second machine. | Commonly a separate embedding index — hundreds of megabytes per few thousand notes, rebuilt per device, and a second one if you run two such plugins. |
 | **Paid tier** | None. GPL-3.0, every feature, no account. | Free tiers with paid features are common in this category. |
@@ -279,7 +279,7 @@ No. It needs WebGPU, Node APIs that Obsidian mobile does not have, and about 3 G
 Windows may be running Obsidian on the integrated GPU. **Check setup (diagnostics)** names the GPU in use, and [Not for you if](#-not-for-you-if) has the fix.
 
 **Which languages do my notes need to be in?**
-English, Japanese, Chinese and Korean notes are covered by the [manual test protocols](docs/tri-lingual-test.md). The chat panel and the settings page are also in Japanese and Simplified Chinese: they follow Obsidian's language, and **Interface language** in settings overrides it. Notices, the other dialogs and command names are still English and are being moved over one surface at a time (#166). The questions the chips send, the prompts to the model and everything written into your vault stay in English.
+English, Japanese, Chinese and Korean notes are covered by the [manual test protocols](docs/tri-lingual-test.md). The interface is also in Japanese and Simplified Chinese — the chat panel, settings, notices, the status bar, dialogs and command names. It follows Obsidian's language, and **Interface language** in settings overrides it; command names switch after the plugin reloads. The questions the chips send, the prompts to the model, everything written into your vault (including `log.md`), the [Test] developer commands and the Check setup report stay in English, so a log or a bug report reads the same whatever the interface says. The command tables below use the English names.
 
 **How good are the answers?**
 Good at reading what you wrote, weak at the wider world: it is a 4B model. Answers about your notes list their sources; anything the model adds from its own knowledge is labelled as such.

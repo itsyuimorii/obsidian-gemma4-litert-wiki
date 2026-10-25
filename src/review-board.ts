@@ -1,4 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
+import { t, tn } from './i18n';
 import { cardGrounding } from './pure';
 import { contentHash, isWikiPage } from './wiki-store';
 
@@ -44,8 +45,8 @@ export async function buildReviewBoard(app: App, staleDays: number): Promise<Rev
     const confidence = typeof fm?.confidence === 'string' ? fm.confidence : '';
     const ageDays = ageInDays(fm?.created);
     const reasons: string[] = [];
-    if (confidence === 'low') reasons.push('low confidence');
-    if (confidence === 'med') reasons.push('medium confidence');
+    if (confidence === 'low') reasons.push(t('board.lowConfidence'));
+    if (confidence === 'med') reasons.push(t('board.medConfidence'));
 
     // Source drift (issue #20): the raw note was edited after this page was
     // ingested, so the summary may now be out of date. This is a stronger,
@@ -59,13 +60,13 @@ export async function buildReviewBoard(app: App, staleDays: number): Promise<Rev
         const cur = await app.vault.read(srcFile);
         if (contentHash(cur) !== srcHash) {
           drifted = true;
-          reasons.push('source changed since ingest');
+          reasons.push(t('board.sourceChanged'));
         } else {
           // Only against the note the card was made from: once the note has
           // changed, a missing name is the drift above, not a second finding.
           const mentions = Array.isArray(fm?.mentions) ? (fm.mentions as unknown[]).map((m) => String(m)) : [];
           const missing = cardGrounding({ keyPoints: [], mentions }, cur, srcFile.basename).missingMentions.length;
-          if (missing) reasons.push(`${missing} mention${missing === 1 ? '' : 's'} not in the source note`);
+          if (missing) reasons.push(tn('board.missingMentions', missing));
         }
       }
     }
@@ -78,9 +79,9 @@ export async function buildReviewBoard(app: App, staleDays: number): Promise<Rev
     // `stale` on ordinary wiki pages, and "rebuild this concept page" would
     // be the wrong instruction for one of those.
     const staleConcept = fm?.kind === 'concept' && fm?.stale === true;
-    if (staleConcept) reasons.push('members changed — rebuild this concept page');
+    if (staleConcept) reasons.push(t('board.membersChanged'));
 
-    if (ageDays !== null && ageDays >= staleDays) reasons.push(`${ageDays}d since ingest`);
+    if (ageDays !== null && ageDays >= staleDays) reasons.push(t('board.age', { days: ageDays }));
     if (reasons.length) {
       items.push({ path: f.path, title: f.basename, confidence, ageDays, drifted, staleConcept, reasons });
     }
@@ -109,16 +110,15 @@ export class ReviewBoardModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('gemma4-lint-modal');
-    contentEl.createEl('h3', { text: 'Wiki review board' });
+    contentEl.createEl('h3', { text: t('modal.board.title') });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
       text:
-        `${this.board.items.length} of ${this.board.scanned} pages worth a look — low-confidence extractions, ` +
-        `changed sources, concept overviews whose members changed, and pages untouched for ${this.staleDays}+ days.`,
+        t('modal.board.summary', { n: this.board.items.length, total: this.board.scanned, days: this.staleDays }),
     });
 
     if (!this.board.items.length) {
-      contentEl.createDiv({ cls: 'gemma4-lint-ok', text: 'Nothing flagged. Your wiki looks fresh and confident.' });
+      contentEl.createDiv({ cls: 'gemma4-lint-ok', text: t('modal.board.none') });
       return;
     }
 
@@ -135,12 +135,12 @@ export class ReviewBoardModal extends Modal {
 
     contentEl.createDiv({
       cls: 'gemma4-lint-hint',
-      text: 'Tip: open a flagged page, check its claims against the source note it links to, and re-ingest the source if the summary drifted.',
+      text: t('modal.board.tip'),
     });
     if (this.board.items.some((i) => i.staleConcept)) {
       contentEl.createDiv({
         cls: 'gemma4-lint-hint',
-        text: 'Stale concept overviews: run "Build a concept page from a tag" on the same tag to rewrite the overview — that clears the flag.',
+        text: t('modal.board.staleConcept'),
       });
     }
   }

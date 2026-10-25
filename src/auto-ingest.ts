@@ -1,5 +1,6 @@
 import { App, Modal, TFile } from 'obsidian';
 import { keepOpenOnOutsideClick } from './modal-guard';
+import { t, tn } from './i18n';
 import { contentHash, getIngestedSourceHashes, getIngestedSourcePaths, precheckNote, wikiDir } from './wiki-store';
 
 // Semi-automatic ingest: the plugin does the tedious parts — finding new or
@@ -146,13 +147,13 @@ export class AutoIngestReviewModal extends Modal {
     const { contentEl } = this;
     keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-lint-modal');
-    contentEl.createEl('h3', { text: 'Review drafts before they enter the wiki' });
+    contentEl.createEl('h3', { text: t('modal.drafts.title') });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
       text:
-        `${this.drafts.length} draft${this.drafts.length === 1 ? '' : 's'} generated` +
-        (this.failed ? ` · ${this.failed} failed and were skipped` : '') +
-        '. Untick anything that looks wrong, then write the rest. Nothing is saved until you do.',
+        tn('modal.drafts.generated', this.drafts.length) +
+        (this.failed ? t('modal.drafts.failed', { n: this.failed }) : '') +
+        t('modal.drafts.untick'),
     });
 
     const list = contentEl.createDiv({ cls: 'gemma4-review-list' });
@@ -175,7 +176,15 @@ export class AutoIngestReviewModal extends Modal {
       });
       titleRow.createSpan({
         cls: 'gemma4-review-reasons',
-        text: [d.reason === 'refresh' ? 're-ingest' : d.reason, d.confidence ? `${d.confidence} confidence` : '', d.overwriting ? 'overwrites existing page' : ''].filter(Boolean).join(' · '),
+        text: [
+                  t(d.reason === 'refresh' ? 'modal.drafts.refresh' : d.reason === 'new' ? 'modal.drafts.new' : 'modal.drafts.changed'),
+                  d.confidence === 'high' || d.confidence === 'med' || d.confidence === 'low'
+            ? t(`modal.drafts.confidence.${d.confidence}`)
+            : '',
+                  d.overwriting ? t('modal.drafts.overwrites') : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · '),
       });
       main.createDiv({ cls: 'gemma4-review-summary', text: d.summary });
       if (d.tags.length) {
@@ -184,7 +193,7 @@ export class AutoIngestReviewModal extends Modal {
     });
 
     const actions = contentEl.createDiv({ cls: 'gemma4-review-actions' });
-    const allBtn = actions.createEl('button', { text: 'Toggle all' });
+    const allBtn = actions.createEl('button', { text: t('modal.drafts.toggleAll') });
     allBtn.addEventListener('click', () => {
       const anyOff = this.checked.some((c) => !c);
       this.checked = this.checked.map(() => anyOff); // if any off → turn all on, else all off
@@ -196,7 +205,7 @@ export class AutoIngestReviewModal extends Modal {
     const writeBtn = actions.createEl('button', { cls: 'mod-cta' });
     const updateWriteBtn = () => {
       const n = this.checked.filter(Boolean).length;
-      writeBtn.setText(n ? `Write ${n} to wiki` : 'Nothing selected');
+      writeBtn.setText(n ? t('modal.drafts.write', { n }) : t('modal.nothingSelected'));
       writeBtn.disabled = n === 0;
     };
     updateWriteBtn();
@@ -286,44 +295,40 @@ export class ScanFolderModal extends Modal {
     if (this.countEl) {
       this.countEl.empty();
       if (this.chosen.size === 0) {
-        this.countEl.setText('Pick at least one folder.');
+        this.countEl.setText(t('modal.scan.pickOne'));
       } else if (n === 0) {
         // Ticked, but everything in them is already filed and unchanged.
         // "0 notes … roughly 1 minute" was the arithmetic answering a
         // question nobody asked.
-        this.countEl.setText('Nothing new in the folders you ticked — they are all already filed.');
+        this.countEl.setText(t('modal.scan.nothingNew'));
       } else {
         const mins = Math.max(1, Math.round((n * SECONDS_PER_NOTE) / 60));
         this.countEl.createDiv({
-          text: `${n} note${n === 1 ? '' : 's'}, about one model call each — roughly ${mins} minute${mins === 1 ? '' : 's'}.`,
+          text: t('modal.scan.estimate', { notes: tn('count.notes', n), minutes: tn('count.minutes', mins) }),
         });
         this.countEl.createDiv({
           cls: 'gemma4-scan-count-sub',
-          text: 'The first one is slower if the model has not loaded yet. You can stop partway and still review what was drafted.',
+          text: t('modal.scan.firstSlow'),
         });
       }
     }
     if (this.goBtn) {
       this.goBtn.disabled = n === 0;
-      this.goBtn.setText(n === 0 ? 'Scan' : `Scan ${n} note${n === 1 ? '' : 's'}`);
+      this.goBtn.setText(n === 0 ? t('modal.scan.go') : tn('modal.scan.goN', n));
     }
   }
 
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('gemma4-scan-modal');
-    contentEl.createEl('h3', { text: 'Scan a folder into the wiki' });
+    contentEl.createEl('h3', { text: t('modal.scan.title') });
     contentEl.createDiv({
       cls: 'gemma4-scan-lede',
       // This explanation used to sit in the chat panel's empty state, where it
       // was read by someone who had not yet decided to scan anything. It reads
       // better here, above the folder list, at the moment the decision is
       // actually in front of you.
-      text:
-        'Sweeps the folders you pick for new or changed notes and drafts a page for each. ' +
-        'One model call per note, so it takes a while — you can close this and keep working; ' +
-        'progress runs in the status bar, and the review list waits for you there if you moved ' +
-        'on. Nothing is ever written without your tick.',
+      text: t('modal.scan.lede'),
     });
     // Name the other door. This dialog is the batch, and the single-note path
     // is a command with a different name — someone who found this one has no
@@ -331,9 +336,7 @@ export class ScanFolderModal extends Modal {
     // one file.
     contentEl.createDiv({
       cls: 'gemma4-scan-lede gemma4-scan-lede-aside',
-      text:
-        'This is the batch. For just the note you have open, close this and press Cmd/Ctrl+P → ' +
-        '"Ingest this note into wiki".',
+      text: t('modal.scan.aside'),
     });
 
     if (!this.folders.length) {
@@ -341,11 +344,11 @@ export class ScanFolderModal extends Modal {
         cls: 'gemma4-scan-empty',
         text:
           this.totalCandidates === 0
-            ? 'Nothing new to file — every note outside the wiki is already ingested and unchanged.'
-            : 'No folders found to scan.',
+            ? t('modal.scan.allFiled')
+            : t('modal.scan.noFolders'),
       });
       const only = contentEl.createDiv({ cls: 'gemma4-scan-buttons' });
-      only.createEl('button', { text: 'Close' }).addEventListener('click', () => this.close());
+      only.createEl('button', { text: t('modal.close') }).addEventListener('click', () => this.close());
       return;
     }
 
@@ -362,15 +365,15 @@ export class ScanFolderModal extends Modal {
       row.createSpan({ cls: 'gemma4-scan-row-path', text: f.path });
       row.createSpan({
         cls: 'gemma4-scan-row-count',
-        text: f.count === 0 ? 'nothing new' : `${f.count} new or changed`,
+        text: f.count === 0 ? t('modal.scan.folderNone') : t('modal.scan.folderCount', { n: f.count }),
       });
     }
 
     this.countEl = contentEl.createDiv({ cls: 'gemma4-scan-count' });
 
     const buttons = contentEl.createDiv({ cls: 'gemma4-scan-buttons' });
-    buttons.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
-    this.goBtn = buttons.createEl('button', { cls: 'mod-cta', text: 'Scan' });
+    buttons.createEl('button', { text: t('modal.cancel') }).addEventListener('click', () => this.close());
+    this.goBtn = buttons.createEl('button', { cls: 'mod-cta', text: t('modal.scan.go') });
     this.goBtn.addEventListener('click', () => {
       // Mark the outcome BEFORE closing. close() runs onClose synchronously,
       // and onClose is what reports a dismissal — so anything set afterwards
