@@ -64,6 +64,11 @@ import {
   diffUsage,
   suggestRelated,
   estimateImproveTokens,
+  applyTagCheck,
+  extractionPrompt,
+  splitVocabulary,
+  tagCheckPrompt,
+  tagsToVerify,
   formatUsageReport,
   improveOutputBudget,
   migrateSettings,
@@ -95,9 +100,6 @@ import {
   textOf,
   type ParseFailure,
 } from './model-output';
-
-/** The output budget one extraction starts with. A card is a small object. */
-const INGEST_OUTPUT_TOKENS = 768;
 
 /** What a provenance check on one page produced, including the ways it can fail. */
 type ProvenanceCheck = { ok: true; unsupported: string[] } | { ok: false; reason: string };
@@ -3623,6 +3625,38 @@ export default class LiteRtSpikePlugin extends Plugin {
   // planning. Validated shape, one retry on parse failure. This is the
   // engineering rule the whole MVP is built on: small local models are
   // unreliable at chaining steps and reliable at filling one schema.
+  /**
+   * Ask whether each reused tag fits the card; see tagsToVerify for why.
+   *
+   * Never throws. The extraction it follows has already succeeded, and a
+   * check that fails must not cost the card, so any failure reads as "no
+   * verdicts" and every tag stays.
+   */
+  private async checkReusedTags(
+    engine: Engine,
+    card: NoteExtraction,
+    tags: string[]
+  ): Promise<Record<string, unknown>> {
+    let conversation: import('@litert-lm/core').Conversation | undefined;
+    try {
+      const { SamplerType } = await import('@litert-lm/core');
+      const conv = await engine.createConversation({
+        preface: { messages: [{ role: 'system', content: tagCheckPrompt(tags) }] },
+        sessionConfig: { samplerParams: { type: SamplerType.GREEDY }, maxOutputTokens: 128 },
+      });
+      conversation = conv;
+      const cardText = `${card.summary}\n\n${card.key_points.map((p) => `- ${p}`).join('\n')}`;
+      const message = await timed('ingest', () => conv.sendMessage(cardText));
+      const read = parseModelJson<Record<string, unknown>>(textOf(message.content));
+      return read.ok && read.value && typeof read.value === 'object' ? read.value : {};
+    } catch (err) {
+      console.warn('[gemma-litert-wiki] tag check failed; keeping every tag', err);
+      return {};
+    } finally {
+      await conversation?.delete().catch(() => {});
+    }
+  }
+
   async extractNoteMetadata(
     noteContent: string,
     onProgress: (text: string) => void
@@ -3655,24 +3689,16 @@ export default class LiteRtSpikePlugin extends Plugin {
       vocab.push(tag);
       if (vocab.length >= VOCAB_CAP) break;
     }
-    const vocabLine = vocab.length
-      ? ` Prefer tags from this list when one fits, reusing the exact spelling: ${vocab.join(', ')}. Only coin a new tag if none of these apply.`
-      : '';
     // Naming rule (issue #40): the schema.md "Naming" section's `concept:` rule
-    // actually shapes new tag names by guiding the model — so editing that line
-    // changes output, instead of being a dead descriptive note. (kebab-case is
-    // still enforced mechanically by slugify; this covers the rest, e.g.
-    // "singular noun", and works for any language the model handles.)
-    const namingLine = schema.naming.concept
-      ? ` When you must coin a new tag, name it following this convention: ${schema.naming.concept}.`
-      : '';
-
+    // shapes new tag names by guiding the model. kebab-case is still enforced
+    // mechanically by slugify; this covers the rest, e.g. "singular noun".
+    const prompt = extractionPrompt({ note: noteContent, vocabulary: vocab, naming: schema.naming.concept ?? '' });
     // The second attempt used to run with exactly the same parameters as the
     // first: try again and hope. It now knows why the first one failed, which
     // is enough to widen the output budget in the one case where more room is
     // the actual fix — and, more importantly, to NOT widen in the case that
     // looks identical from the outside. See nextOutputCap.
-    let cap = INGEST_OUTPUT_TOKENS;
+    let cap = prompt.outputTokens;
     let failure: { reason: ParseFailure | null; repetitive: boolean } | null = null;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -3685,23 +3711,7 @@ export default class LiteRtSpikePlugin extends Plugin {
             messages: [
               {
                 role: 'system',
-                content:
-                  'You extract structured metadata from a note. Respond with ONLY a single JSON object, ' +
-                  'no markdown fences, no explanation: ' +
-                  '{"summary": "one sentence", "tags": ["a", "b", "c"], "key_points": ["...", "...", "..."], ' +
-                  '"confidence": "high", "mentions": ["Name or Concept", "..."]}. ' +
-                  '1 to 3 tags. A tag names the note\'s TOPIC — a subject several notes could ' +
-                  'share — using domain terminology, NOT the note\'s fine details and NOT a generic ' +
-                  'process word (extraction, editing, motion) that means different things in ' +
-                  'different fields. One good topic tag beats three narrow ones. 3 to 5 key_points, each ONE short ' +
-                  'self-contained sentence stating concrete content from the note. confidence is ' +
-                  '"high", "med", or "low": how faithfully your summary and key_points represent the ' +
-                  'note (use "low" for dense, ambiguous, or heavily technical notes you may have ' +
-                  'misread). mentions: 0 to 6 salient named entities or concepts the note actually ' +
-                  "refers to (proper nouns, technologies, specific concepts), in the note's own " +
-                  'language; [] if none stand out.' +
-                  vocabLine +
-                  namingLine,
+                content: prompt.system,
               },
             ],
           },
@@ -3772,6 +3782,11 @@ export default class LiteRtSpikePlugin extends Plugin {
             : [];
           // A banned tag never lands on a page, no matter what the model says.
           parsed.tags = parsed.tags.filter((t) => !rejectedTags.has(slugify(t)));
+          const unsure = tagsToVerify(parsed.tags, vocab, splitVocabulary(vocab, noteContent).named);
+          if (unsure.length) {
+            onProgress('Checking tags…');
+            parsed.tags = applyTagCheck(parsed.tags, await this.checkReusedTags(engine, parsed, unsure));
+          }
           // Force the summary to a single line: index.md is one-entry-per-line,
           // so a multi-line summary would break across lines and pollute the
           // index with non-entry junk.

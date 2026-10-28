@@ -27,7 +27,7 @@ and check against the pass criteria.
 - An already-clean passage comes back **unchanged**.
 - No truncation (the CJK token-cap fix — a long CJK note must not get cut off
   mid-sentence).
-- Ingest card: summary + 3 tags + key points, in the note's own language.
+- Ingest card: summary and key points in the note's own language; tags in English.
 
 ---
 

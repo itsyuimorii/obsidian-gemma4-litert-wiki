@@ -10,6 +10,24 @@ The chat panel speaks Japanese and Simplified Chinese, the spot-check says
 which pages it read, and a stray click no longer loses a draft or hides a
 running task.
 
+- **Cards follow the note: its language, its length, its subject.**
+  A card for a note in Chinese, Japanese or Korean is written in that
+  language; it used to come out in English. Tags stay English, so notes in
+  different languages still meet under one tag. A card now has one key
+  point per section of the note, between 3 and 12, instead of 3 to 5 for
+  every note, and each point is asked to be a specific fact; sections of
+  pitfalls or exam points are asked for by name.
+- **Tags from the wiki's list are checked before they stay.** Ingest took
+  tags from the front of the wiki's tag list: a note on JavaScript's data
+  types was tagged data-science, and a note on compound interest
+  programming. The list is now split into tags the note names and the
+  rest, and a reused tag the note does not name is put to the model as a
+  yes-or-no against the card. In a test over 24 notes from other fields
+  (cooking, law, medicine, finance, maths, physics, philosophy, in four
+  languages) wrong tags went from 4 to 0, at about 10% more time.
+- **A formula can no longer fail a card.** A backslash in model output
+  that starts no valid JSON escape, as LaTeX does, is repaired before the
+  reply is given up on.
 - **The chat panel speaks Japanese and Simplified Chinese** (#166). It
   follows Obsidian's language; **Interface language** under Chat in
   settings picks one instead. Everything the panel shows is translated:
