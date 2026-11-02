@@ -186,7 +186,9 @@ test('at a 4096 context, a full-length answer still reaches the follow-up', () =
 test('the Developer commands setting does not count the [Test] commands', () => {
   const root = path.join(import.meta.dirname, '..');
   const settings = fs.readFileSync(path.join(root, 'src/settings.ts'), 'utf8');
-  assert.ok(!/\b(two|three|four|five|six|seven|eight|\d+) \[Test\]/i.test(settings), 'a count is back in the description');
-  // Said in both places it is written: the declarative page and display().
-  assert.equal(settings.split('Adds the [Test] commands to the palette').length - 1, 2);
+  const texts = fs.readFileSync(path.join(root, 'src/texts/en.ts'), 'utf8');
+  assert.ok(!/\b(two|three|four|five|six|seven|eight|\d+) \[Test\]/i.test(texts), 'a count is back in the description');
+  assert.equal(texts.split('Adds the [Test] commands to the palette').length - 1, 1);
+  // Used in both places the row is drawn: the declarative page and display().
+  assert.equal(settings.split("t('settings.dev.desc')").length - 1, 2);
 });

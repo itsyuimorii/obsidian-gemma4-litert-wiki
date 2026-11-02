@@ -1,4 +1,5 @@
 import { normalizePath, TFile, Vault, type App } from 'obsidian';
+import { t } from './i18n';
 import {
   DEFAULT_CONCEPT_THRESHOLD,
   DEFAULT_NAMING,
@@ -352,14 +353,14 @@ export function isWikiPage(file: { path: string; basename: string }): boolean {
 
 export function wikiScaffoldPaths(): { path: string; what: string }[] {
   return [
-    { path: `${_wikiDir}/README.md`, what: 'What this folder is, and the rules' },
-    { path: `${wikiSourcesDir()}/`, what: 'One summary card per ingested note' },
-    { path: `${wikiConceptsDir()}/`, what: 'Pages built across a shared tag' },
-    { path: `${wikiSkillsDir()}/`, what: 'One file per ⚡ menu entry' },
-    { path: `${wikiChatsDir()}/`, what: 'Conversations you chose to keep' },
-    { path: indexPath(), what: 'Catalog — wiki chat reads this first' },
-    { path: logPath(), what: 'Append-only record of what ran' },
-    { path: schemaPath(), what: 'Tag vocabulary, naming rules, rejected tags' },
+    { path: `${_wikiDir}/README.md`, what: t('scaffold.readme') },
+    { path: `${wikiSourcesDir()}/`, what: t('scaffold.cards') },
+    { path: `${wikiConceptsDir()}/`, what: t('scaffold.concepts') },
+    { path: `${wikiSkillsDir()}/`, what: t('scaffold.skills') },
+    { path: `${wikiChatsDir()}/`, what: t('scaffold.chats') },
+    { path: indexPath(), what: t('scaffold.index') },
+    { path: logPath(), what: t('scaffold.log') },
+    { path: schemaPath(), what: t('scaffold.schema') },
   ];
 }
 

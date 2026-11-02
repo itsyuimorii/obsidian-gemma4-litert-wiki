@@ -1,5 +1,6 @@
 import { App, Modal } from 'obsidian';
 import { keepOpenOnOutsideClick } from './modal-guard';
+import { t, tn } from './i18n';
 import {
   conceptPagePath,
   conceptSources,
@@ -175,10 +176,10 @@ export class TidyModal extends Modal {
     const { contentEl } = this;
     keepOpenOnOutsideClick(this);
     contentEl.addClass('gemma4-lint-modal');
-    contentEl.createEl('h3', { text: 'Tidy the wiki' });
+    contentEl.createEl('h3', { text: t('modal.tidy.title') });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
-      text: `${this.report.pageCount} pages checked. Nothing is written until you approve each repair.`,
+      text: tn('modal.tidy.summary', this.report.pageCount),
     });
 
     // Every repair is listed whether or not the scan found something for it.
@@ -187,16 +188,15 @@ export class TidyModal extends Modal {
     // tags that do not share a stem — `llm-eval` and `evals`, the example in
     // the plugin's own prompt — left Organize unreachable. The scan is good
     // enough to choose a default, not good enough to be the only way in.
-    const t = this.tags;
+    const tags = this.tags;
 
     const orphans = this.report.orphans.length;
     this.finding(
       'relink',
       orphans
-        ? `${orphans} page${orphans === 1 ? '' : 's'} with no inbound link`
-        : 'Related sections — every page has an inbound link',
-      'Makes existing links mutual, fills empty Related sections, and drops links to pages that are ' +
-        'gone. A page that genuinely relates to nothing stays an orphan.',
+        ? tn('modal.tidy.orphans', orphans)
+        : t('modal.tidy.orphansNone'),
+      t('modal.tidy.orphansHint'),
       this.report.orphans,
       orphans > 0
     );
@@ -210,13 +210,9 @@ export class TidyModal extends Modal {
     this.finding(
       'dedupe',
       dupes
-        ? `${dupes} pair${dupes === 1 ? '' : 's'} of pages look like they are about the same thing` +
-          (total > dupes ? ` (of ${total} found)` : '')
-        : 'Same-subject pages — no unlinked pair looks like one subject',
-      'Links each pair to the other, so the relationship is at least recorded. Nothing is merged and ' +
-        'nothing is deleted — two notes about one subject are two pieces of writing, and which to keep ' +
-        'is yours. Where a pair is really a cluster, "Build a concept page" is the better answer. ' +
-        'No model, nothing to review beyond the preview.',
+        ? tn('modal.tidy.dupes', dupes) + (total > dupes ? t('modal.tidy.dupesOf', { total }) : '')
+        : t('modal.tidy.dupesNone'),
+      t('modal.tidy.dupesHint'),
       this.sameSubject.pairs.map((p) => `${p.a.title}  ·  ${p.b.title}  — ${p.because}`),
       dupes > 0
     );
@@ -225,9 +221,9 @@ export class TidyModal extends Modal {
     this.finding(
       'reconcile',
       missing
-        ? `${missing} index entr${missing === 1 ? 'y' : 'ies'} pointing at deleted pages`
-        : 'Index — no entries point at deleted pages',
-      'Drops dead index entries and any Related links pointing at them. No model, nothing to review.',
+        ? tn('modal.tidy.missing', missing)
+        : t('modal.tidy.missingNone'),
+      t('modal.tidy.missingHint'),
       this.report.missing,
       missing > 0
     );
@@ -235,59 +231,52 @@ export class TidyModal extends Modal {
     // Two halves, two boxes. Rebuilding without applying leaves existing pages
     // on their old tags; applying without rebuilding is the path you want after
     // editing schema.md by hand, and merging them removed it.
-    const noVocab = !t.vocabulary && t.inUse > 0;
+    const noVocab = !tags.vocabulary && tags.inUse > 0;
     this.finding(
       'organize',
       noVocab
-        ? `No tag vocabulary yet — ${t.inUse} different tags in use, ${t.pending} waiting`
-        : t.offVocabulary
-          ? `Tag vocabulary — ${t.offVocabulary} of the ${t.inUse} tags your pages use are not in it`
-          : `Tag vocabulary — all ${t.inUse} tags your pages use are in it`,
-      (noVocab
-        ? 'Ingest has nothing to reuse, so every note coins its own. '
-        : '') +
-        'Rebuilds the vocabulary in schema.md from the tags your pages actually use, folding ' +
-        'near-duplicates together. One model call, one preview.',
-      t.clusters.length ? t.clusters.map((g) => g.join('  ·  ')) : [],
-      noVocab || t.clusters.length > 0
+        ? t('modal.tidy.noVocab', { inUse: tags.inUse, pending: tags.pending })
+        : tags.offVocabulary
+          ? t('modal.tidy.offVocab', { off: tags.offVocabulary, inUse: tags.inUse })
+          : t('modal.tidy.allInVocab', { inUse: tags.inUse }),
+      (noVocab ? t('modal.tidy.noVocabHint') : '') + t('modal.tidy.organizeHint'),
+      tags.clusters.length ? tags.clusters.map((g) => g.join('  ·  ')) : [],
+      noVocab || tags.clusters.length > 0
     );
 
     this.finding(
       'retag',
-      'Apply the vocabulary to existing pages',
-      'Rewrites page tags to the vocabulary in schema.md — including a vocabulary you edited by ' +
-        'hand. Tick this with the box above to do both, or on its own after editing schema.md. ' +
-        'One model call, one preview.',
+      t('modal.tidy.retag'),
+      t('modal.tidy.retagHint'),
       [],
-      noVocab || t.clusters.length > 0
+      noVocab || tags.clusters.length > 0
     );
 
     if (this.report.unindexed.length) {
       this.info(
-        `${this.report.unindexed.length} page${this.report.unindexed.length === 1 ? '' : 's'} missing from the index`,
-        'Retrieval reads the index first, so these can never be found. Re-ingest the note behind each one.',
+        tn('modal.tidy.unindexed', this.report.unindexed.length),
+        t('modal.tidy.unindexedHint'),
         this.report.unindexed
       );
     }
 
     const gaps = this.report.conceptGaps;
     if (gaps.length) {
-      const shown = gaps.slice(0, 8).map((g) => `${g.label} — ${g.pages} pages`);
-      if (gaps.length > 8) shown.push(`and ${gaps.length - 8} more`);
+      const shown = gaps.slice(0, 8).map((g) => `${g.label} — ${tn('count.pages', g.pages)}`);
+      if (gaps.length > 8) shown.push(t('modal.tidy.andMore', { n: gaps.length - 8 }));
       this.info(
-        `${gaps.length} subject${gaps.length === 1 ? '' : 's'} with enough pages for a concept page`,
-        'Each is a tag or mention that many pages share, with no page written above them yet. ' +
-          'Close this and run "Build a concept page from a tag or mention" to write one.',
+        tn('modal.tidy.gaps', gaps.length),
+        t('modal.tidy.gapsHint'),
         shown
       );
     }
 
     const buttons = contentEl.createDiv({ cls: 'gemma4-ingest-buttons' });
-    const close = buttons.createEl('button', { text: 'Close' });
+    const close = buttons.createEl('button', { text: t('modal.close') });
     close.addEventListener('click', () => this.close());
     const apply = buttons.createEl('button', { cls: 'mod-cta' });
     const sync = () => {
-      apply.setText(this.chosen.size ? `Run ${this.chosen.size} of these` : 'Nothing selected');
+      apply.setText(this.chosen.size ? t('modal.tidy.run', { n: this.chosen.size }) : t('modal.nothingSelected'));
       apply.disabled = this.chosen.size === 0;
     };
     this.syncApply = sync;
@@ -326,7 +315,7 @@ export class TidyModal extends Modal {
       const list = sec.createEl('ul', { cls: 'gemma4-lint-list' });
       for (const item of items.slice(0, 8)) list.createEl('li', { text: item });
       if (items.length > 8) {
-        sec.createDiv({ cls: 'gemma4-lint-hint', text: `…and ${items.length - 8} more.` });
+        sec.createDiv({ cls: 'gemma4-lint-hint', text: t('modal.tidy.andMoreDot', { n: items.length - 8 }) });
       }
     }
   }

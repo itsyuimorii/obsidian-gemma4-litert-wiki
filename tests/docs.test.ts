@@ -19,8 +19,19 @@ const MAIN = read('src/main.ts');
 const README = read('README.md');
 const README_JA = read('README.ja.md');
 
-/** Every command the plugin registers, exactly as the palette shows it. */
-const COMMANDS = [...MAIN.matchAll(/name: '([^']+)',/g)].map((m) => m[1]);
+const EN_TEXT = read('src/texts/en.ts');
+
+/**
+ * Every command the plugin registers, as the palette shows it in English.
+ * Most names come from src/texts/en.ts through t('cmd.…') (#166); the [Test]
+ * commands are developer tools and keep a literal English name.
+ */
+const COMMANDS = [...MAIN.matchAll(/name: (?:'([^']+)'|t\('(cmd\.[\w.]+)'\)),/g)].map((m) => {
+  if (m[1]) return m[1];
+  const text = EN_TEXT.match(new RegExp(`'${m[2].replace('.', '\\.')}': '([^']+)'`));
+  assert.ok(text, `${m[2]} is used in main.ts but missing from en.ts`);
+  return text[1];
+});
 
 /**
  * Command names that were removed and must not be named as commands again.
