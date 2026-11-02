@@ -4,6 +4,20 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
+## Unreleased
+
+- **Deleting several pages at once no longer reports "Prune failed".**
+  Each deleted page started its own clean-up of `index.md` and the related
+  links while the other pages were still being removed, and the clean-up
+  failed on the first page that vanished under it. The deletes now settle
+  first and one clean-up runs for the batch; a page that is already gone is
+  skipped. Nothing was lost before either: the next ingest finished the job.
+- **The [Test] commands wait their turn.** They report through their own
+  notice, so the plugin did not count them as running: a second benchmark
+  could start on top of the first, and so could an ingest. Loading the
+  runtime, the grammar fix, the benchmark and the JSON test now refuse while
+  something else runs, and everything else refuses while they do.
+
 ## 1.0.27 — 2026-11-02
 
 The whole interface speaks Japanese and Simplified Chinese, the model runs

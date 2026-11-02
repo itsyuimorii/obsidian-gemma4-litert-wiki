@@ -3125,3 +3125,17 @@ export function applyTagCheck(tags: readonly string[], verdicts: Record<string, 
   const kept = tags.filter((t) => !rejected.has(slugify(t)));
   return kept.length ? kept : tags.slice(0, 1);
 }
+
+/**
+ * Whether a vault read or write failed because the file is already gone.
+ *
+ * A bulk delete fires one event per file while the rest are still being
+ * removed, so a sweep that listed the wiki a moment ago can reach a page that
+ * no longer exists. That page needs no repair; failing the whole sweep over it
+ * showed "Prune failed — ENOENT" for a delete that had gone exactly as asked.
+ */
+export function isMissingFileError(err: unknown): boolean {
+  if (err && typeof err === 'object' && (err as { code?: unknown }).code === 'ENOENT') return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /\bENOENT\b|no such file/i.test(message);
+}
