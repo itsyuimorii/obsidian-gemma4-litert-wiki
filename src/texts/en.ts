@@ -328,6 +328,7 @@ const texts = {
   'status.draftingRelated': 'Drafting {i}/{n} — {name} · finding related pages…',
   'status.extracting': 'Extracting…',
   'status.extractingRetry': 'Extracting (retry)…',
+  'status.checkingTags': 'Checking tags…',
   'status.fetchingRuntime': 'Fetching the local runtime — {file}…',
   'status.fetchingRuntimeMb': 'Fetching the local runtime… {mb} MB',
   'status.improving': 'Improving "{name}"…',

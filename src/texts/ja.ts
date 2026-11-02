@@ -325,6 +325,7 @@ export const ja: Language = {
     'status.draftingRelated': '下書き中 {i}/{n} — {name} · 関連ページを探しています…',
     'status.extracting': '抽出中…',
     'status.extractingRetry': '抽出中（再試行）…',
+    'status.checkingTags': 'タグを確認中…',
     'status.fetchingRuntime': 'ローカルランタイムを取得中 — {file}…',
     'status.fetchingRuntimeMb': 'ローカルランタイムを取得中… {mb} MB',
     'status.improving': '「{name}」を整えています…',

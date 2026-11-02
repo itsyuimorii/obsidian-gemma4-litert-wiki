@@ -319,6 +319,7 @@ export const zh: Language = {
     'status.draftingRelated': '正在生成草稿 {i}/{n} — {name} · 正在查找相关页面…',
     'status.extracting': '正在提取…',
     'status.extractingRetry': '正在提取（重试）…',
+    'status.checkingTags': '正在检查标签…',
     'status.fetchingRuntime': '正在获取本地运行时 — {file}…',
     'status.fetchingRuntimeMb': '正在获取本地运行时… {mb} MB',
     'status.improving': '正在整理“{name}”…',
