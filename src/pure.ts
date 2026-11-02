@@ -3068,6 +3068,12 @@ export function tagsToVerify(
  * hundred tokens, so the check costs a second or two, and the card is what
  * the tag will be filed under. It is a yes-or-no per tag rather than a
  * second pick, because choosing again from a list is the step that failed.
+ *
+ * The "works within" sentence alone went too far: it rejected
+ * personal-finance on an index-fund plan and business-strategy on a churn
+ * plan, which is exactly what those tags are for. Its examples are kept
+ * apart from the A/B fixtures on purpose, so the run still measures the rule
+ * rather than the model recognising the test.
  */
 export function tagCheckPrompt(tags: readonly string[]): string {
   return (
@@ -3075,7 +3081,9 @@ export function tagCheckPrompt(tags: readonly string[]): string {
     'about that topic: a reader browsing that tag would expect to find this card. Answer false if the ' +
     'tag only shares a word with the card, names a neighbouring field, or fits loosely. Answer false for ' +
     'a broad field the card merely works within rather than discusses: a recipe is not about health, a ' +
-    'project log is not about software architecture, a lesson plan is not about psychology. Respond with ' +
+    'project log is not about software architecture, a lesson plan is not about psychology. But a broad ' +
+    'field is right when the card gives advice, a plan or an analysis in it: a mortgage comparison is ' +
+    'about personal finance, a market-entry plan is about business strategy. Respond with ' +
     'ONLY a JSON object mapping each tag to true or false, no markdown fences, no explanation: ' +
     `{${tags.map((t) => `"${t}": true`).join(', ')}}.`
   );

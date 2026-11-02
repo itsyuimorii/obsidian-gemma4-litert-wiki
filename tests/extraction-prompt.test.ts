@@ -122,6 +122,12 @@ test('tagCheckPrompt: lists every tag in the reply shape', () => {
   assert.match(tagCheckPrompt(['data-science', 'touchdesigner']), /\{"data-science": true, "touchdesigner": true\}/);
 });
 
+test('tagCheckPrompt: rejects a field the card only works within, keeps one it gives advice in', () => {
+  const prompt = tagCheckPrompt(['personal-finance']);
+  assert.match(prompt, /merely works within/);
+  assert.match(prompt, /advice, a plan or an analysis/);
+});
+
 test('applyTagCheck: drops only explicit false, keeps order', () => {
   const tags = ['touchdesigner', 'software-architecture', 'arduino'];
   assert.deepEqual(applyTagCheck(tags, { 'software-architecture': false, arduino: true }), ['touchdesigner', 'arduino']);
