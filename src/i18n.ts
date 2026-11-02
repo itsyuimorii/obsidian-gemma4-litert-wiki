@@ -49,3 +49,37 @@ export function t(key: TextKey, vars?: Vars): string {
 export function tn(key: CountKey, n: number, vars?: Vars): string {
   return t(`${key}.${n === 1 ? 'one' : 'other'}` as TextKey, { n, ...vars });
 }
+
+/** The English text for `key`, for what is written into the vault rather than shown. */
+export function tEn(key: TextKey, vars?: Vars): string {
+  const raw = EN_TEXTS[key];
+  if (!vars) return raw;
+  return raw.replace(/\{(\w+)\}/g, (whole, name: string) => (name in vars ? String(vars[name]) : whole));
+}
+
+/**
+ * A message shown in the interface language and recorded in English.
+ *
+ * Warnings and failures also go to log.md, which is a file in the vault, and
+ * what the plugin writes into the vault stays English whatever the interface
+ * says: a log that changes language with a setting cannot be searched or
+ * pasted into an issue.
+ */
+export interface Said {
+  text: string;
+  en: string;
+}
+
+export function say(key: TextKey, vars?: Vars): Said {
+  return { text: t(key, vars), en: tEn(key, vars) };
+}
+
+/** `say` for a count, as `tn` is for `t`. */
+export function sayN(key: CountKey, n: number, vars?: Vars): Said {
+  return say(`${key}.${n === 1 ? 'one' : 'other'}` as TextKey, { n, ...vars });
+}
+
+/** A plain string is the same in both, as for an error message from elsewhere. */
+export function said(message: string | Said): Said {
+  return typeof message === 'string' ? { text: message, en: message } : message;
+}

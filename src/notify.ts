@@ -1,5 +1,6 @@
 import { Notice, Vault } from 'obsidian';
 import { appendLog } from './wiki-store';
+import { said, t, tEn, type Said } from './i18n';
 
 // ---------------------------------------------------------------------------
 // One notification vocabulary for the whole plugin.
@@ -89,7 +90,7 @@ export function notify(kind: NoticeKind, text: string, durationMs?: number): Not
  * never actionable. Keep the first line as the reason, cap it, and always say
  * where the full story is.
  */
-export function failureText(what: string, err: unknown): string {
+export function failureText(what: string | Said, err: unknown): Said {
   const raw = err instanceof Error ? err.message : String(err);
   const firstLine = raw.split('\n')[0].trim();
   const reason = firstLine.length > 140 ? `${firstLine.slice(0, 137)}…` : firstLine;
@@ -99,7 +100,12 @@ export function failureText(what: string, err: unknown): string {
   // screenshot of exactly that. The command named here answers the question
   // the stack trace does not: what on this machine is missing, and what to
   // do about it.
-  return `${what} failed${reason ? ` — ${reason}` : ''}. Run the command "Check setup (diagnostics)" to see what is missing.`;
+  const w = said(what);
+  const vars = { reason: reason ? ` — ${reason}` : '' };
+  return {
+    text: t('notice.failed', { ...vars, what: w.text, check: t('cmd.checkSetup') }),
+    en: tEn('notice.failed', { ...vars, what: w.en, check: tEn('cmd.checkSetup') }),
+  };
 }
 
 /**
@@ -111,17 +117,33 @@ export function failureText(what: string, err: unknown): string {
  * wrong. Best-effort: a plugin must not fail an operation because it could not
  * write about it.
  */
-export async function logNotice(vault: Vault, kind: NoticeKind, text: string): Promise<void> {
+export async function logNotice(vault: Vault, kind: NoticeKind, text: string | Said): Promise<void> {
   if (kind !== 'warn' && kind !== 'error') return;
-  await appendLog(vault, kind === 'error' ? 'error' : 'warning', text).catch(() => {});
+  await appendLog(vault, kind === 'error' ? 'error' : 'warning', said(text).en).catch(() => {});
 }
 
 /**
  * Notify and record in one call, for the paths that deserve both.
  */
-export function notifyAndLog(vault: Vault, kind: NoticeKind, text: string, durationMs?: number): Notice {
+export function notifyAndLog(vault: Vault, kind: NoticeKind, text: string | Said, durationMs?: number): Notice {
   void logNotice(vault, kind, text);
-  return notify(kind, text, durationMs);
+  return notify(kind, said(text).text, durationMs);
+}
+
+/**
+ * Keep a progress toast on screen when it is clicked, and return the undo.
+ *
+ * Obsidian closes any notice on a click. On a toast that is the only sign an
+ * operation is still running, one click left a run of minutes with nothing
+ * on screen, and no way to tell a finished run from a running one. So a
+ * running toast ignores clicks; the toast with the outcome closes on a click
+ * as usual. Capture on the notice itself stops the click before Obsidian's
+ * own listener sees it.
+ */
+export function holdOnClick(notice: Notice): () => void {
+  const hold = (e: MouseEvent) => e.stopImmediatePropagation();
+  notice.containerEl.addEventListener('click', hold, true);
+  return () => notice.containerEl.removeEventListener('click', hold, true);
 }
 
 /**
@@ -135,9 +157,11 @@ export function notifyAndLog(vault: Vault, kind: NoticeKind, text: string, durat
  */
 export class Progress {
   private readonly notice: Notice;
+  private readonly release: () => void;
 
   constructor(text: string) {
     this.notice = notify('progress', text);
+    this.release = holdOnClick(this.notice);
   }
 
   /** Replace the running message. Still ⏳. */
@@ -161,11 +185,11 @@ export class Progress {
   }
 
   /** It threw. `what` names the operation, e.g. 'Downloading the model'. */
-  fail(what: string, err: unknown, vault?: Vault) {
+  fail(what: string | Said, err: unknown, vault?: Vault) {
     const text = failureText(what, err);
-    console.error(`[gemma-litert-wiki] ${what} failed`, err);
+    console.error(`[gemma-litert-wiki] ${said(what).en} failed`, err);
     if (vault) void logNotice(vault, 'error', text);
-    this.finish('error', text, DURATION.LONG);
+    this.finish('error', text.text, DURATION.LONG);
   }
 
   /** Close with no final word — the outcome is being shown somewhere else. */
@@ -174,6 +198,7 @@ export class Progress {
   }
 
   private finish(kind: NoticeKind, text: string, durationMs: number) {
+    this.release();
     this.notice.setMessage(mark(kind, text));
     window.setTimeout(() => this.notice.hide(), durationMs);
   }

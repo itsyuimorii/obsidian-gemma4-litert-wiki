@@ -1,4 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
+import { t, tn } from './i18n';
 import { readIndexEntries, wikiDir } from './wiki-store';
 
 // Lint v2 (issue #5): contradiction candidates. Unlike Lint v1 (graph facts,
@@ -93,19 +94,22 @@ export class ContradictionReportModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('gemma4-lint-modal');
-    contentEl.createEl('h3', { text: 'Contradiction candidates' });
+    contentEl.createEl('h3', { text: t('modal.contra.title') });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
       // The coverage fraction lives HERE, in the report the user reads — a
       // transient toast is not where "53 pairs were never looked at" belongs.
       text:
-        `Checked ${this.checked} of ${this.total} tag-sharing page pair${this.total === 1 ? '' : 's'}` +
-        `${this.total > this.checked ? ' (most recently changed first; run again after edits to rotate coverage)' : ''}. ` +
-        `${this.flags.length} flagged for a human look — these are candidates, not verdicts.`,
+        t('modal.contra.summary', {
+          checked: this.checked,
+          pairs: tn('count.pairs', this.total),
+          rotate: this.total > this.checked ? t('modal.contra.rotate') : '',
+          flagged: this.flags.length,
+        }),
     });
 
     if (!this.flags.length) {
-      contentEl.createDiv({ cls: 'gemma4-lint-ok', text: 'No contradictions flagged.' });
+      contentEl.createDiv({ cls: 'gemma4-lint-ok', text: t('modal.contra.none') });
       return;
     }
 
@@ -125,7 +129,7 @@ export class ContradictionReportModal extends Modal {
 
     contentEl.createDiv({
       cls: 'gemma4-lint-hint',
-      text: 'Open both pages, check them against their source notes, and re-ingest whichever drifted. Nothing was changed.',
+      text: t('modal.contra.hint'),
     });
   }
 

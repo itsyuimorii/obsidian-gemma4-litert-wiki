@@ -1,6 +1,6 @@
 {
   "name": "litert-spike",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "private": true,
   "license": "GPL-3.0-only",
   "type": "module",
@@ -18,7 +18,7 @@
     "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "latest",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.2"
+    "typescript-eslint": "^8.72.0"
   },
   "dependencies": {
     "@litert-lm/core": "0.18.0"

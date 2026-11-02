@@ -6,6 +6,37 @@ All notable changes to this plugin are recorded here. Versions follow
 
 ## Unreleased
 
+- **The whole interface speaks Japanese and Simplified Chinese** (#166).
+  After the chat panel in 1.0.26, the rest follows the **Interface
+  language** setting: the settings page, every notice, the status bar,
+  the review and confirmation dialogs (ingest preview, scan, Tidy, the
+  review board, the spot-check and contradiction reports, the setup card)
+  and the command names. Changing the language redraws the settings page
+  and the chat panel at once; command names switch after the plugin
+  reloads. Warnings and failures still go to `log.md` in English, so the
+  log reads the same whatever the interface says. The [Test] developer
+  commands and the Check setup report stay English: their output is for
+  pasting into an issue.
+- **The LiteRT-LM runtime moves from 0.15.0 to 0.18.0** (#167). The
+  calls this plugin makes, the runtime's file names and the GPU it asks
+  for (`high-performance`) are the same in both. 0.18.1 is skipped: npm
+  marks it deprecated because its WebAssembly does not match its JS, and
+  the dependency is pinned exactly so it cannot be pulled in. On an
+  Apple-silicon Mac the model writes about a third faster: 39 tokens a
+  second against 29.
+- **An update to a new runtime downloads it once, by itself.** The runtime
+  now lives in `wasm/<version>/` inside the plugin folder. The file names
+  are the same in every release, so the flat `wasm/` used until now would
+  have served the new plugin the old runtime. On the first start after
+  updating, the 0.15 files are deleted and the 0.18 ones are fetched the
+  first time you ask something, about 20-31 MB, as on a fresh install.
+
+## 1.0.26 — 2026-10-24
+
+The chat panel speaks Japanese and Simplified Chinese, the spot-check says
+which pages it read, and a stray click no longer loses a draft or hides a
+running task.
+
 - **The chat panel speaks Japanese and Simplified Chinese** (#166). It
   follows Obsidian's language; **Interface language** under Chat in
   settings picks one instead. Everything the panel shows is translated:
@@ -25,17 +56,18 @@ All notable changes to this plugin are recorded here. Versions follow
   *Pages read this run* folds out to each page, linked, and why it was
   read: least borne out by its note, or drawn at random. A clean report
   could not be told apart from one that read the same pages as last time.
-- **The LiteRT-LM runtime moves from 0.15.0 to 0.18.0** (#167). The
-  calls this plugin makes, the runtime's file names and the GPU it asks
-  for (`high-performance`) are the same in both. 0.18.1 is skipped: npm
-  marks it deprecated because its WebAssembly does not match its JS, and
-  the dependency is pinned exactly so it cannot be pulled in.
-- **An update to a new runtime downloads it once, by itself.** The runtime
-  now lives in `wasm/<version>/` inside the plugin folder. The file names
-  are the same in every release, so the flat `wasm/` used until now would
-  have served the new plugin the old runtime. On the first start after
-  updating, the 0.15 files are deleted and the 0.18 ones are fetched the
-  first time you ask something, about 20-31 MB, as on a fresh install.
+- **A stray click no longer throws away a draft.** Review dialogs (the
+  ingest preview, scan review, tidy, related links, tags and links) stayed
+  open only until the first click on the dimmed background, which closed
+  them and discarded output the model had just spent tens of seconds on.
+  They now close only from Cancel, the close button or Escape. Closing the
+  ingest preview also says that nothing was written, instead of ending in
+  silence that looked like a failed ingest.
+- **A running task's notice stays until the task ends.** Clicking the
+  progress notice in the top-right corner closed it, and with it the only
+  sign that an ingest, a scan or a test command was still running. It now
+  ignores clicks while the task runs; the notice with the result still
+  closes on a click.
 
 ## 1.0.25 — 2026-10-18
 

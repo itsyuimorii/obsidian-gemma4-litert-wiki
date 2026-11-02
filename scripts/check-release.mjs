@@ -202,7 +202,12 @@ console.log('\n== README renders as written ==');
 console.log('\n== README matches the code ==');
 {
   const mainTs = fs.readFileSync('src/main.ts', 'utf8');
-  const cmds = [...mainTs.matchAll(/name: '([^']+)',/g)].map((x) => x[1]);
+  const enTs = fs.readFileSync('src/texts/en.ts', 'utf8');
+  // Names come through t('cmd.…') from src/texts/en.ts (#166), except the
+  // [Test] commands, which keep a literal English name.
+  const cmds = [...mainTs.matchAll(/name: (?:'([^']+)'|t\('(cmd\.[\w.]+)'\)),/g)].map(
+    (x) => x[1] ?? enTs.match(new RegExp(`'${x[2].replace('.', '\\.')}': '([^']+)'`))?.[1] ?? `missing ${x[2]}`
+  );
   const live = new Set(cmds);
 
   // Only the `| Command | ... |` tables are read. The README has other tables
