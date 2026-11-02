@@ -4,7 +4,11 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
-## Unreleased
+## 1.0.27 — 2026-11-02
+
+The whole interface speaks Japanese and Simplified Chinese, the model runs
+on LiteRT-LM 0.18 and writes about a third faster, and ingest writes cards
+in the note's own language with tags it has checked.
 
 - **The whole interface speaks Japanese and Simplified Chinese** (#166).
   After the chat panel in 1.0.26, the rest follows the **Interface
