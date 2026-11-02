@@ -354,7 +354,7 @@ No backend, no telemetry, no analytics. This plugin makes network requests to ex
 | Host | What | When |
 | --- | --- | --- |
 | `huggingface.co` | the [Gemma 4 E4B model](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) (~3 GB) | once, when you press **Download model** |
-| `cdn.jsdelivr.net` | the LiteRT-LM WebAssembly runtime (~20-31 MB), from the pinned `@litert-lm/core` version this build was compiled against | once, on first use |
+| `cdn.jsdelivr.net` | the LiteRT-LM WebAssembly runtime (~20-31 MB), from the pinned `@litert-lm/core` version this build was compiled against | once on first use, and once more after an update that moves to a new runtime version |
 
 The runtime is fetched rather than bundled because it ships in four variants totalling ~101 MB and your machine loads exactly one, chosen by the library's own feature probes; shipping all four would put a 101 MB payload in every install to use a fifth of it. Only files matching `litertlm_wasm_*internal.{js,wasm}` are accepted, and nothing here updates the plugin itself — the version is fixed at build time.
 

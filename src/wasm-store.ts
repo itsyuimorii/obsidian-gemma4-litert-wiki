@@ -1,4 +1,5 @@
 import { fs, path } from './node-api';
+import { staleRuntimeEntries } from './pure';
 
 // On-demand store for the LiteRT-LM WebAssembly runtime.
 //
@@ -217,6 +218,38 @@ export function ensureCommonJsMarker(wasmDir: string): void {
   } catch {
     // Best effort: a real install does not need it, and the loader's error
     // message names this exact cause if it turns out to matter.
+  }
+}
+
+/**
+ * The folder the bundled runtime version is kept in: <plugin>/wasm/<version>/.
+ * Versioned because the file names are the same in every release, so a flat
+ * folder would serve an upgraded plugin the previous version's runtime (#167).
+ */
+export function runtimeDir(pluginDir: string): string {
+  return path.join(pluginDir, 'wasm', __LITERT_VERSION__);
+}
+
+/**
+ * Delete what other runtime versions left in wasm/, so an upgrade does not
+ * keep 20-31 MB of a runtime nothing will load again. Best effort: a file
+ * that cannot be removed now is tried again on the next start, and is never
+ * served in the meantime, because only the current version's folder is.
+ */
+export function removeStaleRuntimes(pluginDir: string): void {
+  const root = path.join(pluginDir, 'wasm');
+  let names: string[];
+  try {
+    names = fs.readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const name of staleRuntimeEntries(names, __LITERT_VERSION__)) {
+    try {
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    } catch (err) {
+      console.warn('[gemma-litert-wiki] could not remove an old runtime', name, err);
+    }
   }
 }
 
