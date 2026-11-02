@@ -1,4 +1,4 @@
-import { addIcon, apiVersion, App, FileSystemAdapter, FuzzySuggestModal, getLanguage, MarkdownView, Notice, Platform, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { addIcon, apiVersion, App, debounce, FileSystemAdapter, FuzzySuggestModal, getLanguage, MarkdownView, Notice, Platform, Plugin, setIcon, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import { resolveLanguage, said, say, sayN, setLanguage, t, tEn, tn, type Said } from './i18n';
 import { confineFilesystemTo, fs, http, path, type Bytes, type HttpServer } from './node-api';
 import type { Engine } from '@litert-lm/core';
@@ -50,7 +50,7 @@ import {
   type NoteExtraction,
 } from './wiki-store';
 import { findSameSubject, runLint, TidyModal, type TagHealth } from './lint';
-import { conceptClusters, type DuplicatePair } from './pure';
+import { conceptClusters, isMissingFileError, type DuplicatePair } from './pure';
 import {
   collectWikiPages,
   ContradictionReportModal,
@@ -324,6 +324,8 @@ export default class LiteRtSpikePlugin extends Plugin {
   // Did attention leave while the current run was going? Decides whether the
   // result opens itself or waits.
   private chatBusy = false;
+  // The [Test] command that is driving the engine, if one is. See runTestCommand.
+  private testRunning: string | null = null;
   private runStartedAt = 0;
   // The pinned toast for the running operation, and whether the user closed
   // it. A dismissal is respected until they ask for it back.
@@ -362,7 +364,7 @@ export default class LiteRtSpikePlugin extends Plugin {
    * different elapsed times for the same note.
    */
   isBusy(): boolean {
-    return this.runningText !== null || this.scanRunning || this.chatBusy;
+    return this.runningText !== null || this.scanRunning || this.chatBusy || this.testRunning !== null;
   }
 
   /**
@@ -388,7 +390,7 @@ export default class LiteRtSpikePlugin extends Plugin {
    * finish." Two dashes and a stage nobody asked about.
    */
   runningLabel(): string | null {
-    if (this.runningText === null) return this.chatBusy ? t('status.answering') : null;
+    if (this.runningText === null) return this.testRunning ?? (this.chatBusy ? t('status.answering') : null);
     return this.runningText.split(' — ')[0].replace(/[…:]\s*$/, '');
   }
 
@@ -404,7 +406,28 @@ export default class LiteRtSpikePlugin extends Plugin {
     return true;
   }
 
-  private status(text: string) {
+  /**
+   * Run a [Test] command that drives the engine, one at a time.
+   *
+   * The test commands report through their own Progress notice rather than
+   * status(), so they never set runningText: isBusy() said no while a
+   * benchmark ran, a second one could start on the same engine, and so could
+   * an ingest. Marking the run here makes both refuse, with the command's
+   * name in the notice.
+   */
+  private async runTestCommand(name: string, job: () => Promise<void>): Promise<void> {
+    if (this.refuseIfBusy()) return;
+    this.testRunning = name;
+    this.notifyBusyChange();
+    try {
+      await job();
+    } finally {
+      this.testRunning = null;
+      this.notifyBusyChange();
+    }
+  }
+
+    private status(text: string) {
     // Both surfaces, for the whole run. Two earlier attempts each fixed one
     // half and broke the other:
     //
@@ -909,15 +932,16 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.addCommand({
         id: 'litert-load-wasm',
         name: '[Test] Load WASM runtime (no model download)',
-        callback: async () => {
-          const p = new Progress('Loading LiteRT-LM WASM runtime… full detail in the console (Cmd/Ctrl+Opt+I).');
-          try {
-            await this.ensureWasmLoaded();
-            p.done('LiteRT-LM WASM runtime loaded successfully.');
-          } catch (err) {
-            p.fail('Loading the WASM runtime', err);
-          }
-        },
+        callback: () =>
+          this.runTestCommand('[Test] Load WASM runtime', async () => {
+            const p = new Progress('Loading LiteRT-LM WASM runtime… full detail in the console (Cmd/Ctrl+Opt+I).');
+            try {
+              await this.ensureWasmLoaded();
+              p.done('LiteRT-LM WASM runtime loaded successfully.');
+            } catch (err) {
+              p.fail('Loading the WASM runtime', err);
+            }
+          }),
       });
 
     this.addCommand({
@@ -940,98 +964,99 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.addCommand({
         id: 'litert-fix-grammar',
         name: '[Test] Fix grammar of selection',
-        editorCallback: async (editor) => {
-          const selection = editor.getSelection();
-          if (!selection.trim()) {
-            notify('warn', 'Select some text first, then run this command.');
-            return;
-          }
-          // v1 finding (2026-08-24): the 28s TTFT on a cold engine was mostly
-          // one-time GPU warmup cost, not per-call — once warm, prefill jumps
-          // ~5-6x. Cap is deliberately loose here — this spike's job right
-          // now is to find where the model's real context ceiling is
-          // (currently unknown), not to pre-guess a safe limit. A hard
-          // failure at some length is a valid, useful result, not a bug to
-          // prevent.
-          const MAX_INPUT_CHARS = 40000;
-          if (selection.length > MAX_INPUT_CHARS) {
-            notify(
-              'warn',
-              `Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
-                'Select a shorter passage (a paragraph, not a whole note).'
-            );
-            return;
-          }
-          // Rough token estimate (chars/3, generous for mixed CJK/English) so
-          // the output budget scales with input instead of being a fixed
-          // guess that either truncates long inputs or wastes tokens on
-          // short ones.
-          const estimatedInputTokens = Math.ceil(selection.length / 3);
-          const maxOutputTokens = Math.min(4096, Math.max(256, Math.ceil(estimatedInputTokens * 1.5)));
+        editorCallback: (editor) =>
+          this.runTestCommand('[Test] Fix grammar of selection', async () => {
+            const selection = editor.getSelection();
+            if (!selection.trim()) {
+              notify('warn', 'Select some text first, then run this command.');
+              return;
+            }
+            // v1 finding (2026-08-24): the 28s TTFT on a cold engine was mostly
+            // one-time GPU warmup cost, not per-call — once warm, prefill jumps
+            // ~5-6x. Cap is deliberately loose here — this spike's job right
+            // now is to find where the model's real context ceiling is
+            // (currently unknown), not to pre-guess a safe limit. A hard
+            // failure at some length is a valid, useful result, not a bug to
+            // prevent.
+            const MAX_INPUT_CHARS = 40000;
+            if (selection.length > MAX_INPUT_CHARS) {
+              notify(
+                'warn',
+                `Selection is ${selection.length} chars — over the ${MAX_INPUT_CHARS} limit for this spike. ` +
+                  'Select a shorter passage (a paragraph, not a whole note).'
+              );
+              return;
+            }
+            // Rough token estimate (chars/3, generous for mixed CJK/English) so
+            // the output budget scales with input instead of being a fixed
+            // guess that either truncates long inputs or wastes tokens on
+            // short ones.
+            const estimatedInputTokens = Math.ceil(selection.length / 3);
+            const maxOutputTokens = Math.min(4096, Math.max(256, Math.ceil(estimatedInputTokens * 1.5)));
 
-          const p = new Progress('Loading model (first run downloads ~3GB)…');
-          let conversation: import('@litert-lm/core').Conversation | undefined;
-          try {
-            const engine = await this.ensureEngine((text) => {
-              log(text);
-              p.update(text);
-            });
-            p.update('Generating…');
+            const p = new Progress('Loading model (first run downloads ~3GB)…');
+            let conversation: import('@litert-lm/core').Conversation | undefined;
+            try {
+              const engine = await this.ensureEngine((text) => {
+                log(text);
+                p.update(text);
+              });
+              p.update('Generating…');
 
-            const { SamplerType } = await import('@litert-lm/core');
-            conversation = await engine.createConversation({
-              preface: {
-                messages: [
-                  {
-                    role: 'system',
-                    content:
-                      'You are a copy editor. Fix grammar and spelling mistakes in the text the user gives you. ' +
-                      'Return ONLY the corrected text — no explanation, no preamble, no quotes around it. ' +
-                      'If the text is already correct, return it unchanged.',
-                  },
-                ],
-              },
-              sessionConfig: {
-                samplerParams: { type: SamplerType.GREEDY },
-                maxOutputTokens,
-              },
-            });
+              const { SamplerType } = await import('@litert-lm/core');
+              conversation = await engine.createConversation({
+                preface: {
+                  messages: [
+                    {
+                      role: 'system',
+                      content:
+                        'You are a copy editor. Fix grammar and spelling mistakes in the text the user gives you. ' +
+                        'Return ONLY the corrected text — no explanation, no preamble, no quotes around it. ' +
+                        'If the text is already correct, return it unchanged.',
+                    },
+                  ],
+                },
+                sessionConfig: {
+                  samplerParams: { type: SamplerType.GREEDY },
+                  maxOutputTokens,
+                },
+              });
 
-            const wallStart = Date.now();
-            let result = '';
-            const stream = conversation.sendMessageStreaming(selection);
-            const reader = stream.getReader();
-            for (;;) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              const content = value?.content;
-              if (typeof content === 'string') {
-                result += content;
-              } else if (Array.isArray(content)) {
-                for (const part of content) {
-                  if (part.type === 'text' && part.text) result += part.text;
+              const wallStart = Date.now();
+              let result = '';
+              const stream = conversation.sendMessageStreaming(selection);
+              const reader = stream.getReader();
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const content = value?.content;
+                if (typeof content === 'string') {
+                  result += content;
+                } else if (Array.isArray(content)) {
+                  for (const part of content) {
+                    if (part.type === 'text' && part.text) result += part.text;
+                  }
                 }
               }
+              const wallMs = Date.now() - wallStart;
+
+              const bench = await conversation.getBenchmarkInfo();
+              log('Grammar fix result:', result);
+              log('Wall time (ms):', wallMs);
+              log('Benchmark info:', bench);
+
+              editor.replaceSelection(result.trim());
+              p.done(
+                `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
+                  `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`,
+                DURATION.LONG
+              );
+            } catch (err) {
+              p.fail('Fixing grammar', err);
+            } finally {
+              await conversation?.delete().catch(() => {});
             }
-            const wallMs = Date.now() - wallStart;
-
-            const bench = await conversation.getBenchmarkInfo();
-            log('Grammar fix result:', result);
-            log('Wall time (ms):', wallMs);
-            log('Benchmark info:', bench);
-
-            editor.replaceSelection(result.trim());
-            p.done(
-              `Done in ${(wallMs / 1000).toFixed(1)}s — decode ${bench.lastDecodeTokensPerSecond.toFixed(1)} tok/s, ` +
-                `TTFT ${bench.timeToFirstTokenInSecond.toFixed(2)}s. Replaced selection; see console for full numbers.`,
-              DURATION.LONG
-            );
-          } catch (err) {
-            p.fail('Fixing grammar', err);
-          } finally {
-            await conversation?.delete().catch(() => {});
-          }
-        },
+          }),
       });
 
       this.addCommand({
@@ -1072,156 +1097,30 @@ export default class LiteRtSpikePlugin extends Plugin {
       this.addCommand({
         id: 'litert-benchmark-machine',
         name: '[Test] Benchmark this machine',
-        callback: async () => {
-          // The README's benchmark table has one machine in it — the author's.
-          // Every other row has to come from a stranger who installed the
-          // plugin, so the entire design constraint is that running this and
-          // handing over the result costs one click and one paste. Hence: a
-          // fixed corpus compiled into the bundle (a number is comparable only
-          // if everyone measured the same thing), and finished Markdown out.
-          //
-          // Nothing is uploaded, here or anywhere. "No network calls after the
-          // first download" is the first row of the README's comparison table
-          // and the one claim nothing else in the category can make; a
-          // telemetry endpoint would spend it to collect what one issue thread
-          // collects for free.
-          const p = new Progress('Benchmark: loading model…');
-          let conversation: import('@litert-lm/core').Conversation | undefined;
-          try {
-            const engine = await this.ensureEngine((text) => {
-              log(text);
-              p.update(text);
-            });
-            const { SamplerType } = await import('@litert-lm/core');
-
-            const runOne = async (text: string) => {
-              conversation = await engine.createConversation({
-                preface: {
-                  messages: [
-                    {
-                      role: 'system',
-                      content:
-                        'You extract structured metadata from a note. Given the text the user provides, ' +
-                        'respond with ONLY a single JSON object matching this exact shape, no markdown code ' +
-                        'fences, no explanation, nothing before or after it: ' +
-                        '{"summary": "one sentence summary", "tags": ["tag1", "tag2", "tag3"]}. ' +
-                        'Tags must be short lowercase noun phrases, exactly 3 of them.',
-                    },
-                  ],
-                },
-                sessionConfig: {
-                  samplerParams: { type: SamplerType.GREEDY },
-                  maxOutputTokens: BENCH_OUTPUT_TOKENS,
-                },
+        callback: () =>
+          this.runTestCommand('[Test] Benchmark this machine', async () => {
+            // The README's benchmark table has one machine in it — the author's.
+            // Every other row has to come from a stranger who installed the
+            // plugin, so the entire design constraint is that running this and
+            // handing over the result costs one click and one paste. Hence: a
+            // fixed corpus compiled into the bundle (a number is comparable only
+            // if everyone measured the same thing), and finished Markdown out.
+            //
+            // Nothing is uploaded, here or anywhere. "No network calls after the
+            // first download" is the first row of the README's comparison table
+            // and the one claim nothing else in the category can make; a
+            // telemetry endpoint would spend it to collect what one issue thread
+            // collects for free.
+            const p = new Progress('Benchmark: loading model…');
+            let conversation: import('@litert-lm/core').Conversation | undefined;
+            try {
+              const engine = await this.ensureEngine((text) => {
+                log(text);
+                p.update(text);
               });
-              try {
-                const wallStart = Date.now();
-                const message = await conversation.sendMessage(text);
-                const wallMs = Date.now() - wallStart;
-                const bench = await conversation.getBenchmarkInfo();
-                return { reply: textOf(message.content), wallMs, bench };
-              } finally {
-                await conversation?.delete().catch(() => {});
-                conversation = undefined;
-              }
-            };
+              const { SamplerType } = await import('@litert-lm/core');
 
-            // The first call of a session pays a one-time shader-compilation
-            // cost that has nothing to do with the note. Spend it here on a
-            // throwaway and report it on its own line, rather than letting it
-            // land on whichever fixture happens to run first and make that row
-            // look four times slower than it is.
-            p.update('Benchmark: warming up (one-time GPU cost)…');
-            const cold = await runOne('Warm-up. Reply with {"summary": "ok", "tags": ["a", "b", "c"]}.');
-
-            const measurements: BenchMeasurement[] = [];
-            for (let i = 0; i < BENCH_CORPUS.length; i++) {
-              const fixture = BENCH_CORPUS[i];
-              p.update(`Benchmark: ${i + 1}/${BENCH_CORPUS.length} — ${fixture.label}…`);
-              const { reply, wallMs, bench } = await runOne(fixture.text);
-
-              const measurement = evaluateBenchReply(fixture, reply, { ...bench, wallMs });
-              measurements.push(measurement);
-              log(`Benchmark ${fixture.id}:`, measurement, 'reply:', reply);
-            }
-
-            const report = buildBenchmarkReport(
-              {
-                gpu: await describeGpu(),
-                pluginVersion: this.manifest.version,
-                obsidianVersion: apiVersion,
-                platform: describePlatform(),
-                contextTokens: this.effectiveContextTokens ?? this.settings.contextTokens ?? 4096,
-                coldStartSeconds: cold.wallMs / 1000,
-                onBattery: await onBattery(),
-              },
-              measurements
-            );
-
-            // Both, on purpose. The clipboard is for the paste that is the
-            // whole point of the command; the file is because a clipboard is
-            // one Cmd+C away from being gone and the run took minutes.
-            const path = `${wikiDir()}/benchmark.md`;
-            const adapter = this.app.vault.adapter;
-            if (!(await adapter.exists(path))) {
-              await adapter.write(
-                path,
-                '# Benchmark results\n\n' +
-                  'Written by `[Test] Benchmark this machine`. Nothing reads this file and nothing is ' +
-                  'sent anywhere. Paste a block into the results issue to add your hardware to the ' +
-                  "README's table.\n"
-              );
-            }
-            await adapter.append(path, `\n## ${new Date().toISOString()}\n\n${report}\n`);
-            await navigator.clipboard.writeText(report).catch(() => {});
-
-            log('Benchmark report:\n' + report);
-            p.done(
-              `Benchmark done — ${typicalSecondsPerCard(measurements).toFixed(1)}s per card. ` +
-                `Copied to the clipboard and written to ${path}.`,
-              DURATION.LONG
-            );
-          } catch (err) {
-            await conversation?.delete().catch(() => {});
-            p.fail('The benchmark', err);
-          }
-        },
-      });
-
-      this.addCommand({
-        id: 'litert-json-reliability',
-        name: '[Test] JSON reliability test (5 runs)',
-        editorCallback: async (editor) => {
-          const selection = editor.getSelection();
-          if (!selection.trim()) {
-            notify('warn', 'Select a short paragraph first, then run this command.');
-            return;
-          }
-          if (selection.length > 3000) {
-            notify('warn', 'Keep it under 3000 chars for this test — pick a single paragraph.');
-            return;
-          }
-
-          const RUNS = 5;
-          // Named because the truncation check needs the same number the
-          // session was given; a budget stated in two places is a budget that
-          // drifts.
-          const MAX_OUTPUT = 512;
-          const p = new Progress('JSON reliability test: loading model…');
-          try {
-            const engine = await this.ensureEngine((text) => {
-              log(text);
-              p.update(text);
-            });
-
-            const { SamplerType } = await import('@litert-lm/core');
-            let successCount = 0;
-            const outcomes: string[] = [];
-
-            for (let i = 1; i <= RUNS; i++) {
-              p.update(`JSON reliability test: run ${i}/${RUNS}…`);
-              let conversation: import('@litert-lm/core').Conversation | undefined;
-              try {
+              const runOne = async (text: string) => {
                 conversation = await engine.createConversation({
                   preface: {
                     messages: [
@@ -1238,98 +1137,226 @@ export default class LiteRtSpikePlugin extends Plugin {
                   },
                   sessionConfig: {
                     samplerParams: { type: SamplerType.GREEDY },
-                    maxOutputTokens: MAX_OUTPUT,
+                    maxOutputTokens: BENCH_OUTPUT_TOKENS,
                   },
                 });
-
-                let raw = '';
-                const stream = conversation.sendMessageStreaming(selection);
-                const reader = stream.getReader();
-                for (;;) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  raw += textOf(value?.content);
+                try {
+                  const wallStart = Date.now();
+                  const message = await conversation.sendMessage(text);
+                  const wallMs = Date.now() - wallStart;
+                  const bench = await conversation.getBenchmarkInfo();
+                  return { reply: textOf(message.content), wallMs, bench };
+                } finally {
+                  await conversation?.delete().catch(() => {});
+                  conversation = undefined;
                 }
+              };
 
-                // The two measurements this command exists to produce, beside
-                // the pass/fail. The repetition thresholds in model-output.ts
-                // are set conservatively and have NOT been calibrated against
-                // this model — doing that means reading these numbers off real
-                // replies and seeing where good output and looping output
-                // actually separate. Printed on every run, valid or not, so a
-                // sample can be gathered by running this a few times.
-                const loop = looksRepetitive(raw);
-                const cut = looksCutOff(raw, MAX_OUTPUT);
-                const measured =
-                  `run=${loop.longestRun} distinct=${loop.distinctRatio.toFixed(3)}` +
-                  `${loop.repetitive ? ' LOOPING' : ''}` +
-                  `${cut.atBudget ? ' at-budget' : ''}${cut.midSentence ? ' mid-sentence' : ''}`;
+              // The first call of a session pays a one-time shader-compilation
+              // cost that has nothing to do with the note. Spend it here on a
+              // throwaway and report it on its own line, rather than letting it
+              // land on whichever fixture happens to run first and make that row
+              // look four times slower than it is.
+              p.update('Benchmark: warming up (one-time GPU cost)…');
+              const cold = await runOne('Warm-up. Reply with {"summary": "ok", "tags": ["a", "b", "c"]}.');
 
-                const read = parseModelJson<Record<string, unknown>>(raw);
-                if (!read.ok) {
-                  log(`Run ${i}: ${read.reason}`, 'raw:', raw, measured);
-                  outcomes.push(`Run ${i}: ${read.reason.toUpperCase()} [${measured}] — raw: ${raw}`);
-                } else {
-                  const rec = read.value;
-                  const valid =
-                    typeof rec.summary === 'string' &&
-                    Array.isArray(rec.tags) &&
-                    rec.tags.length === 3 &&
-                    rec.tags.every((t: unknown) => typeof t === 'string');
-                  if (valid && !loop.repetitive) {
-                    successCount++;
-                    log(`Run ${i}: OK`, rec, measured);
-                    outcomes.push(`Run ${i}: OK [${measured}] — ${JSON.stringify(rec)}`);
-                  } else if (valid) {
-                    // The shape passed and the content is a loop. This is the
-                    // exact failure the shape checks cannot see.
-                    log(`Run ${i}: valid shape, repetition loop`, rec, measured);
-                    outcomes.push(`Run ${i}: LOOP [${measured}] — ${JSON.stringify(rec)}`);
-                  } else {
-                    log(`Run ${i}: parsed but wrong shape`, rec, 'raw:', raw, measured);
-                    outcomes.push(`Run ${i}: WRONG SHAPE [${measured}] — ${JSON.stringify(rec)}`);
-                  }
-                }
-              } finally {
-                await conversation?.delete().catch(() => {});
+              const measurements: BenchMeasurement[] = [];
+              for (let i = 0; i < BENCH_CORPUS.length; i++) {
+                const fixture = BENCH_CORPUS[i];
+                p.update(`Benchmark: ${i + 1}/${BENCH_CORPUS.length} — ${fixture.label}…`);
+                const { reply, wallMs, bench } = await runOne(fixture.text);
+
+                const measurement = evaluateBenchReply(fixture, reply, { ...bench, wallMs });
+                measurements.push(measurement);
+                log(`Benchmark ${fixture.id}:`, measurement, 'reply:', reply);
               }
-            }
 
-            log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
-
-            // The measurements also go to a file, because the point of this
-            // command is to calibrate the repetition thresholds (#109) and
-            // that needs a sample from a real machine — which means someone
-            // who is not a developer running it a few times and handing the
-            // numbers over. A console they have to open, filter and copy from
-            // is where samples go to die; a note in the wiki folder is not.
-            // Outside cards/ and concepts/, so nothing retrieves it.
-            const calibPath = `${wikiDir()}/calibration.md`;
-            const adapter = this.app.vault.adapter;
-            if (!(await adapter.exists(calibPath))) {
-              await adapter.write(
-                calibPath,
-                '# Calibration samples\n\n' +
-                  'Written by `[Test] JSON reliability test`. Each block is one invocation; each line one ' +
-                  'model reply. `run` is the longest run of identical sentences, `distinct` the share of ' +
-                  'distinct 4-grams. Nothing reads this file — it exists to be sent to whoever is tuning ' +
-                  'the thresholds in model-output.ts.\n'
+              const report = buildBenchmarkReport(
+                {
+                  gpu: await describeGpu(),
+                  pluginVersion: this.manifest.version,
+                  obsidianVersion: apiVersion,
+                  platform: describePlatform(),
+                  contextTokens: this.effectiveContextTokens ?? this.settings.contextTokens ?? 4096,
+                  coldStartSeconds: cold.wallMs / 1000,
+                  onBattery: await onBattery(),
+                },
+                measurements
               );
-            }
-            await adapter.append(
-              calibPath,
-              `\n## ${new Date().toISOString()} — ${selection.length} chars, ${successCount}/${RUNS} valid\n` +
-                outcomes.map((o) => `- ${o}`).join('\n') +
-                '\n'
-            );
 
-            const text = `JSON reliability: ${successCount}/${RUNS} valid. Written to ${calibPath}.`;
-            if (successCount === RUNS) p.done(text, DURATION.LONG);
-            else p.warn(text);
-          } catch (err) {
-            p.fail('The JSON reliability test', err);
-          }
-        },
+              // Both, on purpose. The clipboard is for the paste that is the
+              // whole point of the command; the file is because a clipboard is
+              // one Cmd+C away from being gone and the run took minutes.
+              const path = `${wikiDir()}/benchmark.md`;
+              const adapter = this.app.vault.adapter;
+              if (!(await adapter.exists(path))) {
+                await adapter.write(
+                  path,
+                  '# Benchmark results\n\n' +
+                    'Written by `[Test] Benchmark this machine`. Nothing reads this file and nothing is ' +
+                    'sent anywhere. Paste a block into the results issue to add your hardware to the ' +
+                    "README's table.\n"
+                );
+              }
+              await adapter.append(path, `\n## ${new Date().toISOString()}\n\n${report}\n`);
+              await navigator.clipboard.writeText(report).catch(() => {});
+
+              log('Benchmark report:\n' + report);
+              p.done(
+                `Benchmark done — ${typicalSecondsPerCard(measurements).toFixed(1)}s per card. ` +
+                  `Copied to the clipboard and written to ${path}.`,
+                DURATION.LONG
+              );
+            } catch (err) {
+              await conversation?.delete().catch(() => {});
+              p.fail('The benchmark', err);
+            }
+          }),
+      });
+
+      this.addCommand({
+        id: 'litert-json-reliability',
+        name: '[Test] JSON reliability test (5 runs)',
+        editorCallback: (editor) =>
+          this.runTestCommand('[Test] JSON reliability test', async () => {
+            const selection = editor.getSelection();
+            if (!selection.trim()) {
+              notify('warn', 'Select a short paragraph first, then run this command.');
+              return;
+            }
+            if (selection.length > 3000) {
+              notify('warn', 'Keep it under 3000 chars for this test — pick a single paragraph.');
+              return;
+            }
+
+            const RUNS = 5;
+            // Named because the truncation check needs the same number the
+            // session was given; a budget stated in two places is a budget that
+            // drifts.
+            const MAX_OUTPUT = 512;
+            const p = new Progress('JSON reliability test: loading model…');
+            try {
+              const engine = await this.ensureEngine((text) => {
+                log(text);
+                p.update(text);
+              });
+
+              const { SamplerType } = await import('@litert-lm/core');
+              let successCount = 0;
+              const outcomes: string[] = [];
+
+              for (let i = 1; i <= RUNS; i++) {
+                p.update(`JSON reliability test: run ${i}/${RUNS}…`);
+                let conversation: import('@litert-lm/core').Conversation | undefined;
+                try {
+                  conversation = await engine.createConversation({
+                    preface: {
+                      messages: [
+                        {
+                          role: 'system',
+                          content:
+                            'You extract structured metadata from a note. Given the text the user provides, ' +
+                            'respond with ONLY a single JSON object matching this exact shape, no markdown code ' +
+                            'fences, no explanation, nothing before or after it: ' +
+                            '{"summary": "one sentence summary", "tags": ["tag1", "tag2", "tag3"]}. ' +
+                            'Tags must be short lowercase noun phrases, exactly 3 of them.',
+                        },
+                      ],
+                    },
+                    sessionConfig: {
+                      samplerParams: { type: SamplerType.GREEDY },
+                      maxOutputTokens: MAX_OUTPUT,
+                    },
+                  });
+
+                  let raw = '';
+                  const stream = conversation.sendMessageStreaming(selection);
+                  const reader = stream.getReader();
+                  for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    raw += textOf(value?.content);
+                  }
+
+                  // The two measurements this command exists to produce, beside
+                  // the pass/fail. The repetition thresholds in model-output.ts
+                  // are set conservatively and have NOT been calibrated against
+                  // this model — doing that means reading these numbers off real
+                  // replies and seeing where good output and looping output
+                  // actually separate. Printed on every run, valid or not, so a
+                  // sample can be gathered by running this a few times.
+                  const loop = looksRepetitive(raw);
+                  const cut = looksCutOff(raw, MAX_OUTPUT);
+                  const measured =
+                    `run=${loop.longestRun} distinct=${loop.distinctRatio.toFixed(3)}` +
+                    `${loop.repetitive ? ' LOOPING' : ''}` +
+                    `${cut.atBudget ? ' at-budget' : ''}${cut.midSentence ? ' mid-sentence' : ''}`;
+
+                  const read = parseModelJson<Record<string, unknown>>(raw);
+                  if (!read.ok) {
+                    log(`Run ${i}: ${read.reason}`, 'raw:', raw, measured);
+                    outcomes.push(`Run ${i}: ${read.reason.toUpperCase()} [${measured}] — raw: ${raw}`);
+                  } else {
+                    const rec = read.value;
+                    const valid =
+                      typeof rec.summary === 'string' &&
+                      Array.isArray(rec.tags) &&
+                      rec.tags.length === 3 &&
+                      rec.tags.every((t: unknown) => typeof t === 'string');
+                    if (valid && !loop.repetitive) {
+                      successCount++;
+                      log(`Run ${i}: OK`, rec, measured);
+                      outcomes.push(`Run ${i}: OK [${measured}] — ${JSON.stringify(rec)}`);
+                    } else if (valid) {
+                      // The shape passed and the content is a loop. This is the
+                      // exact failure the shape checks cannot see.
+                      log(`Run ${i}: valid shape, repetition loop`, rec, measured);
+                      outcomes.push(`Run ${i}: LOOP [${measured}] — ${JSON.stringify(rec)}`);
+                    } else {
+                      log(`Run ${i}: parsed but wrong shape`, rec, 'raw:', raw, measured);
+                      outcomes.push(`Run ${i}: WRONG SHAPE [${measured}] — ${JSON.stringify(rec)}`);
+                    }
+                  }
+                } finally {
+                  await conversation?.delete().catch(() => {});
+                }
+              }
+
+              log('JSON reliability test summary:', `${successCount}/${RUNS} valid`, outcomes);
+
+              // The measurements also go to a file, because the point of this
+              // command is to calibrate the repetition thresholds (#109) and
+              // that needs a sample from a real machine — which means someone
+              // who is not a developer running it a few times and handing the
+              // numbers over. A console they have to open, filter and copy from
+              // is where samples go to die; a note in the wiki folder is not.
+              // Outside cards/ and concepts/, so nothing retrieves it.
+              const calibPath = `${wikiDir()}/calibration.md`;
+              const adapter = this.app.vault.adapter;
+              if (!(await adapter.exists(calibPath))) {
+                await adapter.write(
+                  calibPath,
+                  '# Calibration samples\n\n' +
+                    'Written by `[Test] JSON reliability test`. Each block is one invocation; each line one ' +
+                    'model reply. `run` is the longest run of identical sentences, `distinct` the share of ' +
+                    'distinct 4-grams. Nothing reads this file — it exists to be sent to whoever is tuning ' +
+                    'the thresholds in model-output.ts.\n'
+                );
+              }
+              await adapter.append(
+                calibPath,
+                `\n## ${new Date().toISOString()} — ${selection.length} chars, ${successCount}/${RUNS} valid\n` +
+                  outcomes.map((o) => `- ${o}`).join('\n') +
+                  '\n'
+              );
+
+              const text = `JSON reliability: ${successCount}/${RUNS} valid. Written to ${calibPath}.`;
+              if (successCount === RUNS) p.done(text, DURATION.LONG);
+              else p.warn(text);
+            } catch (err) {
+              p.fail('The JSON reliability test', err);
+            }
+          }),
       });
     }
 
@@ -1341,13 +1368,23 @@ export default class LiteRtSpikePlugin extends Plugin {
     // Keep the index honest when a wiki page is deleted: index.md isn't updated
     // by the delete itself, so a removed page lingers as a ghost entry (and a
     // dead related link). Prune on any delete inside the wiki folder.
-    this.registerEvent(
-      this.app.vault.on('delete', (f) => {
-        if (!f.path.startsWith(`${wikiDir()}/`)) return;
+    //
+    // Deleting several pages at once fires one event per page, and each used
+    // to start its own sweep while the other pages were still being removed.
+    // Waiting for the deletes to settle runs one sweep for the whole batch.
+    const prune = debounce(
+      () =>
         this.runApproved(say('op.prune'), async () => {
           await this.pruneIndex();
           await this.pruneDeadRelatedLinks();
-        });
+        }),
+      500,
+      true
+    );
+    this.registerEvent(
+      this.app.vault.on('delete', (f) => {
+        if (!f.path.startsWith(`${wikiDir()}/`)) return;
+        prune();
       })
     );
   }
@@ -1722,7 +1759,13 @@ export default class LiteRtSpikePlugin extends Plugin {
   private async pruneIndex(): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(indexPath());
     if (!(file instanceof TFile)) return;
-    const content = await this.app.vault.read(file);
+    let content: string;
+    try {
+      content = await this.app.vault.read(file);
+    } catch (err) {
+      if (isMissingFileError(err)) return;
+      throw err;
+    }
     const LINE = /^- \[\[([^\]|]+)\|/;
     const lines = content.split('\n');
     const kept = lines.filter((l) => {
@@ -1815,7 +1858,15 @@ export default class LiteRtSpikePlugin extends Plugin {
     const LINK = /^- \[\[([^\]|]+)\|/;
     for (const f of this.app.vault.getMarkdownFiles()) {
       if (!isWikiPage(f)) continue;
-      const content = await this.app.vault.read(f);
+      // The list above was taken before the read: during a bulk delete a
+      // page can go in between, and a page that is gone needs no repair.
+      let content: string;
+      try {
+        content = await this.app.vault.read(f);
+      } catch (err) {
+        if (isMissingFileError(err)) continue;
+        throw err;
+      }
       // Same repair for both generated link lists: a source page's
       // "## Related" and a concept page's "## Pages" member list.
       let updated = content;
@@ -1838,7 +1889,12 @@ export default class LiteRtSpikePlugin extends Plugin {
         updated = hasLink ? head + kept.join('\n') : `${head}\n`;
       }
       if (updated === content) continue;
-      await this.app.vault.modify(f, updated);
+      try {
+        await this.app.vault.modify(f, updated);
+      } catch (err) {
+        if (isMissingFileError(err)) continue;
+        throw err;
+      }
       // A concept page that lost a member has an overview describing pages
       // that are gone — flag it for a rebuild, same as when one is added.
       if (touchedConceptMembers && fmOf(this.app, f)?.kind === 'concept') {
