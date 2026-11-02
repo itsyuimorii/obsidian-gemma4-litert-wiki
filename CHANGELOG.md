@@ -6,6 +6,17 @@ All notable changes to this plugin are recorded here. Versions follow
 
 ## Unreleased
 
+- **The whole interface speaks Japanese and Simplified Chinese** (#166).
+  After the chat panel in 1.0.26, the rest follows the **Interface
+  language** setting: the settings page, every notice, the status bar,
+  the review and confirmation dialogs (ingest preview, scan, Tidy, the
+  review board, the spot-check and contradiction reports, the setup card)
+  and the command names. Changing the language redraws the settings page
+  and the chat panel at once; command names switch after the plugin
+  reloads. Warnings and failures still go to `log.md` in English, so the
+  log reads the same whatever the interface says. The [Test] developer
+  commands and the Check setup report stay English: their output is for
+  pasting into an issue.
 - **Cards follow the note: its language, its length, its subject.**
   A card for a note in Chinese, Japanese or Korean is written in that
   language; it used to come out in English. Tags stay English, so notes in
@@ -20,10 +31,20 @@ All notable changes to this plugin are recorded here. Versions follow
   rest, and a reused tag the note does not name is put to the model as a
   yes-or-no against the card. In a test over 24 notes from other fields
   (cooking, law, medicine, finance, maths, physics, philosophy, in four
-  languages) wrong tags went from 4 to 0, at about 10% more time.
+  languages) wrong tags went from 4 to 0 and every card came out in its
+  note's language, in about the same time. It is not airtight yet: on
+  project notes a broad tag such as software-architecture can still pass
+  the check.
 - **A formula can no longer fail a card.** A backslash in model output
   that starts no valid JSON escape, as LaTeX does, is repaired before the
   reply is given up on.
+
+## 1.0.26 — 2026-10-24
+
+The chat panel speaks Japanese and Simplified Chinese, the spot-check says
+which pages it read, and a stray click no longer loses a draft or hides a
+running task.
+
 - **The chat panel speaks Japanese and Simplified Chinese** (#166). It
   follows Obsidian's language; **Interface language** under Chat in
   settings picks one instead. Everything the panel shows is translated:
@@ -43,6 +64,18 @@ All notable changes to this plugin are recorded here. Versions follow
   *Pages read this run* folds out to each page, linked, and why it was
   read: least borne out by its note, or drawn at random. A clean report
   could not be told apart from one that read the same pages as last time.
+- **A stray click no longer throws away a draft.** Review dialogs (the
+  ingest preview, scan review, tidy, related links, tags and links) stayed
+  open only until the first click on the dimmed background, which closed
+  them and discarded output the model had just spent tens of seconds on.
+  They now close only from Cancel, the close button or Escape. Closing the
+  ingest preview also says that nothing was written, instead of ending in
+  silence that looked like a failed ingest.
+- **A running task's notice stays until the task ends.** Clicking the
+  progress notice in the top-right corner closed it, and with it the only
+  sign that an ingest, a scan or a test command was still running. It now
+  ignores clicks while the task runs; the notice with the result still
+  closes on a click.
 
 ## 1.0.25 — 2026-10-18
 

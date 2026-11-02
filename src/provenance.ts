@@ -1,4 +1,5 @@
 import { App, Modal, TFile } from 'obsidian';
+import { t, tn } from './i18n';
 import { cardGrounding, pickForSpotCheck, rankedPlaces } from './pure';
 import { fmOf, wikiDir } from './wiki-store';
 
@@ -104,7 +105,7 @@ export class ProvenanceReportModal extends Modal {
   private renderSampled(parent: HTMLElement) {
     if (!this.samples.length) return;
     const details = parent.createEl('details', { cls: 'gemma4-lint-sampled' });
-    details.createEl('summary', { text: `Pages read this run (${this.samples.length})` });
+    details.createEl('summary', { text: t('modal.prov.read', { n: this.samples.length }) });
     const ul = details.createEl('ul', { cls: 'gemma4-lint-list' });
     for (const s of this.samples) {
       const li = ul.createEl('li');
@@ -113,20 +114,17 @@ export class ProvenanceReportModal extends Modal {
         evt.preventDefault();
         void this.app.workspace.openLinkText(s.linkPath, '', false);
       });
-      li.appendText(s.picked === 'ranked' ? ' — least borne out by its note' : ' — drawn at random');
+      li.appendText(t(s.picked === 'ranked' ? 'modal.prov.ranked' : 'modal.prov.drawn'));
     }
   }
 
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('gemma4-lint-modal');
-    contentEl.createEl('h3', { text: 'Provenance spot-check' });
+    contentEl.createEl('h3', { text: t('modal.prov.title') });
     contentEl.createDiv({
       cls: 'gemma4-lint-summary',
-      text:
-        `Checked ${this.checked} page${this.checked === 1 ? '' : 's'}: mostly the ones whose source note bears them out least, ` +
-        'and a few drawn at random so every page is read in time. ' +
-        `${this.flags.length} have key points or mentions the note may not support — candidates to re-ingest, not verdicts.`,
+      text: tn('modal.prov.summary', this.checked, { flagged: this.flags.length }),
     });
 
     // A page the model could not be read on is not a page that passed. Saying
@@ -135,9 +133,7 @@ export class ProvenanceReportModal extends Modal {
     if (this.unchecked) {
       contentEl.createDiv({
         cls: 'gemma4-lint-hint',
-        text:
-          `${this.unchecked} page${this.unchecked === 1 ? '' : 's'} could not be checked — the model's ` +
-          'reply was unusable or ran out of room. Those pages were not verified; run the check again to retry them.',
+        text: tn('modal.prov.unchecked', this.unchecked),
       });
     }
 
@@ -147,8 +143,8 @@ export class ProvenanceReportModal extends Modal {
       contentEl.createDiv({
         cls: 'gemma4-lint-ok',
         text: this.checked
-          ? 'No unsupported key points found in the pages that were checked.'
-          : 'No page could be checked.',
+          ? t('modal.prov.clean')
+          : t('modal.prov.noneChecked'),
       });
       return;
     }
@@ -167,7 +163,7 @@ export class ProvenanceReportModal extends Modal {
 
     contentEl.createDiv({
       cls: 'gemma4-lint-hint',
-      text: 'Open the page, check each flagged point against its source note, and re-ingest if the summary drifted. Nothing was changed.',
+      text: t('modal.prov.hint'),
     });
   }
 
