@@ -1939,7 +1939,7 @@ export interface DiagnosticFacts {
   modelBytes?: number;
   /** A resumable partial download, if one is sitting there. */
   partialBytes?: number;
-  /** Bytes of runtime files present in wasm/. */
+  /** Bytes of runtime files present in wasm/<version>/ for the bundled version. */
   runtimeBytes: number;
   /** Whether the loopback server is listening, and on what port. */
   serverPort?: number;
@@ -1965,6 +1965,25 @@ export function integratedGpuOnWindows(f: Pick<DiagnosticFacts, 'platform' | 'we
   if (vendor === 'intel') return !/\barc\b/.test(desc);
   if (vendor === 'amd') return /\b(?:radeon\(tm\) graphics|radeon graphics|vega \d+ graphics)\b/.test(desc);
   return false;
+}
+
+/**
+ * What in wasm/ belongs to a runtime version other than `keep` (#167).
+ *
+ * Each runtime version lives in its own folder, wasm/<version>/, because the
+ * file names do not change between versions: a flat folder would hand an
+ * upgraded plugin the glue and binary of the old one, and the JS bundled in
+ * main.js would load a runtime it was not built against. Builds up to 1.0.25
+ * kept the files flat in wasm/, so those count as stale too, as do the
+ * .partial files an interrupted download left behind. Anything else in the
+ * folder is not ours to delete and is left alone.
+ */
+export function staleRuntimeEntries(names: readonly string[], keep: string): string[] {
+  return names.filter((name) =>
+    /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(name)
+      ? name !== keep
+      : /^litertlm_wasm_[a-z_]*internal\.(?:js|wasm)(?:\.partial)?$/.test(name)
+  );
 }
 
 /** The model is about this big, and the download needs room for it twice over briefly. */
