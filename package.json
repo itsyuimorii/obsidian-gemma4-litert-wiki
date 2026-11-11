@@ -12,13 +12,13 @@
     "lint": "eslint src --max-warnings 4"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "esbuild": "^0.28.1",
-    "eslint": "^10.13.0",
-    "eslint-plugin-obsidianmd": "^0.4.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-obsidianmd": "^0.5.1",
     "obsidian": "latest",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.72.0"
+    "typescript-eslint": "^8.72.1"
   },
   "dependencies": {
     "@litert-lm/core": "0.18.0"
