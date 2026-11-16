@@ -796,7 +796,7 @@ export class ChatView extends ItemView {
   /** The hint names the current mode and the other two, so it follows a switch. */
   private renderScopeHintText() {
     const text = this.scopeHintEl?.querySelector('.gemma4-chat-scope-hint-text');
-    if (!(text instanceof HTMLElement)) return;
+    if (!text?.instanceOf(HTMLElement)) return;
     const all = scopes();
     const others = SCOPE_ORDER.filter((m) => m !== this.mode).map((m) => all[m].label);
     text.empty();
@@ -1161,12 +1161,12 @@ export class ChatView extends ItemView {
     if (this.inputExpanded) return;
     const el = this.inputEl;
     // Measured, not chosen: the box has to be laid out at its natural height
-    // before scrollHeight means anything. Through setCssStyles rather than
-    // el.style, which the store's linter rejects — a plugin assigning styles
-    // directly is a plugin a theme cannot override.
-    el.setCssStyles({ height: 'auto' });
+    // before scrollHeight means anything. The height goes through a CSS
+    // variable the stylesheet reads, so the stylesheet keeps the last word:
+    // the store's linter rejects styles assigned straight to the element.
+    el.setCssProps({ '--gemma4-input-height': 'auto' });
     const max = Math.floor(this.containerEl.clientHeight * 0.35);
-    el.setCssStyles({ height: `${Math.min(el.scrollHeight, max)}px` });
+    el.setCssProps({ '--gemma4-input-height': `${Math.min(el.scrollHeight, max)}px` });
   }
 
   private toggleInputExpand() {
@@ -1176,7 +1176,7 @@ export class ChatView extends ItemView {
     setTooltip(this.expandButton, this.inputExpanded ? t('chat.input.shrink') : t('chat.input.expand'));
     if (this.inputExpanded) {
       // Hand the height back to the stylesheet; the expanded class owns it.
-      this.inputEl.setCssStyles({ height: '' });
+      this.inputEl.setCssProps({ '--gemma4-input-height': '' });
     } else {
       this.autoGrowInput();
     }

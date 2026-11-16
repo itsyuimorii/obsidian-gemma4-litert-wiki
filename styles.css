@@ -1048,6 +1048,7 @@
    scrolls internally; the expand toggle pins it tall instead. */
 .gemma4-chat-input {
   overflow-y: auto;
+  height: var(--gemma4-input-height, auto);
 }
 
 .gemma4-chat .gemma4-chat-input-tall {
