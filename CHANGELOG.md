@@ -4,7 +4,11 @@ All notable changes to this plugin are recorded here. Versions follow
 [semantic versioning](https://semver.org/); the store reads them from
 `manifest.json` and `versions.json`.
 
-## Unreleased
+## 1.0.28 — 2026-11-16
+
+Two fixes: deleting several pages at once cleans up once instead of
+reporting "Prune failed", and the [Test] commands no longer run on top of
+another job.
 
 - **Deleting several pages at once no longer reports "Prune failed".**
   Each deleted page started its own clean-up of `index.md` and the related
